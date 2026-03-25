@@ -289,6 +289,15 @@ Worker:
      → writes to otel_errors
 ```
 
+## Testing
+
+Run tests with `vitest run` (not `vitest` which starts watch mode and never exits):
+
+```bash
+pnpm vitest run                           # all tests
+pnpm vitest run src/extract-errors.test.ts # single file
+```
+
 ## Reference schema
 
 The Tinybird OTel template (https://github.com/tinybirdco/tinybird-otel-template) is the base inspiration for our OTel schema and SQL query examples. Our `tinybird/datasources/` files are derived from it with multi-tenancy additions. Use it as reference for column names, types, indexes, sorting keys, and example queries against OTel data in ClickHouse.
