@@ -5,9 +5,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "CLICKHOUSE_URL": "http://localhost:8123",
-    "CLICKHOUSE_DATABASE": "default"
+    "CLICKHOUSE_DATABASE": "default",
+    "CLICKHOUSE_USER": "default"
   }
   // Secrets (set via `wrangler secret put`):
-  //   No secrets needed — ClickHouse credentials come from the Bearer token.
-  //   The token format is base64("user:password").
+  //   CLICKHOUSE_PASSWORD — ClickHouse user password
 }

@@ -2,8 +2,9 @@
 //
 // INSERT: POST with JSONEachLine format (NDJSON with PascalCase column names)
 // Query:  POST with SQL, returns JSON
-
-import type { ClickHouseCredentials } from './auth.ts'
+//
+// Credentials come from wrangler secrets (CLICKHOUSE_USER, CLICKHOUSE_PASSWORD),
+// not from request headers or tokens.
 
 /**
  * Insert NDJSON rows into a ClickHouse table.
@@ -14,7 +15,8 @@ export async function insertIntoClickHouse(
   database: string,
   table: string,
   ndjson: string,
-  credentials: ClickHouseCredentials,
+  user: string,
+  password: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const query = `INSERT INTO ${database}.${table} FORMAT JSONEachLine`
   const url = `${clickhouseUrl}/?query=${encodeURIComponent(query)}`
@@ -22,8 +24,8 @@ export async function insertIntoClickHouse(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'X-ClickHouse-User': credentials.user,
-      'X-ClickHouse-Key': credentials.password,
+      'X-ClickHouse-User': user,
+      'X-ClickHouse-Key': password,
     },
     body: ndjson,
   })
@@ -44,7 +46,8 @@ export async function queryClickHouse(
   clickhouseUrl: string,
   database: string,
   sql: string,
-  credentials: ClickHouseCredentials,
+  user: string,
+  password: string,
 ): Promise<{ ok: boolean; data?: string; error?: string }> {
   // Append FORMAT JSON if not already specified
   const trimmedSql = sql.trim().replace(/;$/, '')
@@ -56,8 +59,8 @@ export async function queryClickHouse(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'X-ClickHouse-User': credentials.user,
-      'X-ClickHouse-Key': credentials.password,
+      'X-ClickHouse-User': user,
+      'X-ClickHouse-Key': password,
     },
     body: finalSql,
   })

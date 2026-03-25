@@ -5,19 +5,19 @@
 //   POST /v0/sql                  — Query API (reads)
 //   GET  /v0/sql?q={sql}          — Query API (reads, query in URL)
 //
-// Auth: Bearer token = base64("clickhouse_user:clickhouse_password")
-// The adapter decodes the credentials and uses them to connect to ClickHouse.
+// ClickHouse credentials come from wrangler secrets, not from request headers.
 
 import { Spiceflow } from 'spiceflow'
 import { cors } from 'spiceflow/cors'
 import { env } from 'cloudflare:workers'
-import { parseCredentials } from './auth.ts'
 import { remapNdjson } from './field-mapping.ts'
 import { insertIntoClickHouse, queryClickHouse } from './clickhouse-client.ts'
 
 interface Env {
   CLICKHOUSE_URL: string
   CLICKHOUSE_DATABASE: string
+  CLICKHOUSE_USER: string
+  CLICKHOUSE_PASSWORD: string
 }
 
 function getEnv(): Env {
@@ -29,22 +29,13 @@ const app = new Spiceflow()
     cors({
       origin: '*',
       allowMethods: ['GET', 'POST'],
-      allowHeaders: ['content-type', 'authorization'],
+      allowHeaders: ['content-type'],
       maxAge: 86400,
     }),
   )
 
   // ── Events API: NDJSON ingestion ──
   .post('/v0/events', async ({ request }) => {
-    const credentials = parseCredentials(
-      request.headers.get('authorization'),
-    )
-    if (!credentials) {
-      return new Response('Unauthorized: Bearer token must be base64(user:password)', {
-        status: 401,
-      })
-    }
-
     const url = new URL(request.url)
     const tableName = url.searchParams.get('name')
     if (!tableName) {
@@ -66,7 +57,8 @@ const app = new Spiceflow()
       e.CLICKHOUSE_DATABASE,
       tableName,
       remappedNdjson,
-      credentials,
+      e.CLICKHOUSE_USER,
+      e.CLICKHOUSE_PASSWORD,
     )
 
     if (!result.ok) {
@@ -79,13 +71,6 @@ const app = new Spiceflow()
 
   // ── Query API: SQL pass-through ──
   .post('/v0/sql', async ({ request }) => {
-    const credentials = parseCredentials(
-      request.headers.get('authorization'),
-    )
-    if (!credentials) {
-      return new Response('Unauthorized', { status: 401 })
-    }
-
     const e = getEnv()
     const sql = await request.text()
 
@@ -93,7 +78,8 @@ const app = new Spiceflow()
       e.CLICKHOUSE_URL,
       e.CLICKHOUSE_DATABASE,
       sql,
-      credentials,
+      e.CLICKHOUSE_USER,
+      e.CLICKHOUSE_PASSWORD,
     )
 
     if (!result.ok) {
@@ -105,13 +91,6 @@ const app = new Spiceflow()
     })
   })
   .get('/v0/sql', async ({ request }) => {
-    const credentials = parseCredentials(
-      request.headers.get('authorization'),
-    )
-    if (!credentials) {
-      return new Response('Unauthorized', { status: 401 })
-    }
-
     const url = new URL(request.url)
     const sql = url.searchParams.get('q')
     if (!sql) {
@@ -124,7 +103,8 @@ const app = new Spiceflow()
       e.CLICKHOUSE_URL,
       e.CLICKHOUSE_DATABASE,
       sql,
-      credentials,
+      e.CLICKHOUSE_USER,
+      e.CLICKHOUSE_PASSWORD,
     )
 
     if (!result.ok) {
