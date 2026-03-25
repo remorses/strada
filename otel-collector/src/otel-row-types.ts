@@ -128,9 +128,9 @@ export interface OtelGaugeRow extends OtelBaseMetricRow {
 
 // Matches the OTel ClickHouse histogram metrics table schema.
 export interface OtelHistogramRow extends OtelBaseMetricRow {
-  count: number
+  count: number | string
   sum: number
-  bucket_counts: number[]
+  bucket_counts: Array<number | string>
   explicit_bounds: number[]
   min?: number
   max?: number
@@ -139,14 +139,14 @@ export interface OtelHistogramRow extends OtelBaseMetricRow {
 
 // Matches the OTel ClickHouse exponential histogram metrics table schema.
 export interface OtelExponentialHistogramRow extends OtelBaseMetricRow {
-  count: number
+  count: number | string
   sum: number
   scale: number
-  zero_count: number
+  zero_count: number | string
   positive_offset: number
-  positive_bucket_counts: number[]
+  positive_bucket_counts: Array<number | string>
   negative_offset: number
-  negative_bucket_counts: number[]
+  negative_bucket_counts: Array<number | string>
   min?: number
   max?: number
   aggregation_temporality: number

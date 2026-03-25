@@ -136,10 +136,10 @@ describe('transformTraces', () => {
           "http.status_code": "200",
         },
         "span_id": "EEE19B7EC3C1B174",
-        "span_kind": "SPAN_KIND_SERVER",
+        "span_kind": "Server",
         "span_name": "GET /users",
         "start_time": "2018-12-13T14:51:00.000000000Z",
-        "status_code": "STATUS_CODE_OK",
+        "status_code": "Ok",
         "status_message": "",
         "tenant_id": "acme",
         "trace_flags": 1,
@@ -177,8 +177,8 @@ describe('transformTraces', () => {
     expect(row.trace_id).toBe('abc123')
     expect(row.span_id).toBe('def456')
     expect(row.parent_span_id).toBe('')
-    expect(row.span_kind).toBe('SPAN_KIND_UNSPECIFIED')
-    expect(row.status_code).toBe('STATUS_CODE_UNSET')
+    expect(row.span_kind).toBe('Unspecified')
+    expect(row.status_code).toBe('Unset')
     expect(row.service_name).toBe('')
     expect(row.events_timestamp).toEqual([])
     expect(row.links_trace_id).toEqual([])

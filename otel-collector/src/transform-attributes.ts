@@ -9,10 +9,12 @@ export function anyValueToString(v: AnyValue | undefined): string {
   if (v.intValue !== undefined) return v.intValue // already a string in JSON
   if (v.doubleValue !== undefined) return String(v.doubleValue)
   if (v.boolValue !== undefined) return String(v.boolValue)
-  if (v.arrayValue)
-    return JSON.stringify(v.arrayValue.values.map(anyValueToString))
-  if (v.kvlistValue)
-    return JSON.stringify(convertAttributes(v.kvlistValue.values))
+  if (v.arrayValue) {
+    return JSON.stringify((v.arrayValue.values ?? []).map(anyValueToString))
+  }
+  if (v.kvlistValue) {
+    return JSON.stringify(convertAttributes(v.kvlistValue.values ?? []))
+  }
   if (v.bytesValue !== undefined) return v.bytesValue // base64 string
   return ''
 }

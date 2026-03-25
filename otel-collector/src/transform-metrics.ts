@@ -24,6 +24,12 @@ export interface MetricsPayload {
   ndjson: string
 }
 
+function parseIntString(value: string | undefined): number | string {
+  if (!value) return 0
+  const numeric = Number(value)
+  return Number.isSafeInteger(numeric) ? numeric : value
+}
+
 export function transformMetrics(
   body: ExportMetricsServiceRequest,
   tenantId: string,
@@ -67,7 +73,7 @@ export function transformMetrics(
         }
 
         if (metric.gauge) {
-          for (const dp of metric.gauge.dataPoints) {
+          for (const dp of metric.gauge.dataPoints ?? []) {
             const exemplars = convertExemplars(dp.exemplars)
             const row: OtelGaugeRow = {
               ...base,
@@ -83,7 +89,7 @@ export function transformMetrics(
         }
 
         if (metric.sum) {
-          for (const dp of metric.sum.dataPoints) {
+          for (const dp of metric.sum.dataPoints ?? []) {
             const exemplars = convertExemplars(dp.exemplars)
             const row: OtelSumRow = {
               ...base,
@@ -101,7 +107,7 @@ export function transformMetrics(
         }
 
         if (metric.histogram) {
-          for (const dp of metric.histogram.dataPoints) {
+          for (const dp of metric.histogram.dataPoints ?? []) {
             const exemplars = convertExemplars(dp.exemplars)
             const row: OtelHistogramRow = {
               ...base,
@@ -110,10 +116,12 @@ export function transformMetrics(
               timestamp: nanosToRFC3339(dp.timeUnixNano),
               flags: dp.flags ?? 0,
               metric_attributes: convertAttributes(dp.attributes),
-              count: Number(dp.count),
+              count: parseIntString(dp.count),
               sum: dp.sum ?? 0,
-              bucket_counts: dp.bucketCounts.map(Number),
-              explicit_bounds: dp.explicitBounds,
+              bucket_counts: (dp.bucketCounts ?? []).map((v) =>
+                parseIntString(v),
+              ),
+              explicit_bounds: dp.explicitBounds ?? [],
               min: dp.min,
               max: dp.max,
               aggregation_temporality:
@@ -124,7 +132,9 @@ export function transformMetrics(
         }
 
         if (metric.exponentialHistogram) {
-          for (const dp of metric.exponentialHistogram.dataPoints) {
+          for (const dp of metric.exponentialHistogram.dataPoints ?? []) {
+            const positive = dp.positive ?? {}
+            const negative = dp.negative ?? {}
             const exemplars = convertExemplars(dp.exemplars)
             const row: OtelExponentialHistogramRow = {
               ...base,
@@ -133,14 +143,18 @@ export function transformMetrics(
               timestamp: nanosToRFC3339(dp.timeUnixNano),
               flags: dp.flags ?? 0,
               metric_attributes: convertAttributes(dp.attributes),
-              count: Number(dp.count),
+              count: parseIntString(dp.count),
               sum: dp.sum ?? 0,
               scale: dp.scale,
-              zero_count: Number(dp.zeroCount),
-              positive_offset: dp.positive.offset,
-              positive_bucket_counts: dp.positive.bucketCounts.map(Number),
-              negative_offset: dp.negative.offset,
-              negative_bucket_counts: dp.negative.bucketCounts.map(Number),
+              zero_count: parseIntString(dp.zeroCount),
+              positive_offset: positive.offset ?? 0,
+              positive_bucket_counts: (positive.bucketCounts ?? []).map((v) =>
+                parseIntString(v),
+              ),
+              negative_offset: negative.offset ?? 0,
+              negative_bucket_counts: (negative.bucketCounts ?? []).map((v) =>
+                parseIntString(v),
+              ),
               min: dp.min,
               max: dp.max,
               aggregation_temporality:

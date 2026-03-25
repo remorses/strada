@@ -164,7 +164,7 @@ SELECT
     Duration / 1000000 AS duration_ms,
     Timestamp
 FROM otel_traces
-WHERE StatusCode = 'ERROR'
+WHERE StatusCode = 'Error'
   AND Timestamp >= now() - INTERVAL 24 HOUR
 ORDER BY Timestamp DESC
 LIMIT 100
@@ -288,7 +288,7 @@ SELECT
     l.SeverityText
 FROM otel_traces t
 LEFT JOIN otel_logs l ON t.TraceId = l.TraceId AND t.SpanId = l.SpanId
-WHERE t.StatusCode = 'ERROR'
+WHERE t.StatusCode = 'Error'
   AND t.Timestamp >= now() - INTERVAL 1 HOUR
 ORDER BY t.Timestamp DESC
 LIMIT 50

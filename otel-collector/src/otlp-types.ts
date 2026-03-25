@@ -178,8 +178,8 @@ export interface HistogramDataPoint {
   timeUnixNano: string
   count: string // uint64 as string
   sum?: number
-  bucketCounts: string[] // uint64[] as string[]
-  explicitBounds: number[]
+  bucketCounts?: string[] // uint64[] as string[]
+  explicitBounds?: number[]
   exemplars?: Exemplar[]
   flags?: number
   min?: number
@@ -193,9 +193,9 @@ export interface ExponentialHistogramDataPoint {
   count: string // uint64 as string
   sum?: number
   scale: number
-  zeroCount: string // uint64 as string
-  positive: ExponentialBuckets
-  negative: ExponentialBuckets
+  zeroCount?: string // uint64 as string
+  positive?: ExponentialBuckets
+  negative?: ExponentialBuckets
   exemplars?: Exemplar[]
   flags?: number
   min?: number
@@ -203,8 +203,8 @@ export interface ExponentialHistogramDataPoint {
 }
 
 export interface ExponentialBuckets {
-  offset: number
-  bucketCounts: string[] // uint64[] as string[]
+  offset?: number
+  bucketCounts?: string[] // uint64[] as string[]
 }
 
 export interface SummaryDataPoint {

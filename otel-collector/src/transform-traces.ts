@@ -10,18 +10,18 @@ import {
 } from './transform-attributes.ts'
 
 const SPAN_KIND_MAP: Record<number, string> = {
-  0: 'SPAN_KIND_UNSPECIFIED',
-  1: 'SPAN_KIND_INTERNAL',
-  2: 'SPAN_KIND_SERVER',
-  3: 'SPAN_KIND_CLIENT',
-  4: 'SPAN_KIND_PRODUCER',
-  5: 'SPAN_KIND_CONSUMER',
+  0: 'Unspecified',
+  1: 'Internal',
+  2: 'Server',
+  3: 'Client',
+  4: 'Producer',
+  5: 'Consumer',
 }
 
 const STATUS_CODE_MAP: Record<number, string> = {
-  0: 'STATUS_CODE_UNSET',
-  1: 'STATUS_CODE_OK',
-  2: 'STATUS_CODE_ERROR',
+  0: 'Unset',
+  1: 'Ok',
+  2: 'Error',
 }
 
 export function transformTraces(body: ExportTraceServiceRequest, tenantId: string): string {
@@ -53,13 +53,13 @@ export function transformTraces(body: ExportTraceServiceRequest, tenantId: strin
           trace_state: span.traceState ?? '',
           trace_flags: span.flags ?? 0,
           span_name: span.name,
-          span_kind: SPAN_KIND_MAP[span.kind ?? 0] ?? 'SPAN_KIND_UNSPECIFIED',
+          span_kind: SPAN_KIND_MAP[span.kind ?? 0] ?? 'Unspecified',
           span_attributes: convertAttributes(span.attributes),
           start_time: nanosToRFC3339(span.startTimeUnixNano),
           end_time: nanosToRFC3339(span.endTimeUnixNano),
           duration: Number(endNano - startNano),
           status_code:
-            STATUS_CODE_MAP[span.status?.code ?? 0] ?? 'STATUS_CODE_UNSET',
+            STATUS_CODE_MAP[span.status?.code ?? 0] ?? 'Unset',
           status_message: span.status?.message ?? '',
           events_timestamp: (span.events ?? []).map((e) =>
             nanosToRFC3339(e.timeUnixNano),
