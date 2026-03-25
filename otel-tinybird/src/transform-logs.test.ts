@@ -4,8 +4,8 @@ import type { ExportLogsServiceRequest } from './otlp-types.ts'
 
 describe('transformLogs', () => {
   it('returns empty string for empty request', () => {
-    expect(transformLogs({})).toBe('')
-    expect(transformLogs({ resourceLogs: [] })).toBe('')
+    expect(transformLogs({}, 'test-tenant')).toBe('')
+    expect(transformLogs({ resourceLogs: [] }, 'test-tenant')).toBe('')
   })
 
   it('transforms a complete log record', () => {
@@ -52,7 +52,7 @@ describe('transformLogs', () => {
       ],
     }
 
-    const ndjson = transformLogs(input)
+    const ndjson = transformLogs(input, 'acme')
     const row = JSON.parse(ndjson.trim())
 
     expect(row).toMatchInlineSnapshot(`
@@ -76,6 +76,7 @@ describe('transformLogs', () => {
         "severity_number": 9,
         "severity_text": "INFO",
         "span_id": "def456",
+        "tenant_id": "acme",
         "timestamp": "2018-12-13T14:51:00.123456789Z",
         "trace_id": "abc123",
       }
@@ -100,8 +101,9 @@ describe('transformLogs', () => {
       ],
     }
 
-    const ndjson = transformLogs(input)
+    const ndjson = transformLogs(input, 'acme')
     const row = JSON.parse(ndjson.trim())
+    expect(row.tenant_id).toBe('acme')
     expect(row.timestamp).toBe('2018-12-13T14:51:00.200000000Z')
   })
 
@@ -124,7 +126,7 @@ describe('transformLogs', () => {
       ],
     }
 
-    const ndjson = transformLogs(input)
+    const ndjson = transformLogs(input, 'acme')
     const row = JSON.parse(ndjson.trim())
     expect(row.timestamp).toBe('2018-12-13T14:51:00.300000000Z')
   })
@@ -146,9 +148,10 @@ describe('transformLogs', () => {
       ],
     }
 
-    const ndjson = transformLogs(input)
+    const ndjson = transformLogs(input, 'acme')
     const row = JSON.parse(ndjson.trim())
 
+    expect(row.tenant_id).toBe('acme')
     expect(row.service_name).toBe('')
     expect(row.trace_id).toBe('')
     expect(row.span_id).toBe('')

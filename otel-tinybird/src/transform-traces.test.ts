@@ -4,8 +4,8 @@ import type { ExportTraceServiceRequest } from './otlp-types.ts'
 
 describe('transformTraces', () => {
   it('returns empty string for empty request', () => {
-    expect(transformTraces({})).toBe('')
-    expect(transformTraces({ resourceSpans: [] })).toBe('')
+    expect(transformTraces({}, 'test-tenant')).toBe('')
+    expect(transformTraces({ resourceSpans: [] }, 'test-tenant')).toBe('')
   })
 
   it('transforms a complete trace span', () => {
@@ -84,7 +84,7 @@ describe('transformTraces', () => {
       ],
     }
 
-    const ndjson = transformTraces(input)
+    const ndjson = transformTraces(input, 'acme')
     const lines = ndjson.trim().split('\n')
     expect(lines).toHaveLength(1)
 
@@ -141,6 +141,7 @@ describe('transformTraces', () => {
         "start_time": "2018-12-13T14:51:00.000000000Z",
         "status_code": "STATUS_CODE_OK",
         "status_message": "",
+        "tenant_id": "acme",
         "trace_flags": 1,
         "trace_id": "5B8EFFF798038103D269B633813FC60C",
         "trace_state": "key=value",
@@ -169,9 +170,10 @@ describe('transformTraces', () => {
       ],
     }
 
-    const ndjson = transformTraces(input)
+    const ndjson = transformTraces(input, 'acme')
     const row = JSON.parse(ndjson.trim())
 
+    expect(row.tenant_id).toBe('acme')
     expect(row.trace_id).toBe('abc123')
     expect(row.span_id).toBe('def456')
     expect(row.parent_span_id).toBe('')
@@ -236,11 +238,12 @@ describe('transformTraces', () => {
       ],
     }
 
-    const ndjson = transformTraces(input)
+    const ndjson = transformTraces(input, 'acme')
     const lines = ndjson.trim().split('\n')
     expect(lines).toHaveLength(3)
 
     const rows = lines.map((l) => JSON.parse(l))
+    expect(rows[0]!.tenant_id).toBe('acme')
     expect(rows[0]!.service_name).toBe('svc-a')
     expect(rows[0]!.span_name).toBe('span-1')
     expect(rows[1]!.service_name).toBe('svc-a')
