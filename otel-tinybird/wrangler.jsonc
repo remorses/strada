@@ -16,7 +16,8 @@
     "GAUGE_DATASOURCE": "otel_metrics_gauge",
     "SUM_DATASOURCE": "otel_metrics_sum",
     "HISTOGRAM_DATASOURCE": "otel_metrics_histogram",
-    "EXPONENTIAL_HISTOGRAM_DATASOURCE": "otel_metrics_exponential_histogram"
+    "EXPONENTIAL_HISTOGRAM_DATASOURCE": "otel_metrics_exponential_histogram",
+    "ERRORS_DATASOURCE": "otel_errors"
   }
   // Secrets (set via `wrangler secret put`):
   //   TINYBIRD_TOKEN     — Tinybird API token with APPEND on all datasources

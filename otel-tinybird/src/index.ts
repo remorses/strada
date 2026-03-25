@@ -16,6 +16,7 @@ import { transformTraces } from './transform-traces.ts'
 import { transformLogs } from './transform-logs.ts'
 import { transformMetrics } from './transform-metrics.ts'
 import { sendToTinybird } from './tinybird-client.ts'
+import { extractErrorsFromTraces, extractErrorsFromLogs } from './extract-errors.ts'
 import type { ExportTraceServiceRequest, ExportLogsServiceRequest, ExportMetricsServiceRequest } from './otlp-types.ts'
 
 interface Env {
@@ -28,6 +29,7 @@ interface Env {
   SUM_DATASOURCE: string
   HISTOGRAM_DATASOURCE: string
   EXPONENTIAL_HISTOGRAM_DATASOURCE: string
+  ERRORS_DATASOURCE: string
 }
 
 function getEnv(): Env {
@@ -47,16 +49,29 @@ const app = new Spiceflow()
   .post('/v1/traces', async ({ request, waitUntil }) => {
     const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportTraceServiceRequest
-    const ndjson = transformTraces(body, tenantId)
+    const e = getEnv()
 
+    const ndjson = transformTraces(body, tenantId)
     if (ndjson) {
-      const e = getEnv()
       waitUntil(
         sendToTinybird(
           e.TINYBIRD_ENDPOINT,
           e.TINYBIRD_TOKEN,
-          e.TRACES_DATASOURCE ?? 'traces',
+          e.TRACES_DATASOURCE ?? 'otel_traces',
           ndjson,
+        ),
+      )
+    }
+
+    // Extract exceptions from span events and write to otel_errors
+    const errorsNdjson = extractErrorsFromTraces(body, tenantId)
+    if (errorsNdjson) {
+      waitUntil(
+        sendToTinybird(
+          e.TINYBIRD_ENDPOINT,
+          e.TINYBIRD_TOKEN,
+          e.ERRORS_DATASOURCE ?? 'otel_errors',
+          errorsNdjson,
         ),
       )
     }
@@ -66,16 +81,29 @@ const app = new Spiceflow()
   .post('/v1/logs', async ({ request, waitUntil }) => {
     const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportLogsServiceRequest
-    const ndjson = transformLogs(body, tenantId)
+    const e = getEnv()
 
+    const ndjson = transformLogs(body, tenantId)
     if (ndjson) {
-      const e = getEnv()
       waitUntil(
         sendToTinybird(
           e.TINYBIRD_ENDPOINT,
           e.TINYBIRD_TOKEN,
-          e.LOGS_DATASOURCE ?? 'logs',
+          e.LOGS_DATASOURCE ?? 'otel_logs',
           ndjson,
+        ),
+      )
+    }
+
+    // Extract exceptions from log attributes and write to otel_errors
+    const errorsNdjson = extractErrorsFromLogs(body, tenantId)
+    if (errorsNdjson) {
+      waitUntil(
+        sendToTinybird(
+          e.TINYBIRD_ENDPOINT,
+          e.TINYBIRD_TOKEN,
+          e.ERRORS_DATASOURCE ?? 'otel_errors',
+          errorsNdjson,
         ),
       )
     }

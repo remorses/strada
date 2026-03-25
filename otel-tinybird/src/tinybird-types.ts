@@ -53,6 +53,32 @@ export interface TinybirdLog {
   body: string
 }
 
+// Denormalized error row extracted from logs (exception.* attributes) or
+// traces (span events named "exception"). Written to the otel_errors table.
+export interface TinybirdError {
+  tenant_id: string
+  timestamp: string // RFC3339Nano
+  trace_id: string
+  span_id: string
+  service_name: string
+  exception_type: string
+  exception_message: string
+  exception_stacktrace: string
+  exception_frames: string // JSON array of structured frames
+  fingerprint: string[]
+  fingerprint_hash: string // hex hash for GROUP BY
+  mechanism_type: string
+  mechanism_handled: boolean
+  debug_id: string
+  level: string // "error", "fatal", "warning"
+  release: string
+  environment: string
+  tags: Record<string, string>
+  resource_attributes: Record<string, string>
+  scope_attributes: Record<string, string>
+  source_signal: string // "log" or "trace"
+}
+
 // Matches internal/metrics.go base struct, with tenant_id added for multi-tenancy.
 interface TinybirdBaseMetric {
   tenant_id: string
