@@ -1,0 +1,20 @@
+{
+  "name": "otel-tinybird",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "TINYBIRD_ENDPOINT": "https://api.us-east.aws.tinybird.co",
+    "ALLOWED_ORIGINS": "*",
+    "TRACES_DATASOURCE": "traces",
+    "LOGS_DATASOURCE": "logs",
+    "GAUGE_DATASOURCE": "gauge",
+    "SUM_DATASOURCE": "sum",
+    "HISTOGRAM_DATASOURCE": "histogram",
+    "EXPONENTIAL_HISTOGRAM_DATASOURCE": "exponential_histogram"
+  }
+  // Secrets (set via `wrangler secret put`):
+  //   TINYBIRD_TOKEN     — Tinybird API token
+  //   SERVER_API_KEY     — sk_live_... for server-side SDKs
+  //   BROWSER_API_KEY    — pk_live_... for browser SDKs
+}

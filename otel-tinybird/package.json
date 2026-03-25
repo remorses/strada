@@ -1,0 +1,23 @@
+{
+  "name": "otel-tinybird",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "description": "OTLP-to-Tinybird proxy on Cloudflare Workers. Receives OpenTelemetry traces, logs, and metrics via OTLP HTTP/JSON and forwards them to Tinybird Events API as NDJSON.",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "spiceflow": "^1.18.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250313.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1",
+    "wrangler": "^4.5.1"
+  }
+}
