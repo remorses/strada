@@ -10,7 +10,6 @@
 import { Spiceflow } from 'spiceflow'
 import { cors } from 'spiceflow/cors'
 import { env } from 'cloudflare:workers'
-import { authMiddleware } from './auth.ts'
 import { getTenantId } from './get-tenant-id.ts'
 import { transformTraces } from './transform-traces.ts'
 import { transformLogs } from './transform-logs.ts'
@@ -22,7 +21,6 @@ import type { ExportTraceServiceRequest, ExportLogsServiceRequest, ExportMetrics
 interface Env {
   TINYBIRD_ENDPOINT: string
   TINYBIRD_TOKEN: string
-  ALLOWED_ORIGINS: string
   TRACES_DATASOURCE: string
   LOGS_DATASOURCE: string
   GAUGE_DATASOURCE: string
@@ -41,11 +39,10 @@ const app = new Spiceflow()
     cors({
       origin: '*',
       allowMethods: ['POST'],
-      allowHeaders: ['content-type', 'x-api-key'],
+      allowHeaders: ['content-type'],
       maxAge: 86400,
     }),
   )
-  .use(authMiddleware)
   .post('/v1/traces', async ({ request, waitUntil }) => {
     const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportTraceServiceRequest

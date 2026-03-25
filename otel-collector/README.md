@@ -49,19 +49,16 @@ const sdk = new NodeSDK({
   resource,
   traceExporter: new OTLPTraceExporter({
     url: `${STRADA_URL}/v1/traces`,
-    headers: { 'x-api-key': process.env.STRADA_API_KEY! },
   }),
   metricReader: new PeriodicExportingMetricReader({
     exporter: new OTLPMetricExporter({
       url: `${STRADA_URL}/v1/metrics`,
-      headers: { 'x-api-key': process.env.STRADA_API_KEY! },
     }),
     exportIntervalMillis: 10_000,
   }),
   logRecordProcessor: new BatchLogRecordProcessor(
     new OTLPLogExporter({
       url: `${STRADA_URL}/v1/logs`,
-      headers: { 'x-api-key': process.env.STRADA_API_KEY! },
     }),
   ),
   instrumentations: [getNodeAutoInstrumentations()],
@@ -73,13 +70,13 @@ sdk.start()
 ### 3. Load instrumentation before your app
 
 ```bash
-STRADA_API_KEY=sk_live_xxx node --import ./instrumentation.ts app.ts
+node --import ./instrumentation.ts app.ts
 ```
 
 Or with `tsx`:
 
 ```bash
-STRADA_API_KEY=sk_live_xxx tsx --import ./instrumentation.ts app.ts
+tsx --import ./instrumentation.ts app.ts
 ```
 
 ## Environment variable configuration
@@ -89,11 +86,10 @@ Instead of passing URLs programmatically, you can use OTel environment variables
 ```bash
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://acme-ingest.stradametrics.com
-export OTEL_EXPORTER_OTLP_HEADERS=x-api-key=sk_live_xxx
 export OTEL_SERVICE_NAME=my-api
 ```
 
-With these set, the SDK auto-appends `/v1/traces`, `/v1/logs`, `/v1/metrics` to the base endpoint.
+With these set, the SDK auto-appends `/v1/traces`, `/v1/logs`, `/v1/metrics` to the base endpoint. No API keys or headers needed.
 
 ## Exporter packages
 
@@ -125,11 +121,9 @@ https://mycompany-ingest.stradametrics.com → tenant "mycompany"
 https://ingest.yourdomain.com              → empty tenant (self-hosted)
 ```
 
-## Auth
+## No auth required
 
-Every request must include an `x-api-key` header:
-- `sk_*` — server key, for backend SDKs
-- `pk_*` — browser key, requires valid `Origin` header
+There are no API keys. The hostname IS the tenant identity — just point your SDK at the right subdomain and you're done. This is the same model as Sentry's DSN: the ingest URL is public. Security is enforced on reads (Tinybird JWT with tenant filter), not on writes.
 
 ## Links
 

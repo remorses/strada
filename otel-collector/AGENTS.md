@@ -20,9 +20,7 @@ Tenant ID is extracted from the request hostname. See the root `AGENTS.md` for t
 
 ## Auth
 
-`auth.ts` validates the `x-api-key` header. Two key types:
-- `sk_*` (server key) — no origin check
-- `pk_*` (browser key) — origin checked against allowlist
+No auth. The hostname IS the tenant identity (like Sentry's DSN). Security is enforced on reads via Tinybird JWT, not on writes. If spam becomes a problem, add Cloudflare rate limiting per IP.
 
 ## Transform pipeline
 

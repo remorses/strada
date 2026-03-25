@@ -10,7 +10,6 @@
   ],
   "vars": {
     "TINYBIRD_ENDPOINT": "https://api.us-east.aws.tinybird.co",
-    "ALLOWED_ORIGINS": "*",
     "TRACES_DATASOURCE": "otel_traces",
     "LOGS_DATASOURCE": "otel_logs",
     "GAUGE_DATASOURCE": "otel_metrics_gauge",
@@ -21,6 +20,4 @@
   }
   // Secrets (set via `wrangler secret put`):
   //   TINYBIRD_TOKEN     — Tinybird API token with APPEND on all datasources
-  //   SERVER_API_KEY     — sk_live_... for server-side SDKs
-  //   BROWSER_API_KEY    — pk_live_... for browser SDKs
 }
