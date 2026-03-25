@@ -24,7 +24,7 @@ const STATUS_CODE_MAP: Record<number, string> = {
   2: 'STATUS_CODE_ERROR',
 }
 
-export function transformTraces(body: ExportTraceServiceRequest): string {
+export function transformTraces(body: ExportTraceServiceRequest, tenantId: string): string {
   const rows: string[] = []
 
   for (const rs of body.resourceSpans ?? []) {
@@ -39,6 +39,7 @@ export function transformTraces(body: ExportTraceServiceRequest): string {
         const endNano = BigInt(span.endTimeUnixNano)
 
         const row: TinybirdTrace = {
+          tenant_id: tenantId,
           resource_schema_url: rs.schemaUrl ?? '',
           resource_attributes: resourceAttrs,
           service_name: serviceName,

@@ -1,11 +1,17 @@
 // OTLP-to-Tinybird proxy on Cloudflare Workers.
 // Receives OTLP HTTP/JSON traces, logs, and metrics from any OTEL SDK
 // and forwards them to the Tinybird Events API as NDJSON.
+//
+// Multi-tenancy: tenant_id is extracted from the hostname.
+// Each tenant gets a subdomain: {tenant}-ingest.stradametrics.com
+// The worker parses the hostname to get the tenant_id and injects it
+// into every NDJSON row. No KV or DB lookup needed.
 
 import { Spiceflow } from 'spiceflow'
 import { cors } from 'spiceflow/cors'
 import { env } from 'cloudflare:workers'
 import { authMiddleware } from './auth.ts'
+import { getTenantId } from './get-tenant-id.ts'
 import { transformTraces } from './transform-traces.ts'
 import { transformLogs } from './transform-logs.ts'
 import { transformMetrics } from './transform-metrics.ts'
@@ -39,8 +45,9 @@ const app = new Spiceflow()
   )
   .use(authMiddleware)
   .post('/v1/traces', async ({ request, waitUntil }) => {
+    const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportTraceServiceRequest
-    const ndjson = transformTraces(body)
+    const ndjson = transformTraces(body, tenantId)
 
     if (ndjson) {
       const e = getEnv()
@@ -57,8 +64,9 @@ const app = new Spiceflow()
     return {}
   })
   .post('/v1/logs', async ({ request, waitUntil }) => {
+    const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportLogsServiceRequest
-    const ndjson = transformLogs(body)
+    const ndjson = transformLogs(body, tenantId)
 
     if (ndjson) {
       const e = getEnv()
@@ -75,9 +83,10 @@ const app = new Spiceflow()
     return {}
   })
   .post('/v1/metrics', async ({ request, waitUntil }) => {
+    const tenantId = getTenantId(request)
     const body = (await request.json()) as ExportMetricsServiceRequest
     const e = getEnv()
-    const payloads = transformMetrics(body, {
+    const payloads = transformMetrics(body, tenantId, {
       gauge: e.GAUGE_DATASOURCE ?? 'gauge',
       sum: e.SUM_DATASOURCE ?? 'sum',
       histogram: e.HISTOGRAM_DATASOURCE ?? 'histogram',

@@ -10,7 +10,7 @@ import {
   anyValueToString,
 } from './transform-attributes.ts'
 
-export function transformLogs(body: ExportLogsServiceRequest): string {
+export function transformLogs(body: ExportLogsServiceRequest, tenantId: string): string {
   const rows: string[] = []
 
   for (const rl of body.resourceLogs ?? []) {
@@ -29,6 +29,7 @@ export function transformLogs(body: ExportLogsServiceRequest): string {
             : (log.observedTimeUnixNano ?? '0')
 
         const row: TinybirdLog = {
+          tenant_id: tenantId,
           resource_schema_url: rl.schemaUrl ?? '',
           resource_attributes: resourceAttrs,
           service_name: serviceName,

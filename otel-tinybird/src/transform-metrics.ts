@@ -24,6 +24,7 @@ export interface MetricsPayload {
 
 export function transformMetrics(
   body: ExportMetricsServiceRequest,
+  tenantId: string,
   datasourceNames: {
     gauge: string
     sum: string
@@ -49,6 +50,7 @@ export function transformMetrics(
 
       for (const metric of sm.metrics ?? []) {
         const base = {
+          tenant_id: tenantId,
           resource_schema_url: schemaUrl,
           resource_attributes: resourceAttrs,
           service_name: serviceName,

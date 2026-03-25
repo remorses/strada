@@ -1,8 +1,9 @@
 // Tinybird output types matching the Go OTEL collector exporter structs.
 // See: opentelemetry-collector-contrib/exporter/tinybirdexporter/internal/
 
-// Matches internal/traces.go:14-44
+// Matches internal/traces.go:14-44, with tenant_id added for multi-tenancy.
 export interface TinybirdTrace {
+  tenant_id: string
   resource_schema_url: string
   resource_attributes: Record<string, string>
   service_name: string
@@ -32,8 +33,9 @@ export interface TinybirdTrace {
   links_attributes: Record<string, string>[]
 }
 
-// Matches internal/logs.go:14-30
+// Matches internal/logs.go:14-30, with tenant_id added for multi-tenancy.
 export interface TinybirdLog {
+  tenant_id: string
   resource_schema_url: string
   resource_attributes: Record<string, string>
   service_name: string
@@ -51,8 +53,9 @@ export interface TinybirdLog {
   body: string
 }
 
-// Matches internal/metrics.go base struct
+// Matches internal/metrics.go base struct, with tenant_id added for multi-tenancy.
 interface TinybirdBaseMetric {
+  tenant_id: string
   resource_schema_url: string
   resource_attributes: Record<string, string>
   service_name: string
