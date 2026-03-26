@@ -7,6 +7,9 @@
     },
     {
       "path": "./otel-collector"
+    },
+    {
+      "path": "./otel-logs-prototype"
     }
   ]
 }

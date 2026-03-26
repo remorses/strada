@@ -1,0 +1,24 @@
+{
+  "name": "otel-logs-prototype",
+  "version": "0.0.1",
+  "private": true,
+  "description": "OTel logs prototype",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "spiceflow": "^1.18.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250313.0",
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2",
+    "wrangler": "^4.5.1"
+  }
+}
