@@ -73,6 +73,6 @@ Extracted errors are written to `otel_errors` with fingerprinting for issue grou
 Run tests with `vitest run` (not `vitest` which starts watch mode and never exits):
 
 ```bash
-pnpm vitest run                           # all tests
-pnpm vitest run src/extract-errors.test.ts # single file
+bun run vitest run                           # all tests
+bun run vitest run src/extract-errors.test.ts # single file
 ```

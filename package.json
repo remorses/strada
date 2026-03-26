@@ -7,11 +7,14 @@
     "johnpyp <johnpyp.dev@gmail.com>"
   ],
   "repository": "https://github.com/remorses/",
+  "workspaces": [
+    "./*"
+  ],
   "scripts": {
     "test": "NODE_ENV=test vitest",
-    "watch": "pnpm -r watch",
-    "build": "pnpm -r build",
-    "release": "pnpm build && changeset",
+    "build": "bun run --filter '*' build",
+    "release": "bun run build && changeset",
+    "typecheck": "tsc -b",
     "fix": "oxfmt --write && oxlint --fix && tsc -b"
   },
   "dependencies": {

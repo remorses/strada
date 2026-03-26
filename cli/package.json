@@ -44,9 +44,9 @@
   },
   "scripts": {
     "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/cli.js",
-    "prepublishOnly": "pnpm build",
+    "prepublishOnly": "bun run build",
     "cli": "tsx src/cli",
-    "typecheck": "tsc"
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",
