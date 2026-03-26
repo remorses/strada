@@ -1,2 +1,8 @@
 packages:
-  - "./*"
+  - ./*
+
+onlyBuiltDependencies:
+  - esbuild
+  - protobufjs
+  - sharp
+  - workerd
