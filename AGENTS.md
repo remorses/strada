@@ -119,11 +119,19 @@ For reads, the backend generates a short-lived JWT per user session:
 }
 ```
 
+Use a **unique `name` per customer/user** (for example `user_<user_id>`) so Tinybird tracks rate limits separately for each customer. Keep `limits.rps` aligned with the customer's plan/tier. Example policy:
+
+- pro tier: `limits: { "rps": 10 }`
+- enterprise tier: `limits: { "rps": 50 }`
+
+This is how we stop one customer from consuming too many reads or too much query traffic and stealing shared Tinybird capacity from other tenants. Tinybird only supports **per-JWT request-rate limiting**, not per-JWT vCPU or memory quotas, so `limits.rps` is the main tenant-level fairness control.
+
 The `filter` is enforced server-side by Tinybird on every query to `/v0/sql`. Users can write arbitrary SQL and the filter is always appended — no way to bypass it. The JWT is signed with the workspace admin token and can't be tampered with.
 
 **All SQL queries must ignore `TenantId` completely.** `TenantId` exists only for auth — Tinybird's JWT filter handles it automatically on every query. Never add `WHERE TenantId = '...'` in application SQL, UI queries, or example queries. If a query uses `SELECT *`, the column will appear in results but it carries no semantic meaning for the application — it's purely an infrastructure concern for row-level isolation.
 
 The ClickHouse HTTP interface (`clickhouse.*.tinybird.co`) does NOT support JWTs or row-level filtering. All user-facing queries must go through Tinybird's Query API (`/v0/sql`).
+
 
 ### ServiceName as project
 
