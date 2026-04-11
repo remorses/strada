@@ -51,7 +51,7 @@
   "dependencies": {
     "@clack/prompts": "^1.0.0",
     "@tinybirdco/sdk": "^0.0.64",
-    "goke": "^6.3.1",
+    "goke": "^6.6.1",
     "picocolors": "^1.1.1",
     "spiceflow": "^1.18.0",
     "string-dedent": "^3.0.2"
