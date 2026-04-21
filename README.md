@@ -2,7 +2,7 @@
     <br/>
     <br/>
     <h3>strada</h3>
-    <p>project under development</p>
+    <p>Sentry + DataDog simple alternative for agents, based on OTEL. Self hosted with one command on TinyBird</p>
     <br/>
     <br/>
 </div>
@@ -27,3 +27,7 @@
 - hyper customizable: generative UI let you generate only what you need. just ask your agent what you want to see. no more intricate system of toggles, selects, options everywhere.
 - delightful user interface
 - real time: strada is built on top of clickhouse with optimized schema and tables for instant graphs and data visualization.
+
+### docs
+
+- [Tinybird pricing breakdown](./docs/tinybird-pricing.md) — how Tinybird pricing works, cost estimates for OTel workloads, retention strategies, TTL auto-deletion
