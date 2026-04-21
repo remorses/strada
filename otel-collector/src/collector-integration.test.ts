@@ -33,12 +33,6 @@ interface StartedServer {
   baseUrl: string
 }
 
-interface CollectorModule {
-  app: {
-    listen(port: number, hostname?: string): Promise<{ port: number; server: Server }>
-  }
-}
-
 function parsePortFromEnv(name: string): number {
   const raw = process.env[name]
   if (!raw) return 0
@@ -230,15 +224,35 @@ function stripVolatileFields(value: unknown): unknown {
     return value.map(stripVolatileFields)
   }
 
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
+  if (isRecord(value)) {
+    const entries = Object.entries(value)
       .filter(([key]) => !VOLATILE_FIELDS.has(key))
       .map(([key, entryValue]) => [key, stripVolatileFields(entryValue)] as const)
       .sort(([a], [b]) => a.localeCompare(b))
     return Object.fromEntries(entries)
   }
 
+  if (typeof value === 'string') {
+    return value
+      .replace(
+        /file:\/\/\/[^\s"]+node_modules\/\.pnpm\/@vitest\+runner@[^/]+\/node_modules\/@vitest\/runner\/dist\/chunk-[^":]+\.js(?::\d+:\d+)?/g,
+        'file:///__vitest_runner__/dist/chunk-vitest.js:0:0',
+      )
+      .replace(
+        /(collector-integration\.test\.ts):(\d+):(\d+)/g,
+        '$1:0:0',
+      )
+      .replace(
+        /(collector-integration\.test\.ts","lineno":)(\d+)(,"colno":)(\d+)/g,
+        '$1 0$3 0',
+      )
+  }
+
   return value
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
 }
 
 describe.sequential('collector integration with official OTel SDKs', () => {
@@ -284,14 +298,14 @@ describe.sequential('collector integration with official OTel SDKs', () => {
     let collector: StartedServer | undefined
 
     try {
-      ;(process.env as Record<string, string | undefined>).TINYBIRD_ENDPOINT = undefined
-      ;(process.env as Record<string, string | undefined>).TINYBIRD_TOKEN = undefined
+      delete process.env.TINYBIRD_ENDPOINT
+      delete process.env.TINYBIRD_TOKEN
       process.env.CLICKHOUSE_URL = fakeBackend.baseUrl
       process.env.CLICKHOUSE_DATABASE = 'default'
       process.env.CLICKHOUSE_USER = 'default'
       process.env.CLICKHOUSE_PASSWORD = ''
 
-      const collectorModule = (await import('./index.ts')) as CollectorModule
+      const collectorModule = await import('./index.ts')
 
       const listener = await collectorModule.app.listen(
         parsePortFromEnv('OTEL_COLLECTOR_TEST_PORT'),
@@ -385,17 +399,17 @@ describe.sequential('collector integration with official OTel SDKs', () => {
               {
                 "DebugId": "",
                 "Environment": "",
-                "ExceptionFrames": "",
+                "ExceptionFrames": "[{"filename":"file:///__vitest_runner__/dist/chunk-vitest.js:0:0","lineno":1893,"colno":20,"in_app":false},{"function":"processTicksAndRejections","filename":"node:internal/process/task_queues","lineno":104,"colno":5,"in_app":false},{"filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true},{"function":"emitOtelData","filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true}]",
                 "ExceptionMessage": "payment declined",
                 "ExceptionStacktrace": "Error: payment declined
-            at emitOtelData (/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:141:24)
-            at /Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:308:13
+            at emitOtelData (/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:0:0)
+            at /Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:0:0
             at processTicksAndRejections (node:internal/process/task_queues:104:5)
-            at file:///Users/morse/Documents/GitHub/strada/node_modules/.pnpm/@vitest+runner@3.2.4/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20",
+            at file:///__vitest_runner__/dist/chunk-vitest.js:0:0",
                 "ExceptionType": "Error",
                 "Fingerprint": [
                   "Error",
-                  "payment declined",
+                  "emitOtelData",
                 ],
                 "Level": "error",
                 "MechanismHandled": true,
@@ -567,10 +581,10 @@ describe.sequential('collector integration with official OTel SDKs', () => {
                   {
                     "exception.message": "payment declined",
                     "exception.stacktrace": "Error: payment declined
-            at emitOtelData (/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:141:24)
-            at /Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:308:13
+            at emitOtelData (/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:0:0)
+            at /Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:0:0
             at processTicksAndRejections (node:internal/process/task_queues:104:5)
-            at file:///Users/morse/Documents/GitHub/strada/node_modules/.pnpm/@vitest+runner@3.2.4/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20",
+            at file:///__vitest_runner__/dist/chunk-vitest.js:0:0",
                     "exception.type": "Error",
                   },
                 ],

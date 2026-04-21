@@ -252,6 +252,113 @@ describe("extractErrorsFromLogs", () => {
     expect(row.fingerprint).toEqual(["db-timeout", "users-service"]);
   });
 
+  it("parses stacktrace frames during ingest when structured frames are absent", () => {
+    const input: ExportLogsServiceRequest = {
+      resourceLogs: [
+        {
+          scopeLogs: [
+            {
+              logRecords: [
+                {
+                  timeUnixNano: "1000000000",
+                  attributes: [
+                    {
+                      key: "exception.type",
+                      value: { stringValue: "TypeError" },
+                    },
+                    {
+                      key: "exception.message",
+                      value: { stringValue: "x is null" },
+                    },
+                    {
+                      key: "exception.stacktrace",
+                      value: {
+                        stringValue:
+                          "TypeError: x is null\n    at processOrder (/app/src/order.js:42:15)\n    at main (/app/src/main.js:10:3)",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const ndjson = extractErrorsFromLogs(input, "acme");
+    const row = JSON.parse(ndjson.trim());
+    const frames = JSON.parse(row.exception_frames);
+
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toMatchObject({
+      function: "main",
+      filename: "/app/src/main.js",
+      lineno: 10,
+      colno: 3,
+    });
+    expect(row.fingerprint).toEqual(["TypeError", "processOrder"]);
+  });
+
+  it("keeps SDK-provided structured frames instead of reparsing", () => {
+    const input: ExportLogsServiceRequest = {
+      resourceLogs: [
+        {
+          scopeLogs: [
+            {
+              logRecords: [
+                {
+                  timeUnixNano: "1000000000",
+                  attributes: [
+                    {
+                      key: "exception.type",
+                      value: { stringValue: "TypeError" },
+                    },
+                    {
+                      key: "exception.message",
+                      value: { stringValue: "x is null" },
+                    },
+                    {
+                      key: "exception.stacktrace",
+                      value: {
+                        stringValue:
+                          "TypeError: x is null\n    at processOrder (/app/src/order.js:42:15)",
+                      },
+                    },
+                    {
+                      key: "exception.structured_frames",
+                      value: {
+                        stringValue: JSON.stringify([
+                          {
+                            filename: "src/sdk.js",
+                            function: "sdkFrame",
+                            in_app: true,
+                          },
+                        ]),
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const ndjson = extractErrorsFromLogs(input, "acme");
+    const row = JSON.parse(ndjson.trim());
+
+    expect(JSON.parse(row.exception_frames)).toEqual([
+      {
+        filename: "src/sdk.js",
+        function: "sdkFrame",
+        in_app: true,
+      },
+    ]);
+    expect(row.fingerprint).toEqual(["TypeError", "sdkFrame"]);
+  });
+
   it("defaults mechanism_handled to true when not specified", () => {
     const input: ExportLogsServiceRequest = {
       resourceLogs: [

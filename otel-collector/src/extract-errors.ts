@@ -13,6 +13,7 @@
 
 import type { ExportLogsServiceRequest, ExportTraceServiceRequest, KeyValue } from "./otlp-types.ts";
 import type { OtelErrorRow } from "./otel-row-types.ts";
+import { parseStackTrace } from "./parse-stacktrace.ts";
 import { convertAttributes, getServiceName, nanosToRFC3339, anyValueToString } from "./transform-attributes.ts";
 
 // ─── Public API ───
@@ -262,7 +263,13 @@ function buildErrorRow(params: BuildErrorRowParams): OtelErrorRow {
 
   // Read custom error-tracking attributes
   const stacktrace = attrs["exception.stacktrace"] ?? "";
-  const structuredFrames = attrs["exception.structured_frames"] ?? "";
+  let structuredFrames = attrs["exception.structured_frames"] ?? "";
+  if (!structuredFrames && stacktrace) {
+    const parsed = parseStackTrace(stacktrace);
+    if (parsed.frames.length > 0) {
+      structuredFrames = JSON.stringify(parsed.frames);
+    }
+  }
   const mechanismType = attrs["exception.mechanism.type"] ?? "generic";
   const mechanismHandled = attrs["exception.mechanism.handled"] !== "false";
   const debugId = attrs["exception.debug_id"] ?? "";
