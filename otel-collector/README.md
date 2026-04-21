@@ -96,8 +96,8 @@ export function captureException(
     tags?: Record<string, string>;
   },
 ) {
-  const fingerprint = Array.isArray((error as Error & { fingerprint?: unknown }).fingerprint)
-    ? (error as Error & { fingerprint: string[] }).fingerprint
+  const fingerprint = Array.isArray(error["fingerprint"])
+    ? error["fingerprint"]
     : undefined;
 
   const attributes: Record<string, string> = {
@@ -112,7 +112,6 @@ export function captureException(
     attributes["exception.fingerprint"] = JSON.stringify(fingerprint);
   }
 
-  // Extra tags get forwarded as-is (appear in the Tags column)
   if (opts?.tags) {
     for (const [k, v] of Object.entries(opts.tags)) {
       attributes[k] = v;
@@ -180,11 +179,12 @@ app.post("/orders", async (req, res) => {
     await processOrder(req.body);
     res.json({ ok: true });
   } catch (err) {
-    if (!(err instanceof CheckoutError)) {
-      err = new CheckoutError("payment provider rejected the charge");
-    }
+    const error =
+      err instanceof CheckoutError
+        ? err
+        : new CheckoutError("payment provider rejected the charge");
 
-    captureException(err as Error, {
+    captureException(error, {
       handled: true,
       tags: { orderId: req.body.id, userId: req.user.id },
     });
@@ -219,7 +219,6 @@ import {
   BatchLogRecordProcessor,
   LoggerProvider,
   type LogRecordProcessor,
-  type SdkLogRecord,
 } from "@opentelemetry/sdk-logs";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
@@ -252,7 +251,8 @@ function shouldIgnoreBrowserError(error: unknown) {
 class FilteringLogProcessor implements LogRecordProcessor {
   constructor(private readonly inner: LogRecordProcessor) {}
 
-  onEmit(record: SdkLogRecord, context?: Parameters<LogRecordProcessor["onEmit"]>[1]) {
+  onEmit(...args: Parameters<LogRecordProcessor["onEmit"]>) {
+    const record = args[0];
     const message = String(record.attributes["exception.message"] ?? "");
     const stack = String(record.attributes["exception.stacktrace"] ?? "");
 
@@ -263,7 +263,7 @@ class FilteringLogProcessor implements LogRecordProcessor {
     if (stack.includes("moz-extension://")) return;
     if (stack.includes("safari-extension://")) return;
 
-    this.inner.onEmit(record, context);
+    this.inner.onEmit(...args);
   }
 
   forceFlush() {
@@ -308,8 +308,8 @@ export function captureException(
 ) {
   if (shouldIgnoreBrowserError(error)) return;
 
-  const fingerprint = Array.isArray((error as Error & { fingerprint?: unknown }).fingerprint)
-    ? (error as Error & { fingerprint: string[] }).fingerprint
+  const fingerprint = Array.isArray(error["fingerprint"])
+    ? error["fingerprint"]
     : undefined;
 
   const attributes: Record<string, string> = {
