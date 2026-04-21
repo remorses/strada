@@ -12,7 +12,7 @@ see other files in sqltemplates as well for other kinds of tables
 
 - **otel-collector**: Cloudflare Worker (Spiceflow) that receives OTLP HTTP/JSON and forwards to either Tinybird Events API or ClickHouse HTTP interface as NDJSON. Backend is selected by environment variables: set `TINYBIRD_ENDPOINT` + `TINYBIRD_TOKEN` for Tinybird, or `CLICKHOUSE_URL` for direct ClickHouse. No separate adapter needed for self-hosted ClickHouse.
 - **tinybird/**: Tinybird project with datasource definitions and materialized views, deployed with `tb deploy`. Only used when the Tinybird backend is configured.
-- **Multi-tenancy**: hostname-based tenant extraction. Each tenant gets `{tenant}-ingest.stradametrics.com`. Self-hosted users use a plain `ingest.{domain}` with empty tenant_id
+- **Multi-tenancy**: hostname-based tenant extraction. Each tenant gets `{tenant}-ingest.strada.sh`. Self-hosted users use a plain `ingest.{domain}` with empty tenant_id
 - **Query layer**: Tinybird Query API (`/v0/sql`) with JWT row-level filtering, NOT the ClickHouse HTTP interface (which doesn't support JWTs or row filtering). No pipe endpoints — all queries are raw SQL
 
 ### Backend selection
@@ -56,9 +56,9 @@ The only Strada addition is `TenantId` as the first column in every Tinybird tab
 Tenant identity comes from the **hostname**, not from API keys or headers. No KV, no DB lookup — pure hostname parsing:
 
 ```
-acme-ingest.stradametrics.com       → tenant_id = "acme"
-my-company-ingest.stradametrics.com → tenant_id = "my-company"
-ingest.stradametrics.com            → tenant_id = ""  (shared/default)
+acme-ingest.strada.sh       → tenant_id = "acme"
+my-company-ingest.strada.sh → tenant_id = "my-company"
+ingest.strada.sh            → tenant_id = ""  (shared/default)
 ingest.mycompany.com                → tenant_id = ""  (self-hosted)
 localhost:3000                      → tenant_id = ""  (development)
 ```

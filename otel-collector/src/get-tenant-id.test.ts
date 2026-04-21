@@ -3,12 +3,12 @@ import { getTenantId } from "./get-tenant-id.ts";
 
 describe("getTenantId", () => {
   it("extracts tenant from standard ingest subdomain", () => {
-    const req = new Request("https://acme-ingest.stradametrics.com/v1/traces");
+    const req = new Request("https://acme-ingest.strada.sh/v1/traces");
     expect(getTenantId(req)).toBe("acme");
   });
 
   it("extracts tenant with hyphens in name", () => {
-    const req = new Request("https://my-company-ingest.stradametrics.com/v1/logs");
+    const req = new Request("https://my-company-ingest.strada.sh/v1/logs");
     expect(getTenantId(req)).toBe("my-company");
   });
 
@@ -17,8 +17,8 @@ describe("getTenantId", () => {
     expect(getTenantId(req)).toBe("");
   });
 
-  it("returns empty string for ingest.stradametrics.com", () => {
-    const req = new Request("https://ingest.stradametrics.com/v1/logs");
+  it("returns empty string for ingest.strada.sh", () => {
+    const req = new Request("https://ingest.strada.sh/v1/logs");
     expect(getTenantId(req)).toBe("");
   });
 
@@ -28,7 +28,7 @@ describe("getTenantId", () => {
   });
 
   it("returns empty string for plain domain", () => {
-    const req = new Request("https://stradametrics.com/v1/traces");
+    const req = new Request("https://strada.sh/v1/traces");
     expect(getTenantId(req)).toBe("");
   });
 

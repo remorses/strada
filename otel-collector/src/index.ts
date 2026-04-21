@@ -5,7 +5,7 @@
 //   - ClickHouse: set CLICKHOUSE_URL (+ CLICKHOUSE_DATABASE, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD)
 //
 // Multi-tenancy: tenant_id is extracted from the hostname.
-// Each tenant gets a subdomain: {tenant}-ingest.stradametrics.com
+// Each tenant gets a subdomain: {tenant}-ingest.strada.sh
 // The worker parses the hostname to get the tenant_id and injects it
 // into every NDJSON row. No KV or DB lookup needed.
 

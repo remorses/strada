@@ -218,7 +218,7 @@ strada.identify('user_123', {
 import { initStrada } from '@strada/browser'
 
 initStrada({
-  endpoint: 'https://acme-ingest.stradametrics.com',
+  endpoint: 'https://acme-ingest.strada.sh',
   service: 'my-app',
   version: '1.4.2',
   

@@ -3,12 +3,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-03-25",
   "compatibility_flags": ["nodejs_compat"],
-  // Route pattern: each tenant gets {tenant}-ingest.stradametrics.com
+  // Route pattern: each tenant gets {tenant}-ingest.strada.sh
   // The worker extracts tenant_id from the hostname and injects it into every row.
   "routes": [
     {
-      "pattern": "*-ingest.stradametrics.com/*",
-      "zone_name": "stradametrics.com",
+      "pattern": "*-ingest.strada.sh/*",
+      "zone_name": "strada.sh",
     },
   ],
   // Backend selection: set TINYBIRD_* vars for Tinybird, or CLICKHOUSE_* for ClickHouse.
