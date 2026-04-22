@@ -40,6 +40,7 @@ import {
   setTags,
   resetContext,
   resolveMetricReaderOptions,
+  ATTR,
   BAGGAGE_SESSION_ID,
   BAGGAGE_USER_ID,
   ERROR_SEVERITY,
@@ -92,12 +93,12 @@ class BaggageSpanProcessor implements SpanProcessor {
 
     const sessionId = baggage.getEntry(BAGGAGE_SESSION_ID)?.value;
     if (sessionId) {
-      span.setAttribute("session.id", sessionId);
+      span.setAttribute(ATTR.SESSION_ID, sessionId);
     }
 
     const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
     if (userId) {
-      span.setAttribute("user.id", userId);
+      span.setAttribute(ATTR.USER_ID, userId);
     }
   }
 
@@ -133,12 +134,12 @@ class BaggageLogProcessor implements LogRecordProcessor {
     if (baggage) {
       const sessionId = baggage.getEntry(BAGGAGE_SESSION_ID)?.value;
       if (sessionId) {
-        record.setAttribute("session.id", sessionId);
+        record.setAttribute(ATTR.SESSION_ID, sessionId);
       }
 
       const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
       if (userId) {
-        record.setAttribute("user.id", userId);
+        record.setAttribute(ATTR.USER_ID, userId);
       }
     }
 

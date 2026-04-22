@@ -47,6 +47,7 @@ import {
   setTags,
   resetContext,
   resolveUserId,
+  ATTR,
   createStradaBaggage,
   BAGGAGE_SESSION_ID,
   BAGGAGE_USER_ID,
@@ -118,8 +119,8 @@ class FilteringLogProcessor implements LogRecordProcessor {
 
   onEmit(...args: Parameters<LogRecordProcessor["onEmit"]>): void {
     const record = args[0];
-    const message = String(record.attributes?.["exception.message"] ?? "");
-    const stack = String(record.attributes?.["exception.stacktrace"] ?? "");
+    const message = String(record.attributes?.[ATTR.EXCEPTION_MESSAGE] ?? "");
+    const stack = String(record.attributes?.[ATTR.EXCEPTION_STACKTRACE] ?? "");
 
     if (message === "Script error." || message === "Script error") return;
     if (message.includes("ResizeObserver loop limit exceeded")) return;
@@ -158,7 +159,7 @@ class StradaSpanProcessor implements SpanProcessor {
 
   onStart(span: Span): void {
     const sessionId = this.getSessionId();
-    span.setAttribute("session.id", sessionId);
+    span.setAttribute(ATTR.SESSION_ID, sessionId);
 
     // Current page URL info
     if (typeof window !== "undefined") {
@@ -171,7 +172,7 @@ class StradaSpanProcessor implements SpanProcessor {
 
     const userId = this.getUserId();
     if (userId) {
-      span.setAttribute("user.id", userId);
+      span.setAttribute(ATTR.USER_ID, userId);
     }
   }
 
@@ -208,14 +209,14 @@ class ContextLogProcessor implements LogRecordProcessor {
     const record = args[0];
 
     // Inject analytics context into the log record
-    record.setAttribute("session.id", this.getSessionId());
+    record.setAttribute(ATTR.SESSION_ID, this.getSessionId());
     if (typeof window !== "undefined") {
-      record.setAttribute("url.path", window.location.pathname);
-      record.setAttribute("url.full", window.location.href);
+      record.setAttribute(ATTR.URL_PATH, window.location.pathname);
+      record.setAttribute(ATTR.URL_FULL, window.location.href);
     }
     const userId = this.getUserId();
     if (userId) {
-      record.setAttribute("user.id", userId);
+      record.setAttribute(ATTR.USER_ID, userId);
     }
 
     this.inner.onEmit(...args);
@@ -250,10 +251,10 @@ function getPageAttributes(
   referrer: string = document.referrer,
 ): Record<string, string> {
   return {
-    "url.path": url.pathname,
-    "url.query": url.search,
-    "url.full": url.href,
-    ...(referrer ? { "http.request.header.referer": referrer } : {}),
+    [ATTR.URL_PATH]: url.pathname,
+    [ATTR.URL_QUERY]: url.search,
+    [ATTR.URL_FULL]: url.href,
+    ...(referrer ? { [ATTR.REFERER]: referrer } : {}),
   };
 }
 
@@ -347,7 +348,7 @@ export function initStrada(options: StradaOptions): void {
       const mobile = Reflect.get(uaData, "mobile");
 
       if (typeof platform === "string") {
-        browserAttrs["browser.platform"] = platform;
+        browserAttrs[ATTR.BROWSER_PLATFORM] = platform;
       }
       if (Array.isArray(brands)) {
         const normalizedBrands = brands
@@ -362,18 +363,18 @@ export function initStrada(options: StradaOptions): void {
           })
           .filter((brand): brand is string => Boolean(brand));
         if (normalizedBrands.length > 0) {
-          browserAttrs["browser.brands"] = normalizedBrands;
+          browserAttrs[ATTR.BROWSER_BRANDS] = normalizedBrands;
         }
       }
       if (typeof mobile === "boolean") {
-        browserAttrs["browser.mobile"] = mobile;
+        browserAttrs[ATTR.BROWSER_MOBILE] = mobile;
       }
     }
     if (navigator.userAgent) {
-      browserAttrs["user_agent.original"] = navigator.userAgent;
+      browserAttrs[ATTR.USER_AGENT_ORIGINAL] = navigator.userAgent;
     }
     if (navigator.language) {
-      browserAttrs["browser.language"] = navigator.language;
+      browserAttrs[ATTR.BROWSER_LANGUAGE] = navigator.language;
     }
   }
 
@@ -508,8 +509,8 @@ export function initStrada(options: StradaOptions): void {
 
       endCurrentPageSpan();
       startPageSpan(dest, {
-        "navigation.type": event.navigationType, // "push" | "replace" | "traverse"
-        "navigation.user_initiated": event.userInitiated,
+        [ATTR.NAVIGATION_TYPE]: event.navigationType, // "push" | "replace" | "traverse"
+        [ATTR.NAVIGATION_USER_INITIATED]: event.userInitiated,
       }, window.location.href);
     };
     navigation.addEventListener("navigate", _navigateListener);
@@ -539,7 +540,7 @@ export function startPageSpan(
   const tracer = trace.getTracer("strada-web");
   _currentPageviewSpan = tracer.startSpan("pageview", {
     attributes: {
-      "session.id": _sessionId ?? "",
+      [ATTR.SESSION_ID]: _sessionId ?? "",
       ...getPageAttributes(pageUrl, referrer),
       ...extraAttributes,
     },
@@ -585,7 +586,7 @@ export function track(
   }
 
   const attributes: Record<string, string | number | boolean> = {
-    "event.name": name,
+    [ATTR.EVENT_NAME]: name,
   };
 
   // Add custom properties with custom.* prefix
