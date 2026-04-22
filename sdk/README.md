@@ -118,7 +118,7 @@ try {
 After `initStrada()`, the global OTel providers are configured. You can use standard OTel APIs directly.
 
 ```ts
-import { initStrada, trace, logs, metrics } from "@strada.sh/sdk"
+import { initStrada, trace, logs, metrics, SeverityNumber } from "@strada.sh/sdk"
 
 initStrada({
   service: "worker",
@@ -135,10 +135,171 @@ const span = tracer.startSpan("send-email")
 logger.emit({
   body: "sending email",
   severityText: "INFO",
-  severityNumber: 9,
+  severityNumber: SeverityNumber.INFO,
 })
 counter.add(1)
 span.end()
+```
+
+## Create traces and spans
+
+Use the standard OTel tracing API after `initStrada()`.
+
+```ts
+import { initStrada, trace, SpanStatusCode } from "@strada.sh/sdk"
+
+initStrada({
+  service: "api",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+const tracer = trace.getTracer("checkout")
+
+const span = tracer.startSpan("checkout.request", {
+  attributes: {
+    "checkout.id": "chk_123",
+    "user.id": "user_123",
+  },
+})
+
+try {
+  span.addEvent("payment.started")
+  span.setAttribute("checkout.step", "payment")
+  span.setStatus({ code: SpanStatusCode.OK })
+} catch (error) {
+  if (error instanceof Error) {
+    span.recordException(error)
+  }
+  span.setStatus({ code: SpanStatusCode.ERROR })
+  throw error
+} finally {
+  span.end()
+}
+```
+
+### Parent and child spans
+
+```ts
+import { initStrada, trace, context } from "@strada.sh/sdk"
+
+initStrada({
+  service: "api",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+const tracer = trace.getTracer("checkout")
+
+const parentSpan = tracer.startSpan("checkout.request")
+
+await context.with(trace.setSpan(context.active(), parentSpan), async () => {
+  const childSpan = tracer.startSpan("db.insert-order")
+
+  try {
+    childSpan.setAttribute("db.system", "postgresql")
+    childSpan.setAttribute("db.operation", "INSERT")
+    // run database work here
+  } finally {
+    childSpan.end()
+  }
+})
+
+parentSpan.end()
+```
+
+## Emit logs with OpenTelemetry
+
+The standard OTel logs API is `logs.getLogger().emit()`.
+
+Important: **`console.log()` and other console methods are not sent by default**. The browser SDK exports logs you emit through the OTel logs API, `track()`, `captureException()`, and uncaught browser errors. It does not monkey-patch `console.log`, `console.info`, `console.warn`, or `console.error`.
+
+```ts
+import { initStrada, logs, SeverityNumber } from "@strada.sh/sdk"
+
+initStrada({
+  service: "frontend",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+const logger = logs.getLogger("app")
+
+logger.emit({
+  severityNumber: SeverityNumber.INFO,
+  severityText: "INFO",
+  body: "checkout started",
+  attributes: {
+    "event.name": "checkout_started",
+    "user.id": "user_123",
+    "custom.plan": "pro",
+  },
+})
+```
+
+### Error logs with raw OTel
+
+```ts
+import { initStrada, logs, SeverityNumber } from "@strada.sh/sdk"
+
+initStrada({
+  service: "api",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+const logger = logs.getLogger("app")
+
+try {
+  throw new TypeError("payment failed")
+} catch (error) {
+  const err = error instanceof Error ? error : new Error(String(error))
+
+  logger.emit({
+    severityNumber: SeverityNumber.ERROR,
+    severityText: "ERROR",
+    body: err.message,
+    attributes: {
+      "exception.type": err.name,
+      "exception.message": err.message,
+      "exception.stacktrace": err.stack ?? "",
+    },
+  })
+}
+```
+
+### Same thing with Strada helpers
+
+For analytics-style events, prefer `track()` in the browser:
+
+```ts
+import { initStrada, track } from "@strada.sh/sdk"
+
+initStrada({
+  service: "frontend",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+track("checkout_started", {
+  plan: "pro",
+  source: "pricing-page",
+})
+```
+
+For errors, prefer `captureException()` when you want Strada's error conventions:
+
+```ts
+import { initStrada, captureException } from "@strada.sh/sdk"
+
+initStrada({
+  service: "api",
+  endpoint: "https://my-project-ingest.strada.sh",
+})
+
+try {
+  throw new Error("payment failed")
+} catch (error) {
+  captureException(error, {
+    handled: true,
+    mechanism: "generic",
+  })
+}
 ```
 
 ## Browser custom events
@@ -350,9 +511,18 @@ That means:
 
 - pageviews end on `visibilitychange: hidden`
 - OTel batch processors **auto flush on document hide by default**
+- OTel browser processors also install a **`pagehide` fallback**, mainly for Safari compatibility
 - you can turn that off with `telemetry.traces.disableAutoFlushOnDocumentHide` or `telemetry.logs.disableAutoFlushOnDocumentHide`
 
 The browser OTLP HTTP exporter uses `fetch` with **`keepalive: true`** when possible, which improves the chance that an export already in progress can finish during page teardown. But there is still **no hard guarantee** that telemetry buffered in memory right before tab close will be delivered.
+
+Strada does **not** add its own extra unload hook on top of this. It relies on the upstream OTel browser behavior:
+
+- flush on `visibilitychange` when the document becomes hidden
+- flush on `pagehide` as a fallback
+- export with `fetch(..., { keepalive: true })`
+
+The browser exporter does **not** use `navigator.sendBeacon()` directly in the current installed OTel path.
 
 Practical rule:
 
@@ -361,6 +531,47 @@ Practical rule:
 
 If this matters for a particular flow, call `flush()` yourself at a controlled boundary.
 
+## Browser-to-server context propagation
+
+The SDK automatically propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. Every outgoing `fetch`/`XHR` request from the browser includes both `traceparent` and `baggage` HTTP headers.
+
+```text
+Browser                                    Server
+session.id = abc                           BaggageSpanProcessor reads baggage:
+user.id = user_123                           session.id -> span attribute
+          |                                  user.id -> span attribute
+          | fetch POST /api/checkout
+          | headers:                       BaggageLogProcessor reads baggage:
+          |   traceparent: 00-abc123...      session.id -> log attribute
+          |   baggage: strada.session.id=abc,strada.user.id=user_123
+          v
+```
+
+This means backend spans and log records created within a browser-initiated request automatically carry the browser's `session.id` and `user.id`. No app code needed.
+
+**What this enables:**
+
+- Backend custom events (emitted via `logs.getLogger().emit()`) are correlated to the browser session
+- Errors captured on the backend include the browser session context
+- You can query all events for a session across browser and backend in a single SQL query:
+
+```sql
+SELECT Timestamp, ServiceName, LogAttributes['event.name'] AS event
+FROM otel_logs
+WHERE LogAttributes['session.id'] = {session_id:String}
+ORDER BY Timestamp ASC
+```
+
+**How it works under the hood:**
+
+- The browser SDK registers a `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator`
+- The `PageviewContextManager` injects current baggage (session.id + user.id) into the OTel context on every outgoing request
+- The Node SDK registers the same composite propagator to extract baggage from incoming requests
+- `BaggageSpanProcessor` reads the baggage and sets `session.id` / `user.id` as span attributes
+- `BaggageLogProcessor` does the same for log records
+
+Baggage updates live. When you call `setUser()` in the browser, the next outgoing request will carry the updated `user.id`.
+
 ## Browser runtime
 
 The browser build sets up:
@@ -368,6 +579,7 @@ The browser build sets up:
 - `WebTracerProvider`
 - `LoggerProvider`
 - OTLP HTTP exporters for traces and logs
+- W3C Baggage propagation for session.id and user.id
 - optional `@opentelemetry/auto-instrumentations-web`
 - global `error` and `unhandledrejection` handlers
 - pageview span lifecycle
@@ -380,6 +592,7 @@ The server build sets up:
 - `NodeSDK` for traces and metrics
 - a separate `LoggerProvider` for logs
 - OTLP HTTP exporters for traces, logs, metrics
+- W3C Baggage extraction with `BaggageSpanProcessor` and `BaggageLogProcessor`
 - optional `@opentelemetry/auto-instrumentations-node`
 - global `uncaughtException` and `unhandledRejection` handlers
 - `flush()` and `shutdown()` helpers for graceful process exit
@@ -422,6 +635,7 @@ That excludes ordinary logs that do not have `event.name`.
 - **Exceptions are logs first**. The collector extracts them into `otel_errors`
 - **Browser sessions use `session.id`**, not a single session-wide trace
 - **Pageview spans are roots**. Fetch/XHR/user-interaction spans usually become children of the current pageview
+- **Session context propagates to the backend** via W3C Baggage. Backend spans and logs within a browser-initiated request automatically get `session.id` and `user.id`
 
 ## API summary
 
