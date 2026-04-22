@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ROOT_CONTEXT, trace, propagation } from "@opentelemetry/api";
 import {
   normalizeError,
@@ -6,7 +6,8 @@ import {
   errorToAttributes,
   applyBeforeSend,
   resolveMetricReaderOptions,
-  setUser,
+  resolveUserId,
+  readCookie,
   setTags,
   resetContext,
   DEFAULT_IGNORE_ERRORS,
@@ -255,16 +256,7 @@ describe("errorToAttributes", () => {
     expect(attrs["env"]).toBe("production");
   });
 
-  it("includes user context set via setUser()", () => {
-    setUser({ id: "user_42", email: "tommy@acme.com" });
-    const err = new Error("fail");
-    const attrs = errorToAttributes(err);
-
-    expect(attrs[ATTR["user.id"]]).toBe("user_42");
-    expect(attrs[ATTR["user.email"]]).toBe("tommy@acme.com");
-  });
-
-  it("does not include user attributes when user is not set", () => {
+  it("does not include user attributes by default", () => {
     const err = new Error("fail");
     const attrs = errorToAttributes(err);
 
@@ -384,6 +376,133 @@ describe("getBrowserWorkContext", () => {
 });
 
 // ---------------------------------------------------------------------------
+// readCookie + resolveUserId (cookie-based user ID)
+// ---------------------------------------------------------------------------
+// These tests simulate document.cookie in a Node environment by creating
+// a minimal document object on globalThis.
+
+describe("readCookie", () => {
+  let cookieValue = "";
+  const hadDocument = "document" in globalThis;
+  const originalDocument = globalThis.document;
+
+  beforeEach(() => {
+    cookieValue = "";
+    // Create a minimal document with a cookie getter
+    (globalThis as any).document = {
+      get cookie() { return cookieValue; },
+    };
+  });
+
+  afterEach(() => {
+    if (hadDocument) {
+      (globalThis as any).document = originalDocument;
+    } else {
+      delete (globalThis as any).document;
+    }
+  });
+
+  it("reads a cookie by name", () => {
+    cookieValue = "strada_uid=user_42; other=value";
+    expect(readCookie("strada_uid")).toBe("user_42");
+  });
+
+  it("returns undefined when cookie is not present", () => {
+    cookieValue = "other=value";
+    expect(readCookie("strada_uid")).toBeUndefined();
+  });
+
+  it("handles URL-encoded cookie values", () => {
+    cookieValue = "strada_uid=user%20123";
+    expect(readCookie("strada_uid")).toBe("user 123");
+  });
+
+  it("reads the first cookie when it appears first", () => {
+    cookieValue = "strada_uid=first; another=second";
+    expect(readCookie("strada_uid")).toBe("first");
+  });
+
+  it("reads cookie when it appears after other cookies", () => {
+    cookieValue = "foo=bar; strada_uid=user_99; baz=qux";
+    expect(readCookie("strada_uid")).toBe("user_99");
+  });
+
+  it("returns undefined when document.cookie is empty", () => {
+    cookieValue = "";
+    expect(readCookie("strada_uid")).toBeUndefined();
+  });
+
+  it("returns undefined when document is not defined", () => {
+    if (hadDocument) {
+      (globalThis as any).document = originalDocument;
+    } else {
+      delete (globalThis as any).document;
+    }
+    expect(readCookie("strada_uid")).toBeUndefined();
+  });
+});
+
+describe("resolveUserId", () => {
+  let cookieValue = "";
+  const hadDocument = "document" in globalThis;
+  const originalDocument = globalThis.document;
+
+  beforeEach(() => {
+    cookieValue = "";
+    (globalThis as any).document = {
+      get cookie() { return cookieValue; },
+    };
+  });
+
+  afterEach(() => {
+    if (hadDocument) {
+      (globalThis as any).document = originalDocument;
+    } else {
+      delete (globalThis as any).document;
+    }
+  });
+
+  it("returns undefined when nothing is set", () => {
+    expect(resolveUserId({ projectId: "test", service: "s" })).toBeUndefined();
+  });
+
+  it("reads from cookie by default (strada_uid)", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s" })).toBe("cookie_user");
+  });
+
+  it("reads from custom cookie name", () => {
+    cookieValue = "my_uid=custom_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userIdCookie: "my_uid" })).toBe("custom_user");
+  });
+
+  it("disables cookie reading with userIdCookie: false", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userIdCookie: false })).toBeUndefined();
+  });
+
+  it("explicit userId option takes priority over cookie", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userId: "explicit_user" })).toBe("explicit_user");
+  });
+
+  it("userId function takes priority over cookie", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userId: () => "fn_user" })).toBe("fn_user");
+  });
+
+  it("does not fall back when userId function returns empty string", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userId: () => "" })).toBe("");
+  });
+
+  it("falls back from userId function to cookie when function returns undefined", () => {
+    cookieValue = "strada_uid=cookie_user";
+    expect(resolveUserId({ projectId: "test", service: "s", userId: () => undefined })).toBe("cookie_user");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // createStradaBaggage
 // ---------------------------------------------------------------------------
 
@@ -429,7 +548,7 @@ describe("baggage round-trip propagation", () => {
     // Verify baggage header was set
     expect(headers["baggage"]).toBeTruthy();
     expect(headers["baggage"]).toContain("strada.session.id=browser-session-abc");
-    expect(headers["baggage"]).toContain("strada.user.id=user_123");
+    expect(headers["baggage"]).toContain("enduser.id=user_123");
 
     // Simulate server side: extract baggage from headers
     const serverCtx = prop.extract(ROOT_CONTEXT, headers, {
@@ -462,7 +581,7 @@ describe("baggage round-trip propagation", () => {
     });
 
     expect(headers["baggage"]).toContain("strada.session.id=anon-session-xyz");
-    expect(headers["baggage"]).not.toContain("strada.user.id");
+    expect(headers["baggage"]).not.toContain("enduser.id");
 
     const serverCtx = prop.extract(ROOT_CONTEXT, headers, {
       get(carrier: Record<string, string>, key: string) {

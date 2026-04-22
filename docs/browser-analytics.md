@@ -58,7 +58,7 @@ The Strada SDK is a thin wrapper around the standard OTel browser SDK. It adds:
 | `url.path`                      | `window.location.pathname`             | `"/pricing"`                    |
 | `url.query`                     | `window.location.search`               | `"?plan=pro"`                   |
 | `http.request.header.referer`   | `document.referrer`                    | `"https://google.com"`          |
-| `user.id`                       | Set by `strada.identify(userId)`       | `"user_123"`                    |
+| `user.id`                       | Read from `strada_uid` cookie          | `"user_123"`                    |
 
 These are injected by a custom `SpanProcessor` that enriches every span before export.
 
@@ -298,9 +298,11 @@ strada.track('form_submit', {
   variant: 'hero-cta',
 })
 
-// Event with user context
-strada.identify('user_123', {
-  email: 'tommy@acme.com',
+// Set the user cookie once after login.
+document.cookie = `strada_uid=${encodeURIComponent('user_123')}; Path=/; SameSite=Lax; Secure`
+
+// Later events automatically include user.id.
+strada.track('billing_opened', {
   plan: 'pro',
 })
 ```

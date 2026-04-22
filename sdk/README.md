@@ -214,6 +214,60 @@ try {
 }
 ```
 
+## Identify the current user
+
+The SDK reads the user ID from a **cookie** (`strada_uid` by default). Set this cookie when the user logs in. The browser SDK picks it up automatically on every span, log, error, and custom event.
+
+```ts
+initStrada({
+  projectId: "my-project",
+  service: "frontend",
+})
+
+document.cookie = `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure`
+```
+
+The cookie must be **JS-readable** (not `httpOnly`) so the browser SDK can access it via `document.cookie`.
+
+### Setting the cookie from your backend
+
+With better-auth, use the `afterSession` hook or middleware to set the cookie after login:
+
+```ts
+// server middleware (runs on every request)
+app.use(async (req, res, next) => {
+  const session = await auth.api.getSession({ headers: req.headers })
+  if (session?.user) {
+    res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(session.user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
+  }
+  next()
+})
+```
+
+### Server-side user identification
+
+For browser-initiated requests, the backend gets `user.id` automatically via W3C Baggage. For server-first requests, put the user into baggage in auth middleware using standard OTel `propagation` APIs:
+
+```ts
+import { context, propagation } from "@strada.sh/sdk"
+
+app.use(async (req, res, next) => {
+  const session = await auth.api.getSession({ headers: req.headers })
+  if (!session?.user) return next()
+
+  res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(session.user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
+
+  const baggage = propagation.createBaggage({
+    "enduser.id": { value: session.user.id },
+  })
+  const ctx = propagation.setBaggage(context.active(), baggage)
+
+  return context.with(ctx, next)
+})
+```
+
+That makes `user.id` show up in both **server spans** and **server logs** for the current request.
+
 ## Browser custom events
 
 In the browser runtime, Strada also exposes `track()` for product analytics style events.
@@ -258,7 +312,7 @@ The browser runtime adds:
 - `session.id` from `sessionStorage`
 - `url.path`, `url.query`, `url.full`
 - `http.request.header.referer`
-- `user.id` from `setUser()`
+- `user.id` from `strada_uid` cookie or `StradaOptions.userId`
 
 It also starts a `pageview` span and usually parents later browser work to that pageview when no other span is active.
 
@@ -538,7 +592,7 @@ user.id = user_123                           session.id -> span attribute
           | fetch POST /api/checkout
           | headers:                       BaggageLogProcessor reads baggage:
           |   traceparent: 00-abc123...      session.id -> log attribute
-          |   baggage: strada.session.id=abc,strada.user.id=user_123
+          |   baggage: strada.session.id=abc,enduser.id=user_123
           v
 ```
 
@@ -565,7 +619,7 @@ ORDER BY Timestamp ASC
 - `BaggageSpanProcessor` reads the baggage and sets `session.id` / `user.id` as span attributes
 - `BaggageLogProcessor` does the same for log records
 
-Baggage updates live. When you call `setUser()` in the browser, the next outgoing request will carry the updated `user.id`.
+Baggage updates live. When the `strada_uid` cookie changes, the next outgoing request will carry the updated `user.id`.
 
 ## Browser runtime
 
@@ -730,7 +784,6 @@ That excludes ordinary logs that do not have `event.name`.
 
 - `initStrada(options)`
 - `captureException(error, opts?)`
-- `setUser(user)`
 - `setTags(tags)`
 - `flush()`
 - `shutdown()`

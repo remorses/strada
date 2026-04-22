@@ -41,11 +41,11 @@ export const ATTR = {
 
   /** Per-tab browser session UUID, stored in sessionStorage. Groups pageviews, events, and errors into one visit. */
   "session.id": "session.id",
-  /** Signed-in user identity from setUser() or StradaOptions.userId. Correlates telemetry across sessions. */
+  /** Signed-in user identity from StradaOptions.userId, cookie, or propagated baggage. Correlates telemetry across sessions. */
   "user.id": "user.id",
-  /** User email from setUser(). Attached to error logs for user context. */
+  /** User email attached to error logs for user context. */
   "user.email": "user.email",
-  /** Username from setUser(). Attached to error logs for user context. */
+  /** Username attached to error logs for user context. */
   "user.username": "user.username",
 
   // -- URL context (injected by browser SDK into every span and log) --
@@ -154,6 +154,18 @@ export interface StradaOptions {
    * Use this when user ID changes at runtime (e.g. after login).
    */
   userId?: string | (() => string | undefined);
+  /**
+   * Cookie name to read user ID from (browser only).
+   * The SDK reads this cookie on every span/log as a fallback when
+   * `userId` has not been set.
+   *
+   * Set your backend to write this cookie after login (e.g. from
+   * better-auth's session hook). The cookie must be JS-readable
+   * (not httpOnly).
+   *
+   * Default: `"strada_uid"`. Set to `false` to disable cookie reading.
+   */
+  userIdCookie?: string | false;
 }
 
 export interface CaptureExceptionOptions {
@@ -170,27 +182,11 @@ export interface CaptureExceptionOptions {
   fingerprint?: string[];
 }
 
-export interface UserContext {
-  id?: string;
-  email?: string;
-  username?: string;
-  [key: string]: string | undefined;
-}
-
 // ---------------------------------------------------------------------------
-// Singleton context (user, tags, extra attributes)
+// Shared context (tags only)
 // ---------------------------------------------------------------------------
 
-let _user: UserContext | undefined;
 let _tags: Record<string, string> = {};
-
-export function setUser(user: UserContext | undefined): void {
-  _user = user;
-}
-
-export function getUser(): UserContext | undefined {
-  return _user;
-}
 
 export function setTags(tags: Record<string, string>): void {
   _tags = { ..._tags, ...tags };
@@ -201,7 +197,6 @@ export function getTags(): Record<string, string> {
 }
 
 export function resetContext(): void {
-  _user = undefined;
   _tags = {};
 }
 
@@ -332,13 +327,6 @@ export function errorToAttributes(
     attributes[k] = v;
   }
 
-  // Merge user context
-  if (_user) {
-    if (_user.id) attributes[ATTR["user.id"]] = _user.id;
-    if (_user.email) attributes[ATTR["user.email"]] = _user.email;
-    if (_user.username) attributes[ATTR["user.username"]] = _user.username;
-  }
-
   return attributes;
 }
 
@@ -377,17 +365,70 @@ export const INFO_SEVERITY = SeverityNumber.INFO;
 export const INFO_SEVERITY_TEXT = "INFO";
 
 // ---------------------------------------------------------------------------
+// Cookie reading
+// ---------------------------------------------------------------------------
+
+/** Default cookie name for user ID. */
+export const DEFAULT_USER_ID_COOKIE = "strada_uid";
+
+/**
+ * Read a cookie value by name from document.cookie.
+ * Returns undefined if the cookie doesn't exist or document is not available.
+ */
+export function readCookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  try {
+    const cookies = document.cookie;
+    if (!cookies) return undefined;
+    // Match `name=value` handling optional spaces after semicolons.
+    // Cookie values are terminated by `;` or end-of-string.
+    const match = cookies.match(new RegExp(`(?:^|;\\s*)${escapeRegExp(name)}=([^;]*)`));
+    const value = match?.[1];
+    return value ? decodeURIComponent(value) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ---------------------------------------------------------------------------
 // Resolve userId from options
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the userId from StradaOptions.userId.
- * Supports both static string and dynamic resolver function.
+ * Resolve the userId from StradaOptions.userId or cookie.
+ *
+ * Priority chain:
+ * 1. StradaOptions.userId (explicit override, static or dynamic)
+ * 2. userIdCookie (persisted, set by backend) — browser only
+ * 3. undefined
  */
 export function resolveUserId(options: StradaOptions | undefined): string | undefined {
-  if (!options?.userId) return _user?.id;
-  if (typeof options.userId === "function") return options.userId() ?? _user?.id;
-  return options.userId ?? _user?.id;
+  // 1. Explicit userId option (static string or dynamic resolver)
+  if (options?.userId) {
+    if (typeof options.userId === "function") {
+      const fromFn = options.userId();
+      // Only fall through when the function returns undefined (not set).
+      // Empty string is a valid "no user" signal and should not fall back.
+      if (fromFn !== undefined) return fromFn;
+    } else {
+      return options.userId;
+    }
+  }
+
+  // 2. Cookie fallback (browser only)
+  if (options?.userIdCookie !== false) {
+    const cookieName = typeof options?.userIdCookie === "string"
+      ? options.userIdCookie
+      : DEFAULT_USER_ID_COOKIE;
+    const fromCookie = readCookie(cookieName);
+    if (fromCookie) return fromCookie;
+  }
+
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +455,7 @@ export function resolveEndpoint(options: StradaOptions): string {
 }
 
 export const BAGGAGE_SESSION_ID = "strada.session.id";
-export const BAGGAGE_USER_ID = "strada.user.id";
+export const BAGGAGE_USER_ID = "enduser.id";
 
 /**
  * Build a Baggage object with session.id and optionally user.id.

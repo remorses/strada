@@ -20,38 +20,51 @@ all publishable packages in this repo should have name `strada` (the main cli, c
 
 ## Architecture
 
-- **otel-collector**: Cloudflare Worker (Spiceflow) that receives OTLP HTTP/JSON and forwards to either Tinybird Events API or ClickHouse HTTP interface as NDJSON. Backend is selected by environment variables: set `TINYBIRD_ENDPOINT` + `TINYBIRD_TOKEN` for Tinybird, or `CLICKHOUSE_URL` for direct ClickHouse. No separate adapter needed for self-hosted ClickHouse.
-- **tinybird/**: Tinybird project with datasource definitions and materialized views, deployed with `tb deploy`. Only used when the Tinybird backend is configured.
-- **Project isolation**: hostname-based project extraction. Each project gets `{project}-ingest.strada.sh`. Self-hosted users use a plain `ingest.{domain}` with empty project_id.
-- **Query layer**: Tinybird Query API (`/v0/sql`) with JWT row-level filtering, NOT the ClickHouse HTTP interface (which doesn't support JWTs or row filtering). No pipe endpoints; all queries are raw SQL.
+Four packages in a pnpm monorepo, sharing a single D1 database:
+
+- **db/** — Drizzle schema and D1 migrations. Owns all table definitions (BetterAuth core, orgs, projects, database config, tokens). Used by both website and collector.
+- **website/** — Cloudflare Worker (Spiceflow + BetterAuth). Handles auth (Google social login, device flow for CLI), org/project management API, database config storage, and query bridge to Tinybird/ClickHouse. The control plane.
+- **otel-collector/** — Cloudflare Worker (Spiceflow). Receives OTLP HTTP/JSON and forwards to Tinybird or ClickHouse as NDJSON. Shares the D1 binding with the website to resolve project config at ingest time. No env vars for credentials; everything comes from D1.
+- **cli/** — CLI tool (`strada`). Authenticates via device flow, manages projects, runs queries through the website API. Uses spiceflow typed fetch client with the website App type.
+- **sdk/** — OTel-first SDK for Node.js and browser.
+- **tinybird/** — Tinybird datasource definitions and materialized views, deployed with `tb deploy` via the CLI selfhost command.
+
+### Data flow
+
+```
+SDK (OTLP HTTP/JSON)
+  |
+  | POST {projectId}-ingest.strada.sh/v1/traces
+  v
+otel-collector
+  |
+  | 1. Extract projectId from hostname
+  | 2. Query D1: project + database JOIN
+  | 3. Create backend (Tinybird or ClickHouse)
+  | 4. Transform OTLP → NDJSON
+  v
+Tinybird Events API  or  ClickHouse HTTP Interface
+```
 
 ### Backend selection
 
-The otel-collector supports two storage backends, configured via env vars:
-
-**Tinybird** (first-class, recommended):
-
-```
-TINYBIRD_ENDPOINT=https://api.us-east.aws.tinybird.co
-TINYBIRD_TOKEN=p.ey...
-```
-
-**ClickHouse** (self-hosted):
-
-```
-CLICKHOUSE_URL=http://my-clickhouse:8123
-CLICKHOUSE_DATABASE=default
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=secret
-```
+Each org has one database config row storing either Tinybird or ClickHouse credentials. The CLI `selfhost` command deploys Tinybird resources and saves tokens to the database. The collector reads these credentials from D1 at ingest time.
 
 When using ClickHouse backend, the collector remaps NDJSON keys from snake_case to PascalCase (the OTel ClickHouse standard) before INSERT. The field mapping logic lives in `otel-collector/src/field-mapping.ts`.
 
-The ClickHouse schema (`clickhouse.sql`) has `ProjectId` as the first column in every table and first in every sorting key, matching the Tinybird schema. Self-hosted users with a single project will have an empty `ProjectId` value, which is fine. Having consistent schemas between Tinybird and ClickHouse simplifies the codebase.
+The ClickHouse schema (`clickhouse.sql`) has `ProjectId` as the first column in every table and first in every sorting key, matching the Tinybird schema.
 
-### Environment variables
+### Project isolation
 
-The collector reads config from `process.env` (not `import { env } from 'cloudflare:workers'`). This makes the codebase portable; runs on Cloudflare Workers (with `nodejs_compat_v2`), Node.js, or Bun without changes.
+Project identity comes from the **hostname**: `{projectId}-ingest.strada.sh`. The project ID is a ULID from the `project` table in D1, globally unique. The collector extracts it with a regex in `get-project-id.ts`, then queries D1 for the project's database credentials. Unknown project IDs are rejected with 404.
+
+### D1 database (shared)
+
+Both the website and otel-collector workers bind to the same D1 database (`strada-db`). The website uses drizzle-orm/d1 for full ORM access. The collector uses raw D1 SQL (no drizzle dependency) for lightweight config resolution.
+
+### Config resolution in the collector
+
+The collector uses `import { env } from 'cloudflare:workers'` for the D1 binding. On each request it resolves project config with a single SQL JOIN query (`resolve-config.ts`). No env vars for Tinybird/ClickHouse credentials.
 
 ### Column naming convention
 
@@ -69,7 +82,7 @@ The SDK is a **configuration and convenience layer**, not a replacement for OTel
 
 1. Configures OTel providers, exporters, and processors for the Strada endpoint
 2. Installs global error handlers (uncaughtException, unhandledrejection, window.error)
-3. Provides convenience helpers (`captureException`, `track`, `setUser`, `setTags`)
+3. Provides convenience helpers (`captureException`, `track`, `setTags`)
 4. Injects Strada-specific context (session.id, url.*, user.id) into every span and log
 
 Users migrating from raw OTel code only need to replace their provider setup with `initStrada()`. Their existing `tracer.startSpan()`, `logger.emit()`, `meter.createCounter()` code works unchanged.
@@ -100,7 +113,6 @@ These are thin wrappers over OTel APIs with Strada conventions baked in:
 |--------|----------------------------|
 | `captureException(error, opts?)` | Normalizes the error, applies filtering (ignoreErrors/denyUrls/beforeSend), builds `exception.*` attributes, emits an OTel log record |
 | `track(name, props?)` | Emits an OTel log record with `event.name` and `custom.*` attributes, correlated to active pageview span (browser only) |
-| `setUser({ id, email, ... })` | Sets user context injected into subsequent spans and log records |
 | `setTags({ key: value })` | Sets tags merged into subsequent error attributes |
 
 ### Conditional exports
@@ -129,7 +141,7 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 | `url.query` | `window.location.search` |
 | `url.full` | `window.location.href` |
 | `http.request.header.referer` | `document.referrer` |
-| `user.id` | From `setUser()` or `StradaOptions.userId` |
+| `user.id` | From `strada_uid` cookie or `StradaOptions.userId` |
 
 **ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `user.id` into every log record.
 
@@ -154,7 +166,7 @@ The Node entry (`sdk/src/node.ts`) wraps `@opentelemetry/sdk-node`:
 
 The SDK propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
 
-**Browser side:** The `PageviewContextManager` injects a Baggage object containing `strada.session.id` and `strada.user.id` into the active OTel context. A `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator` serializes both headers on every outgoing `fetch`/`XHR`.
+**Browser side:** The `PageviewContextManager` injects a Baggage object containing `strada.session.id` and `enduser.id` into the active OTel context. A `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator` serializes both headers on every outgoing `fetch`/`XHR`.
 
 **Node side:** `BaggageSpanProcessor` reads the baggage from the incoming request context and sets `session.id` and `user.id` as span attributes. `BaggageLogProcessor` does the same for log records. This happens automatically for every backend span/log within a browser-initiated request.
 
@@ -163,7 +175,7 @@ The SDK propagates `session.id` and `user.id` from the browser to the backend us
 ```
 Browser request (session.id = abc, user.id = user_123)
   |
-  | headers: traceparent: ..., baggage: strada.session.id=abc,strada.user.id=user_123
+  | headers: traceparent: ..., baggage: strada.session.id=abc,enduser.id=user_123
   |
   v
 Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
@@ -171,7 +183,7 @@ Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
   +-- log: "purchase" event        -> session.id=abc, user.id=user_123
 ```
 
-**Baggage key names:** `strada.session.id` and `strada.user.id` (prefixed with `strada.` to avoid collision with other baggage entries). Constants are in `shared.ts` as `BAGGAGE_SESSION_ID` and `BAGGAGE_USER_ID`.
+**Baggage key names:** `strada.session.id` and `enduser.id`. Constants are in `shared.ts` as `BAGGAGE_SESSION_ID` and `BAGGAGE_USER_ID`.
 
 **No SQL changes needed.** Baggage is only a transport mechanism. Once extracted, the values become regular span/log attributes stored in the same Map columns, indexed by the same bloom filters.
 
@@ -188,19 +200,15 @@ Both are loaded with dynamic `import()` so the package stays ESM-clean and works
 
 ### How project_id is determined
 
-Project identity comes from the **hostname**, not from API keys or headers. No KV, no DB lookup. Pure hostname parsing:
+Project identity comes from the **hostname**. The project ID is a ULID from the `project` table in D1, globally unique across all orgs.
 
 ```
-acme-ingest.strada.sh       → project_id = "acme"
-my-app-ingest.strada.sh     → project_id = "my-app"
-ingest.strada.sh            → project_id = ""  (default project)
-ingest.mycompany.com        → project_id = ""  (self-hosted)
-localhost:3000              → project_id = ""  (development)
+01JTHG5M7XPQR8KNCZ0W4D-ingest.strada.sh  → project_id = "01JTHG5M7XPQR8KNCZ0W4D"
 ```
 
-The regex is `^(.+)-ingest\.`. If hostname has a `{prefix}-ingest.` pattern, the prefix is the project_id. Otherwise empty string. This is in `otel-collector/src/get-project-id.ts`.
+The regex is `^(.+)-ingest\.`. If hostname has a `{prefix}-ingest.` pattern, the prefix is the project_id. Empty string means no project (rejected with 400). This is in `otel-collector/src/get-project-id.ts`.
 
-The `otel-collector` worker injects `project_id` into every NDJSON row before sending to Tinybird. Users never set project_id. The worker does it based on which subdomain they're hitting.
+The collector then queries D1 to validate the project exists and get database credentials. Unknown project IDs are rejected with 404. The collector injects `project_id` into every NDJSON row before sending to Tinybird/ClickHouse.
 
 ### Project isolation on reads
 
@@ -493,7 +501,7 @@ These are injected into browser spans and log records so analytics, custom event
 | `url.query` | string | Current `window.location.search` |
 | `url.full` | string | Current `window.location.href` |
 | `http.request.header.referer` | string | `document.referrer`, useful for entry page and attribution analysis |
-| `user.id` | string | Signed-in user identity from `setUser()` / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
+| `user.id` | string | Signed-in user identity from `strada_uid` cookie / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
 
 ### Custom error-tracking attributes (set by Strada SDKs)
 
