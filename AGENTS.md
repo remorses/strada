@@ -548,3 +548,8 @@ To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitem
 - Forward dropped `sql_filter` on static tokens. Use JWT `filter` instead
 - Forward JWTs support `DATASOURCES:READ` scope with `filter` field (Classic JWTs only had `PIPES:READ`)
 - Forward uses `tb deploy` instead of `tb push`
+
+
+## opentelemetry docs
+
+to read docs of OTEL packages and spec you can opensrc https://github.com/open-telemetry/opentelemetry.io and grep files inside content/en/docs which contain all the docs as markdown files.
