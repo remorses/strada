@@ -83,7 +83,7 @@ The SDK is a **configuration and convenience layer**, not a replacement for OTel
 1. Configures OTel providers, exporters, and processors for the Strada endpoint
 2. Installs global error handlers (uncaughtException, unhandledrejection, window.error)
 3. Provides convenience helpers (`captureException`, `track`, `setTags`)
-4. Injects Strada-specific context (session.id, url.*, user.id) into every span and log
+4. Injects Strada-specific context (session.id, url.*, enduser.id) into every span and log
 
 Users migrating from raw OTel code only need to replace their provider setup with `initStrada()`. Their existing `tracer.startSpan()`, `logger.emit()`, `meter.createCounter()` code works unchanged.
 
@@ -141,9 +141,9 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 | `url.query` | `window.location.search` |
 | `url.full` | `window.location.href` |
 | `http.request.header.referer` | `document.referrer` |
-| `user.id` | From `strada_uid` cookie or `StradaOptions.userId` |
+| `enduser.id` | From `strada_uid` cookie or `StradaOptions.userId` |
 
-**ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `user.id` into every log record.
+**ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `enduser.id` into every log record.
 
 **FilteringLogProcessor.** Drops known browser noise at the processor level: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
 
@@ -164,23 +164,23 @@ The Node entry (`sdk/src/node.ts`) wraps `@opentelemetry/sdk-node`:
 
 ### Browser-to-server context propagation (W3C Baggage)
 
-The SDK propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
+The SDK propagates `session.id` and `enduser.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
 
 **Browser side:** The `PageviewContextManager` injects a Baggage object containing `strada.session.id` and `enduser.id` into the active OTel context. A `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator` serializes both headers on every outgoing `fetch`/`XHR`.
 
-**Node side:** `BaggageSpanProcessor` reads the baggage from the incoming request context and sets `session.id` and `user.id` as span attributes. `BaggageLogProcessor` does the same for log records. This happens automatically for every backend span/log within a browser-initiated request.
+**Node side:** `BaggageSpanProcessor` reads the baggage from the incoming request context and sets `session.id` and `enduser.id` as span attributes. `BaggageLogProcessor` does the same for log records. This happens automatically for every backend span/log within a browser-initiated request.
 
-**Result:** Backend spans and logs carry the same `session.id` and `user.id` as browser telemetry. No app code needed. The data lands in the same ClickHouse attribute maps (`SpanAttributes`, `LogAttributes`), so existing SQL queries that filter by `session.id` or `user.id` automatically return both browser and backend rows. `ServiceName` distinguishes the origin.
+**Result:** Backend spans and logs carry the same `session.id` and `enduser.id` as browser telemetry. No app code needed. The data lands in the same ClickHouse attribute maps (`SpanAttributes`, `LogAttributes`), so existing SQL queries that filter by `session.id` or `enduser.id` automatically return both browser and backend rows. `ServiceName` distinguishes the origin.
 
 ```
-Browser request (session.id = abc, user.id = user_123)
+Browser request (session.id = abc, enduser.id = user_123)
   |
   | headers: traceparent: ..., baggage: strada.session.id=abc,enduser.id=user_123
   |
   v
 Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
-  +-- span: POST /api/checkout     -> session.id=abc, user.id=user_123
-  +-- log: "purchase" event        -> session.id=abc, user.id=user_123
+  +-- span: POST /api/checkout     -> session.id=abc, enduser.id=user_123
+  +-- log: "purchase" event        -> session.id=abc, enduser.id=user_123
 ```
 
 **Baggage key names:** `strada.session.id` and `enduser.id`. Constants are in `shared.ts` as `BAGGAGE_SESSION_ID` and `BAGGAGE_USER_ID`.
@@ -454,7 +454,7 @@ Any OTel SDK can set these as normal string attributes on spans, span events, or
 | `event.name` + `custom.*` | OTel logs are flexible, but product analytics events need a stable way to distinguish events from ordinary logs and store event-specific properties |
 | `session.id` | Browser analytics and user journeys need a stable per-tab session key that survives page refreshes without forcing one giant browser trace |
 | `url.path`, `url.query`, `url.full`, `http.request.header.referer` on browser telemetry | These make page, funnel, and session analysis easy without requiring each app to add the attributes manually |
-| `user.id` on spans and logs | Correlates traces, logs, errors, and analytics events to the same signed-in user across browser and backend |
+| `enduser.id` on spans and logs | Correlates traces, logs, errors, and analytics events to the same signed-in user across browser and backend |
 
 ### Standard OTel attributes we rely on
 
@@ -501,7 +501,7 @@ These are injected into browser spans and log records so analytics, custom event
 | `url.query` | string | Current `window.location.search` |
 | `url.full` | string | Current `window.location.href` |
 | `http.request.header.referer` | string | `document.referrer`, useful for entry page and attribution analysis |
-| `user.id` | string | Signed-in user identity from `strada_uid` cookie / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
+| `enduser.id` | string | Signed-in user identity from `strada_uid` cookie / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
 
 ### Custom error-tracking attributes (set by Strada SDKs)
 
@@ -568,7 +568,7 @@ OTel Logger.emit({
     "custom.plan": "pro",
     "session.id": "...",
     "url.path": "/pricing",
-    "user.id": "user_123"
+    "enduser.id": "user_123"
   }
 })
   |

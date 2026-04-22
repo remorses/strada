@@ -58,7 +58,7 @@ The Strada SDK is a thin wrapper around the standard OTel browser SDK. It adds:
 | `url.path`                      | `window.location.pathname`             | `"/pricing"`                    |
 | `url.query`                     | `window.location.search`               | `"?plan=pro"`                   |
 | `http.request.header.referer`   | `document.referrer`                    | `"https://google.com"`          |
-| `user.id`                       | Read from `strada_uid` cookie          | `"user_123"`                    |
+| `enduser.id`                    | Read from `strada_uid` cookie          | `"user_123"`                    |
 
 These are injected by a custom `SpanProcessor` that enriches every span before export.
 
@@ -91,7 +91,7 @@ Browser (OTel SDK)                     Collector (Cloudflare Worker)
 |   url.query                   |      |         v                        |
 |   url.full                    |      |  MV fires automatically          |
 |   http.request.header.referer |      |    otel_analytics_pages          |
-|   user.id                     |      |    otel_analytics_sessions       |
+|   enduser.id                  |      |    otel_analytics_sessions       |
 +-------------------------------+      +----------------------------------+
 ```
 
@@ -114,7 +114,7 @@ const sessionId =
 - Per-tab, per-origin
 - No cookies, no consent banner needed
 - `session.id` is NOT a user identifier; it is a visit identifier
-- When the user is logged in, `user.id` is set as a separate attribute
+- When the user is logged in, `enduser.id` is set as a separate attribute
 
 ---
 
@@ -154,7 +154,7 @@ These come from `@opentelemetry/opentelemetry-browser-detector` automatically. N
     "url.path": "/pricing",
     "url.query": "?plan=pro",
     "http.request.header.referer": "https://google.com",
-    "user.id": "user_123",
+    "enduser.id": "user_123",
     "geo.country": "IT"
   },
   "resource": {
@@ -184,7 +184,7 @@ Custom events are **log records** in `otel_logs`, not spans. They are correlated
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
     "url.path": "/pricing",
     "url.full": "https://app.acme.com/pricing",
-    "user.id": "user_123",
+    "enduser.id": "user_123",
     "custom.element": "cta-hero",
     "custom.text": "Start free trial",
     "custom.plan": "pro"
@@ -200,7 +200,7 @@ Custom events are **log records** in `otel_logs`, not spans. They are correlated
 - `TraceId` and `SpanId` point to the active pageview span when the event is emitted during an open pageview
 - `event.name` is the structured event name for filtering/grouping
 - `custom.*` prefix isolates user-defined properties from standard OTel attributes
-- `session.id`, `url.path`, `user.id` are injected automatically by the SDK's log processor
+- `session.id`, `url.path`, `enduser.id` are injected automatically by the SDK's log processor
 - The log record lands in `otel_logs` via `POST /v1/logs` (same collector endpoint used for backend logs)
 
 ### Auto-instrumented fetch span
@@ -301,13 +301,13 @@ strada.track('form_submit', {
 // Set the user cookie once after login.
 document.cookie = `strada_uid=${encodeURIComponent('user_123')}; Path=/; SameSite=Lax; Secure`
 
-// Later events automatically include user.id.
+// Later events automatically include enduser.id.
 strada.track('billing_opened', {
   plan: 'pro',
 })
 ```
 
-`strada.track()` emits a log record via the OTel Logs API. The log record lands in `otel_logs` with `event.name` set to the event name. Context (`session.id`, `url.full`, `user.id`) is injected automatically. If a pageview span is currently open, `TraceId` and `SpanId` are attached too. Browser auto-instrumented spans also inherit that pageview as parent unless some other span is already active. Developers only pass event-specific properties.
+`strada.track()` emits a log record via the OTel Logs API. The log record lands in `otel_logs` with `event.name` set to the event name. Context (`session.id`, `url.full`, `enduser.id`) is injected automatically. If a pageview span is currently open, `TraceId` and `SpanId` are attached too. Browser auto-instrumented spans also inherit that pageview as parent unless some other span is already active. Developers only pass event-specific properties.
 
 Under the hood:
 
@@ -320,7 +320,7 @@ logger.emit({
     'session.id': currentSessionId,
     'url.path': window.location.pathname,
     'url.full': window.location.href,
-    'user.id': currentUserId,
+    'enduser.id': currentUserId,
     'custom.form': 'signup',
     'custom.plan': 'pro',
   },
@@ -346,7 +346,7 @@ app.post('/api/checkout', async (req, res) => {
     body: 'purchase',
     attributes: {
       'event.name': 'purchase',
-      'user.id': req.user.id,
+      'enduser.id': req.user.id,
       'custom.plan': req.body.plan,
       'custom.amount': String(req.body.amount),
     },
@@ -355,7 +355,7 @@ app.post('/api/checkout', async (req, res) => {
 })
 ```
 
-The log record lands in `otel_logs` with `ServiceName = "my-api"` (the backend service name). The `user.id` attribute ties it to the same user as browser events. If the browser sends the `traceparent` header, the backend log shares the same request trace as the incoming browser request:
+The log record lands in `otel_logs` with `ServiceName = "my-api"` (the backend service name). The `enduser.id` attribute ties it to the same user as browser events. If the browser sends the `traceparent` header, the backend log shares the same request trace as the incoming browser request:
 
 ```
 Browser request trace (TraceId = abc123)
@@ -364,7 +364,7 @@ Browser request trace (TraceId = abc123)
         v
 Backend (TraceId = abc123)
 +-- span: POST /api/checkout
-    +-- log: "purchase" event  (TraceId = abc123, user.id = "user_123")
+    +-- log: "purchase" event  (TraceId = abc123, enduser.id = "user_123")
 ```
 
 This means you can query all custom events for a user across browser and backend in a single query. The `ServiceName` column tells you the origin:
@@ -378,7 +378,7 @@ SELECT
   TraceId,
   LogAttributes
 FROM otel_logs
-WHERE LogAttributes['user.id'] = {user_id:String}
+WHERE LogAttributes['enduser.id'] = {enduser_id:String}
   AND LogAttributes['event.name'] != ''
 ORDER BY Timestamp ASC
 ```
@@ -398,7 +398,7 @@ initStrada({
   version: '1.4.2',
 
   // optional
-  userId: () => window.__user?.id,       // dynamic user ID resolver
+  userId: () => window.__user?.id,       // dynamic end user ID resolver
   debug: false,
 })
 ```
@@ -407,7 +407,7 @@ The SDK:
 1. Generates or restores `session.id` from `sessionStorage`
 2. Initializes `WebTracerProvider` with `BatchSpanProcessor`
 3. Registers `@opentelemetry/auto-instrumentations-web`
-4. Attaches a span processor that injects `session.id` and `user.id` onto every span
+4. Attaches a span processor that injects `session.id` and `enduser.id` onto every span
 5. Starts the first pageview span
 
 ---
@@ -808,7 +808,7 @@ FROM otel_traces
 WHERE
   ServiceName = {service:String}
   AND SpanName = 'pageview'
-  AND SpanAttributes['user.id'] = {user_id:String}
+   AND SpanAttributes['enduser.id'] = {enduser_id:String}
 ORDER BY Timestamp ASC
 ```
 
@@ -894,7 +894,7 @@ ORDER BY total_pageviews DESC
 
 ## Custom event queries (from `otel_logs`)
 
-Custom events sent via `strada.track()` land in `otel_logs`. Each event is a log record with `EventName` set to the event name and context attributes (`session.id`, `url.path`, `user.id`) injected by the SDK. Each dashboard widget queries `otel_logs` independently; no joins with `otel_traces` needed.
+Custom events sent via `strada.track()` land in `otel_logs`. Each event is a log record with `EventName` set to the event name and context attributes (`session.id`, `url.path`, `enduser.id`) injected by the SDK. Each dashboard widget queries `otel_logs` independently; no joins with `otel_traces` needed.
 
 ### Custom event histogram (top events)
 
@@ -941,12 +941,12 @@ SELECT
   LogAttributes['event.name'] AS event,
   LogAttributes['session.id'] AS session_id,
   LogAttributes['url.path'] AS path,
-  LogAttributes['user.id'] AS user_id,
+  LogAttributes['enduser.id'] AS enduser_id,
   LogAttributes
 FROM otel_logs
 WHERE
   ServiceName = {service:String}
-  AND LogAttributes['user.id'] = {user_id:String}
+  AND LogAttributes['enduser.id'] = {enduser_id:String}
   AND LogAttributes['event.name'] != ''
 ORDER BY Timestamp ASC
 ```
@@ -975,7 +975,7 @@ For a specific event, show the distribution of a custom property. For example, "
 SELECT
   LogAttributes['custom.plan'] AS plan,
   count() AS occurrences,
-  uniqExact(LogAttributes['user.id']) AS unique_users
+  uniqExact(LogAttributes['enduser.id']) AS unique_users
 FROM otel_logs
 WHERE
   ServiceName = {service:String}
@@ -1003,7 +1003,7 @@ SELECT * FROM (
   WHERE
     ServiceName = {service:String}
     AND SpanName = 'pageview'
-    AND SpanAttributes['user.id'] = {user_id:String}
+    AND SpanAttributes['enduser.id'] = {enduser_id:String}
 
   UNION ALL
 
@@ -1017,7 +1017,7 @@ SELECT * FROM (
   FROM otel_logs
   WHERE
     ServiceName = {service:String}
-    AND LogAttributes['user.id'] = {user_id:String}
+    AND LogAttributes['enduser.id'] = {enduser_id:String}
     AND LogAttributes['event.name'] != ''
 )
 ORDER BY Timestamp ASC
@@ -1071,7 +1071,7 @@ OTel is **deprecating `span.addEvent()`** (targeted March 2026) in favor of the 
 
 - Each dashboard widget queries one table. Pageview widgets query MVs or `otel_traces`. Custom event widgets query `otel_logs`. No joins for the common case.
 - Log records are lighter than spans (no duration, no status, no events/links arrays). Less storage per custom event.
-- `otel_logs` already has bloom filter indexes on `LogAttributes` keys and values, so filtering by `event.name`, `session.id`, or `user.id` is efficient.
+- `otel_logs` already has bloom filter indexes on `LogAttributes` keys and values, so filtering by `event.name`, `session.id`, or `enduser.id` is efficient.
 - Context propagation still works: `TraceId` and `SpanId` on the log record link it back to the active pageview span, so you can correlate if needed.
 
 **When you do need to combine both:** for user timelines and funnels that mix pageviews and custom events, use `UNION ALL` as shown in the queries above. This is the advanced case, not the common dashboard path.

@@ -85,7 +85,7 @@ export {
 // ---------------------------------------------------------------------------
 
 /**
- * Reads session.id and user.id from incoming W3C Baggage (propagated by the
+ * Reads session.id and enduser.id from incoming W3C Baggage (propagated by the
  * browser SDK) and sets them as span attributes. This means every backend
  * span created within a browser-initiated request automatically carries the
  * browser session and user context without the app developer doing anything.
@@ -102,7 +102,7 @@ class BaggageSpanProcessor implements SpanProcessor {
 
     const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
     if (userId) {
-      span.setAttribute(ATTR["user.id"], userId);
+      span.setAttribute(ATTR["enduser.id"], userId);
     }
   }
 
@@ -124,7 +124,7 @@ class BaggageSpanProcessor implements SpanProcessor {
 // ---------------------------------------------------------------------------
 
 /**
- * Wraps another LogRecordProcessor and injects session.id and user.id from
+ * Wraps another LogRecordProcessor and injects session.id and enduser.id from
  * incoming W3C Baggage into every log record. This means backend custom
  * events (track()) and error logs within a browser-initiated request are
  * automatically correlated to the browser session.
@@ -143,7 +143,7 @@ class BaggageLogProcessor implements LogRecordProcessor {
 
       const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
       if (userId) {
-        record.setAttribute(ATTR["user.id"], userId);
+        record.setAttribute(ATTR["enduser.id"], userId);
       }
     }
 
@@ -214,7 +214,7 @@ export function initStrada(options: StradaOptions): void {
   const endpoint = resolveEndpoint(options);
 
   // Log provider (used for both logs and error capture).
-  // Wrapped in BaggageLogProcessor to extract session.id and user.id from
+  // Wrapped in BaggageLogProcessor to extract session.id and enduser.id from
   // incoming W3C Baggage (propagated by the browser SDK via fetch headers).
   const logExporter = new OTLPLogExporter({
     url: `${endpoint}/v1/logs`,
@@ -229,7 +229,7 @@ export function initStrada(options: StradaOptions): void {
   _logger = _loggerProvider.getLogger("strada");
 
   // Tracer provider with BaggageSpanProcessor to extract session.id and
-  // user.id from incoming W3C Baggage, plus BatchSpanProcessor for export.
+  // enduser.id from incoming W3C Baggage, plus BatchSpanProcessor for export.
   _tracerProvider = new NodeTracerProvider({
     resource,
     spanProcessors: [

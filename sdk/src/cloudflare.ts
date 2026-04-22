@@ -218,7 +218,7 @@ class BaggageSpanProcessor implements SpanProcessor {
     if (sessionId) span.setAttribute(ATTR["session.id"], sessionId);
 
     const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
-    if (userId) span.setAttribute(ATTR["user.id"], userId);
+    if (userId) span.setAttribute(ATTR["enduser.id"], userId);
   }
 
   onEnd(): void {}
@@ -247,7 +247,7 @@ class BaggageLogProcessor implements LogRecordProcessor {
       if (sessionId) record.setAttribute(ATTR["session.id"], sessionId);
 
       const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
-      if (userId) record.setAttribute(ATTR["user.id"], userId);
+      if (userId) record.setAttribute(ATTR["enduser.id"], userId);
     }
 
     this.inner.onEmit(...args);

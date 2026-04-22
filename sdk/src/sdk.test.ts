@@ -260,8 +260,7 @@ describe("errorToAttributes", () => {
     const err = new Error("fail");
     const attrs = errorToAttributes(err);
 
-    expect(attrs[ATTR["user.id"]]).toBeUndefined();
-    expect(attrs[ATTR["user.email"]]).toBeUndefined();
+    expect(attrs[ATTR["enduser.id"]]).toBeUndefined();
   });
 });
 
@@ -513,13 +512,13 @@ describe("createStradaBaggage", () => {
     expect(baggage.getEntry(BAGGAGE_USER_ID)).toBeUndefined();
   });
 
-  it("creates baggage with session.id and user.id", () => {
+  it("creates baggage with session.id and enduser.id", () => {
     const baggage = createStradaBaggage("sess-456", "user_42");
     expect(baggage.getEntry(BAGGAGE_SESSION_ID)?.value).toBe("sess-456");
     expect(baggage.getEntry(BAGGAGE_USER_ID)?.value).toBe("user_42");
   });
 
-  it("omits user.id when undefined", () => {
+  it("omits enduser.id when undefined", () => {
     const baggage = createStradaBaggage("sess-789", undefined);
     expect(baggage.getEntry(BAGGAGE_SESSION_ID)?.value).toBe("sess-789");
     expect(baggage.getEntry(BAGGAGE_USER_ID)).toBeUndefined();
@@ -531,7 +530,7 @@ describe("createStradaBaggage", () => {
 // ---------------------------------------------------------------------------
 
 describe("baggage round-trip propagation", () => {
-  it("serializes and deserializes session.id and user.id through headers", () => {
+  it("serializes and deserializes session.id and enduser.id through headers", () => {
     const { W3CBaggagePropagator } = require("@opentelemetry/core");
     const prop = new W3CBaggagePropagator();
 
@@ -567,7 +566,7 @@ describe("baggage round-trip propagation", () => {
     expect(serverBaggage!.getEntry(BAGGAGE_USER_ID)?.value).toBe("user_123");
   });
 
-  it("works without user.id (anonymous session)", () => {
+  it("works without enduser.id (anonymous session)", () => {
     const { W3CBaggagePropagator } = require("@opentelemetry/core");
     const prop = new W3CBaggagePropagator();
 

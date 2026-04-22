@@ -12,7 +12,7 @@
  * - Pageviews = spans in otel_traces (SpanName = 'pageview')
  * - Custom events = log records in otel_logs (event.name attribute)
  * - Session = one session.id per tab, stored in sessionStorage
- * - Context (session.id, url.*, user.id) injected into every span and log
+ * - Context (session.id, url.*, enduser.id) injected into every span and log
  */
 
 import { trace, context, propagation } from "@opentelemetry/api";
@@ -143,7 +143,7 @@ class FilteringLogProcessor implements LogRecordProcessor {
 
 /**
  * Injects Strada analytics context into every span: session.id, url.*,
- * user.id, and referrer. This ensures all browser spans (auto-instrumented
+ * enduser.id, and referrer. This ensures all browser spans (auto-instrumented
  * fetch, XHR, document load, user interaction) carry analytics context
  * without the app developer doing anything.
  */
@@ -168,7 +168,7 @@ class StradaSpanProcessor implements SpanProcessor {
 
     const userId = this.getUserId();
     if (userId) {
-      span.setAttribute(ATTR["user.id"], userId);
+      span.setAttribute(ATTR["enduser.id"], userId);
     }
   }
 
@@ -190,7 +190,7 @@ class StradaSpanProcessor implements SpanProcessor {
 // ---------------------------------------------------------------------------
 
 /**
- * Wraps another LogRecordProcessor and injects session.id, url.*, user.id
+ * Wraps another LogRecordProcessor and injects session.id, url.*, enduser.id
  * into every log record. This ensures custom events (track) and error logs
  * carry analytics context automatically.
  */
@@ -212,7 +212,7 @@ class ContextLogProcessor implements LogRecordProcessor {
     }
     const userId = this.getUserId();
     if (userId) {
-      record.setAttribute(ATTR["user.id"], userId);
+      record.setAttribute(ATTR["enduser.id"], userId);
     }
 
     this.inner.onEmit(...args);
@@ -274,7 +274,7 @@ class PageviewContextManager implements ContextManager {
 
   active(): OtelContext {
     let ctx = getBrowserWorkContext(this.inner.active(), this.getPageviewSpan());
-    // Always inject current baggage (session.id, user.id) so the
+    // Always inject current baggage (session.id, enduser.id) so the
     // W3CBaggagePropagator includes them in outgoing request headers.
     ctx = propagation.setBaggage(ctx, this.getBaggage());
     return ctx;
@@ -395,7 +395,7 @@ export function initStrada(options: StradaOptions): void {
     ],
   });
   // Register composite propagator for both trace context (traceparent) and
-  // baggage (session.id, user.id) so both headers are injected on every
+  // baggage (session.id, enduser.id) so both headers are injected on every
   // outgoing fetch/XHR request to the backend.
   _tracerProvider.register({
     contextManager: new PageviewContextManager(

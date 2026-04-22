@@ -42,11 +42,7 @@ export const ATTR = {
   /** Per-tab browser session UUID, stored in sessionStorage. Groups pageviews, events, and errors into one visit. */
   "session.id": "session.id",
   /** Signed-in user identity from StradaOptions.userId, cookie, or propagated baggage. Correlates telemetry across sessions. */
-  "user.id": "user.id",
-  /** User email attached to error logs for user context. */
-  "user.email": "user.email",
-  /** Username attached to error logs for user context. */
-  "user.username": "user.username",
+  "enduser.id": "enduser.id",
 
   // -- URL context (injected by browser SDK into every span and log) --
 
@@ -434,7 +430,7 @@ export function resolveUserId(options: StradaOptions | undefined): string | unde
 // ---------------------------------------------------------------------------
 // Baggage propagation constants and helpers
 // ---------------------------------------------------------------------------
-// W3C Baggage is used to propagate session.id and user.id from browser to
+// W3C Baggage is used to propagate session.id and enduser.id from browser to
 // backend so that server-side spans and logs can be correlated to the
 // browser session. The baggage header is injected by the W3CBaggagePropagator
 // on every outgoing fetch/XHR, and extracted by the backend OTel SDK.
@@ -458,7 +454,7 @@ export const BAGGAGE_SESSION_ID = "strada.session.id";
 export const BAGGAGE_USER_ID = "enduser.id";
 
 /**
- * Build a Baggage object with session.id and optionally user.id.
+ * Build a Baggage object with session.id and optionally enduser.id.
  * Used by the browser SDK to inject context into outgoing requests,
  * and by tests to simulate browser-to-server propagation.
  */

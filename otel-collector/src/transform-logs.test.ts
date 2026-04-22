@@ -33,7 +33,7 @@ describe("transformLogs", () => {
                   body: { stringValue: "User logged in" },
                   attributes: [
                     {
-                      key: "user.id",
+                      key: "enduser.id",
                       value: { stringValue: "12345" },
                     },
                   ],
@@ -57,7 +57,7 @@ describe("transformLogs", () => {
         "event_name": "",
         "flags": 1,
         "log_attributes": {
-          "user.id": "12345",
+          "enduser.id": "12345",
         },
         "project_id": "acme",
         "resource_attributes": {

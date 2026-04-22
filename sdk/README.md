@@ -72,7 +72,7 @@ const tracer = trace.getTracer("checkout")
 const span = tracer.startSpan("checkout.request", {
   attributes: {
     "checkout.id": "chk_123",
-    "user.id": "user_123",
+    "enduser.id": "user_123",
   },
 })
 
@@ -141,7 +141,7 @@ logger.emit({
   body: "checkout started",
   attributes: {
     "event.name": "checkout_started",
-    "user.id": "user_123",
+    "enduser.id": "user_123",
     "custom.plan": "pro",
   },
 })
@@ -246,7 +246,7 @@ app.use(async (req, res, next) => {
 
 ### Server-side user identification
 
-For browser-initiated requests, the backend gets `user.id` automatically via W3C Baggage. For server-first requests, put the user into baggage in auth middleware using standard OTel `propagation` APIs:
+For browser-initiated requests, the backend gets `enduser.id` automatically via W3C Baggage. For server-first requests, put the user into baggage in auth middleware using standard OTel `propagation` APIs:
 
 ```ts
 import { context, propagation } from "@strada.sh/sdk"
@@ -266,7 +266,7 @@ app.use(async (req, res, next) => {
 })
 ```
 
-That makes `user.id` show up in both **server spans** and **server logs** for the current request.
+That makes `enduser.id` show up in both **server spans** and **server logs** for the current request.
 
 ## Browser custom events
 
@@ -312,7 +312,7 @@ The browser runtime adds:
 - `session.id` from `sessionStorage`
 - `url.path`, `url.query`, `url.full`
 - `http.request.header.referer`
-- `user.id` from `strada_uid` cookie or `StradaOptions.userId`
+- `enduser.id` from `strada_uid` cookie or `StradaOptions.userId`
 
 It also starts a `pageview` span and usually parents later browser work to that pageview when no other span is active.
 
@@ -331,7 +331,7 @@ It also starts a `pageview` span and usually parents later browser work to that 
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
     "url.path": "/pricing",
     "url.full": "https://app.example.com/pricing",
-    "user.id": "user_123",
+    "enduser.id": "user_123",
     "custom.plan": "pro",
     "custom.source": "hero"
   },
@@ -369,7 +369,7 @@ Important detail: `session.id` is the stable browser session identifier. It is *
     "exception.mechanism.type": "generic",
     "exception.mechanism.handled": "true",
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-    "user.id": "user_123"
+    "enduser.id": "user_123"
   }
 }
 ```
@@ -582,13 +582,13 @@ If this matters for a particular flow, call `flush()` yourself at a controlled b
 
 ## Browser-to-server context propagation
 
-The SDK automatically propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. Every outgoing `fetch`/`XHR` request from the browser includes both `traceparent` and `baggage` HTTP headers.
+The SDK automatically propagates `session.id` and `enduser.id` from the browser to the backend using **W3C Baggage**. Every outgoing `fetch`/`XHR` request from the browser includes both `traceparent` and `baggage` HTTP headers.
 
 ```text
 Browser                                    Server
 session.id = abc                           BaggageSpanProcessor reads baggage:
-user.id = user_123                           session.id -> span attribute
-          |                                  user.id -> span attribute
+enduser.id = user_123                        session.id -> span attribute
+          |                                  enduser.id -> span attribute
           | fetch POST /api/checkout
           | headers:                       BaggageLogProcessor reads baggage:
           |   traceparent: 00-abc123...      session.id -> log attribute
@@ -596,7 +596,7 @@ user.id = user_123                           session.id -> span attribute
           v
 ```
 
-This means backend spans and log records created within a browser-initiated request automatically carry the browser's `session.id` and `user.id`. No app code needed.
+This means backend spans and log records created within a browser-initiated request automatically carry the browser's `session.id` and `enduser.id`. No app code needed.
 
 **What this enables:**
 
@@ -614,12 +614,12 @@ ORDER BY Timestamp ASC
 **How it works under the hood:**
 
 - The browser SDK registers a `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator`
-- The `PageviewContextManager` injects current baggage (session.id + user.id) into the OTel context on every outgoing request
+- The `PageviewContextManager` injects current baggage (session.id + enduser.id) into the OTel context on every outgoing request
 - The Node SDK registers the same composite propagator to extract baggage from incoming requests
-- `BaggageSpanProcessor` reads the baggage and sets `session.id` / `user.id` as span attributes
+- `BaggageSpanProcessor` reads the baggage and sets `session.id` / `enduser.id` as span attributes
 - `BaggageLogProcessor` does the same for log records
 
-Baggage updates live. When the `strada_uid` cookie changes, the next outgoing request will carry the updated `user.id`.
+Baggage updates live. When the `strada_uid` cookie changes, the next outgoing request will carry the updated `enduser.id`.
 
 ## Browser runtime
 
@@ -628,7 +628,7 @@ The browser build sets up:
 - `WebTracerProvider`
 - `LoggerProvider`
 - OTLP HTTP exporters for traces and logs
-- W3C Baggage propagation for session.id and user.id
+- W3C Baggage propagation for session.id and enduser.id
 - global `error` and `unhandledrejection` handlers
 - pageview span lifecycle
 - SPA navigation detection via the Navigation API
@@ -757,7 +757,7 @@ SELECT
   Timestamp,
   ServiceName,
   LogAttributes['event.name'] AS event_name,
-  LogAttributes['user.id'] AS user_id,
+  LogAttributes['enduser.id'] AS enduser_id,
   LogAttributes['session.id'] AS session_id,
   LogAttributes['url.path'] AS url_path
 FROM otel_logs
@@ -776,7 +776,7 @@ That excludes ordinary logs that do not have `event.name`.
 - **Exceptions are logs first**. The collector extracts them into `otel_errors`
 - **Browser sessions use `session.id`**, not a single session-wide trace
 - **Pageview spans are roots**. Fetch/XHR/user-interaction spans usually become children of the current pageview
-- **Session context propagates to the backend** via W3C Baggage. Backend spans and logs within a browser-initiated request automatically get `session.id` and `user.id`
+- **Session context propagates to the backend** via W3C Baggage. Backend spans and logs within a browser-initiated request automatically get `session.id` and `enduser.id`
 
 ## API summary
 

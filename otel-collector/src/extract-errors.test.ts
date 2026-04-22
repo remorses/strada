@@ -111,7 +111,7 @@ describe("extractErrorsFromLogs", () => {
                   timeUnixNano: "1000000000",
                   severityText: "INFO",
                   body: { stringValue: "Normal log" },
-                  attributes: [{ key: "user.id", value: { stringValue: "123" } }],
+                  attributes: [{ key: "enduser.id", value: { stringValue: "123" } }],
                 },
               ],
             },
