@@ -12,11 +12,6 @@ initStrada({
   endpoint: "https://my-project-ingest.strada.sh",
   environment: "production",
   version: "1.0.0",
-  telemetry: {
-    traces: { scheduledDelayMillis: 2000 },
-    logs: { scheduledDelayMillis: 2000 },
-    metrics: { exportIntervalMillis: 5000 },
-  },
 })
 
 process.on("SIGTERM", () => {

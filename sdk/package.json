@@ -71,7 +71,6 @@
     "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
-    "@opentelemetry/instrumentation": "^0.214.0",
     "@opentelemetry/resources": "^2.6.1",
     "@opentelemetry/sdk-logs": "^0.214.0",
     "@opentelemetry/sdk-metrics": "^2.6.1",
@@ -79,21 +78,7 @@
     "@opentelemetry/sdk-trace-node": "^2.7.0",
     "@opentelemetry/sdk-trace-web": "^2.7.0"
   },
-  "peerDependencies": {
-    "@opentelemetry/auto-instrumentations-node": ">=0.56.0",
-    "@opentelemetry/auto-instrumentations-web": ">=0.46.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentelemetry/auto-instrumentations-node": {
-      "optional": true
-    },
-    "@opentelemetry/auto-instrumentations-web": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
-    "@opentelemetry/auto-instrumentations-web": "^0.46.0",
     "@types/node": "^25.5.0",
     "esbuild": "^0.28.0",
     "rimraf": "^6.0.1"
