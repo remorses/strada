@@ -462,32 +462,10 @@ The Tinybird OTel template (https://github.com/tinybirdco/tinybird-otel-template
 
 We target **Tinybird Forward** (the new CLI-based experience), not Classic. Forward is the actively developed version.
 
+To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitemap.xml. you can grep by key words and read relevant pages via webfetch.
+
 **Classic vs Forward differences that matter to us:**
 
 - Forward dropped `sql_filter` on static tokens. Use JWT `filter` instead
 - Forward JWTs support `DATASOURCES:READ` scope with `filter` field (Classic JWTs only had `PIPES:READ`)
 - Forward uses `tb deploy` instead of `tb push`
-
-### Tinybird docs
-
-- Concepts: https://www.tinybird.co/docs/forward/get-started/concepts
-- Architecture: https://www.tinybird.co/docs/forward/get-started/architecture
-- Data sources: https://www.tinybird.co/docs/forward/get-data-in/data-sources
-- Events API (ingestion): https://www.tinybird.co/docs/forward/get-data-in/events-api
-- Pipes: https://www.tinybird.co/docs/forward/work-with-data/pipes
-- Endpoints: https://www.tinybird.co/docs/forward/work-with-data/publish-data/endpoints
-- Materialized views: https://www.tinybird.co/docs/forward/work-with-data/optimize/materialized-views
-- Query API (arbitrary SQL): https://www.tinybird.co/docs/api-reference/query-api
-- Tokens overview: https://www.tinybird.co/docs/forward/administration/tokens
-- Static tokens: https://www.tinybird.co/docs/forward/administration/tokens/static-tokens
-- JWTs: https://www.tinybird.co/docs/forward/administration/tokens/jwt
-- ClickHouse interface (read-only, no JWT support): https://www.tinybird.co/docs/forward/work-with-data/publish-data/clickhouse-interface
-- SQL reference: https://www.tinybird.co/docs/sql-reference
-- Datasource files: https://www.tinybird.co/docs/forward/dev-reference/datafiles/datasource-files
-- Pipe files: https://www.tinybird.co/docs/forward/dev-reference/datafiles/pipe-files
-- CLI commands: https://www.tinybird.co/docs/forward/dev-reference/commands
-- Limits: https://www.tinybird.co/docs/forward/pricing/limits
-- Local dev: https://www.tinybird.co/docs/forward/test-and-deploy/local
-- Deployments: https://www.tinybird.co/docs/forward/test-and-deploy/deployments
-- Template functions: https://www.tinybird.co/docs/forward/dev-reference/template-functions
-- Multi-tenant guide with Clerk: https://www.tinybird.co/docs/forward/work-with-data/publish-data/guides/multitenant-real-time-apis-with-clerk-and-tinybird
