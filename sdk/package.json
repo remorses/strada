@@ -77,7 +77,8 @@
   },
   "peerDependencies": {
     "@opentelemetry/auto-instrumentations-node": ">=0.56.0",
-    "@opentelemetry/auto-instrumentations-web": ">=0.46.0"
+    "@opentelemetry/auto-instrumentations-web": ">=0.46.0",
+    "@opentelemetry/opentelemetry-browser-detector": ">=0.200.0"
   },
   "peerDependenciesMeta": {
     "@opentelemetry/auto-instrumentations-node": {
@@ -85,11 +86,15 @@
     },
     "@opentelemetry/auto-instrumentations-web": {
       "optional": true
+    },
+    "@opentelemetry/opentelemetry-browser-detector": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.56.0",
     "@opentelemetry/auto-instrumentations-web": "^0.46.0",
+    "@opentelemetry/opentelemetry-browser-detector": "^0.215.0",
     "@types/node": "^25.5.0",
     "rimraf": "^6.0.1"
   }

@@ -3,9 +3,23 @@
  * used by both Node and browser entries. This is the core of the SDK; the
  * runtime-specific files (node.ts, browser.ts) are thin wrappers that wire
  * OTel providers and install global error handlers.
+ *
+ * After initStrada(), the global OTel providers are registered. Users can
+ * use standard OTel APIs (trace.getTracer(), logs.getLogger(), etc.) directly.
+ * The convenience helpers here (captureException, track) are optional sugar.
  */
 
 import { SeverityNumber } from "@opentelemetry/api-logs";
+
+// ---------------------------------------------------------------------------
+// Re-export OTel API primitives so users don't need @opentelemetry/api
+// ---------------------------------------------------------------------------
+
+export { trace, context, metrics, propagation, diag, SpanStatusCode, SpanKind } from "@opentelemetry/api";
+export type { Tracer, Span, SpanContext, SpanOptions, SpanAttributes } from "@opentelemetry/api";
+export { SeverityNumber } from "@opentelemetry/api-logs";
+export { logs } from "@opentelemetry/api-logs";
+export type { Logger } from "@opentelemetry/api-logs";
 
 // ---------------------------------------------------------------------------
 // Public types

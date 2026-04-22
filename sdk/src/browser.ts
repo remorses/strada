@@ -28,7 +28,7 @@ import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
-import { resourceFromAttributes } from "@opentelemetry/resources";
+import { resourceFromAttributes, detectResources } from "@opentelemetry/resources";
 import { logs } from "@opentelemetry/api-logs";
 import type { Logger } from "@opentelemetry/api-logs";
 
@@ -49,13 +49,29 @@ import {
   INFO_SEVERITY_TEXT,
 } from "./shared.ts";
 
-// Re-export shared types and helpers so users only need one import
+// Re-export shared types, helpers, and OTel primitives so users only need one import
 export {
   type StradaOptions,
   type CaptureExceptionOptions,
   type UserContext,
   setUser,
   setTags,
+  // OTel API re-exports
+  trace,
+  context,
+  metrics,
+  propagation,
+  diag,
+  SpanStatusCode,
+  SpanKind,
+  SeverityNumber,
+  logs,
+  type Tracer,
+  type Span,
+  type SpanContext,
+  type SpanOptions,
+  type SpanAttributes,
+  type Logger,
 } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
@@ -246,11 +262,32 @@ export function initStrada(options: StradaOptions): void {
 
   const getUserId = () => resolveUserId(_options);
 
-  const resource = resourceFromAttributes({
+  // Build resource with Strada attributes + browser detector
+  let resource = resourceFromAttributes({
     "service.name": options.service,
     ...(options.version ? { "service.version": options.version } : {}),
     ...(options.environment ? { "deployment.environment.name": options.environment } : {}),
   });
+
+  // Detect browser attributes (platform, brands, mobile, language, user_agent)
+  // using the OTel browser detector. This is synchronous since navigator APIs
+  // are available immediately in the browser.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("@opentelemetry/opentelemetry-browser-detector");
+    if (mod && mod.browserDetector) {
+      const detected = detectResources({ detectors: [mod.browserDetector] });
+      resource = resource.merge(detected);
+    }
+  } catch {
+    // Browser detector not installed, that's fine.
+    // Users can install @opentelemetry/opentelemetry-browser-detector to
+    // get automatic browser.platform, browser.brands, browser.mobile,
+    // browser.language, and user_agent.original resource attributes.
+    if (options.debug) {
+      console.log("[@strada.sh/sdk] @opentelemetry/opentelemetry-browser-detector not found, skipping");
+    }
+  }
 
   const endpoint = options.endpoint.replace(/\/+$/, "");
 
@@ -414,26 +451,6 @@ export function track(
     attributes,
     context: ctx,
   });
-}
-
-// ---------------------------------------------------------------------------
-// Identify
-// ---------------------------------------------------------------------------
-
-/**
- * Set the current user identity. This updates the user context that gets
- * injected into every subsequent span and log record.
- *
- * @example
- * ```ts
- * identify('user_123', { email: 'tommy@acme.com', plan: 'pro' })
- * ```
- */
-export function identify(
-  userId: string,
-  attributes?: Record<string, string>,
-): void {
-  setUser({ id: userId, ...attributes });
 }
 
 // ---------------------------------------------------------------------------

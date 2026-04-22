@@ -33,13 +33,29 @@ import {
   ERROR_SEVERITY_TEXT,
 } from "./shared.ts";
 
-// Re-export shared types and helpers so users only need one import
+// Re-export shared types, helpers, and OTel primitives so users only need one import
 export {
   type StradaOptions,
   type CaptureExceptionOptions,
   type UserContext,
   setUser,
   setTags,
+  // OTel API re-exports
+  trace,
+  context,
+  metrics,
+  propagation,
+  diag,
+  SpanStatusCode,
+  SpanKind,
+  SeverityNumber,
+  logs,
+  type Tracer,
+  type Span,
+  type SpanContext,
+  type SpanOptions,
+  type SpanAttributes,
+  type Logger,
 } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
