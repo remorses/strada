@@ -13,6 +13,9 @@
     },
     {
       "path": "./otel-query"
+    },
+    {
+      "path": "./sdk"
     }
   ]
 }

@@ -1,0 +1,96 @@
+{
+  "name": "@strada.sh/sdk",
+  "version": "0.0.1",
+  "description": "OTel-first Strada SDK. Sentry-like error capture and auto-instrumentation for Node.js and browsers, powered by OpenTelemetry.",
+  "keywords": [
+    "strada",
+    "opentelemetry",
+    "otel",
+    "error-tracking",
+    "observability",
+    "tracing",
+    "sdk"
+  ],
+  "homepage": "https://github.com/remorses/strada",
+  "bugs": "https://github.com/remorses/strada/issues",
+  "license": "MIT",
+  "author": "remorses <beats.by.morse@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remorses/strada",
+    "directory": "sdk"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/browser.js",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./shared": {
+      "types": "./dist/shared.d.ts",
+      "default": "./dist/shared.js"
+    },
+    "./src": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./src/*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.214.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/instrumentation": "^0.214.0",
+    "@opentelemetry/resources": "^2.6.1",
+    "@opentelemetry/sdk-logs": "^0.214.0",
+    "@opentelemetry/sdk-metrics": "^2.6.1",
+    "@opentelemetry/sdk-node": "^0.215.0",
+    "@opentelemetry/sdk-trace-base": "^2.6.1",
+    "@opentelemetry/sdk-trace-web": "^2.7.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/auto-instrumentations-node": ">=0.56.0",
+    "@opentelemetry/auto-instrumentations-web": ">=0.46.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/auto-instrumentations-node": {
+      "optional": true
+    },
+    "@opentelemetry/auto-instrumentations-web": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
+    "@opentelemetry/auto-instrumentations-web": "^0.46.0",
+    "@types/node": "^25.5.0",
+    "rimraf": "^6.0.1"
+  }
+}
