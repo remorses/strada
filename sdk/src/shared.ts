@@ -28,6 +28,12 @@ export interface StradaOptions {
   beforeSend?: (error: Error) => Error | null;
   /** Enable OTel diagnostic logging */
   debug?: boolean;
+  /**
+   * Dynamic user ID resolver (browser only).
+   * Called on every span/log to get the current user ID.
+   * Use this when user ID changes at runtime (e.g. after login).
+   */
+  userId?: string | (() => string | undefined);
 }
 
 export interface CaptureExceptionOptions {
@@ -221,3 +227,19 @@ export function errorToAttributes(
  */
 export const ERROR_SEVERITY = SeverityNumber.ERROR;
 export const ERROR_SEVERITY_TEXT = "ERROR";
+export const INFO_SEVERITY = SeverityNumber.INFO;
+export const INFO_SEVERITY_TEXT = "INFO";
+
+// ---------------------------------------------------------------------------
+// Resolve userId from options
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the userId from StradaOptions.userId.
+ * Supports both static string and dynamic resolver function.
+ */
+export function resolveUserId(options: StradaOptions | undefined): string | undefined {
+  if (!options?.userId) return _user?.id;
+  if (typeof options.userId === "function") return options.userId() ?? _user?.id;
+  return options.userId ?? _user?.id;
+}
