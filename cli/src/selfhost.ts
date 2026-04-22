@@ -19,6 +19,32 @@ export interface SelfhostOptions {
   baseUrl?: string;
 }
 
+function getTinybirdEnvAuth() {
+  const token = process.env.TINYBIRD_TOKEN || process.env.TB_TOKEN
+  const baseUrl = process.env.TINYBIRD_BASE_URL || process.env.TINYBIRD_HOST || process.env.TB_HOST
+  if (!token) return null
+  return {
+    token,
+    baseUrl: baseUrl || 'https://api.tinybird.co',
+  }
+}
+
+function createTokenNameSuffix() {
+  return Date.now().toString(36)
+}
+
+async function getDeploymentManagedReadToken(client: TinybirdClient) {
+  const tokens = await client.listTokens()
+  if (tokens instanceof Error) return tokens
+
+  const readToken = tokens.tokens.find((token) => token.name === 'STRADA_READ_TOKEN')
+  if (!readToken) {
+    return new Error('Tinybird deployment succeeded but the deployment-managed STRADA_READ_TOKEN was not found. Make sure the datasource files define TOKEN STRADA_READ_TOKEN READ.')
+  }
+
+  return readToken
+}
+
 export const selfhostCli = goke();
 
 selfhostCli
@@ -123,6 +149,16 @@ export async function selfhostAction(
       return new Error("--base-url is required when using --token");
     }
 
+    const envAuth = getTinybirdEnvAuth()
+    if (envAuth) {
+      clack.log.info(`Using Tinybird token from environment for ${envAuth.baseUrl}`)
+      return envAuth
+    }
+
+    if (!process.stdin.isTTY) {
+      return new Error("Tinybird login needs browser interaction. Run `strada selfhost` in a background terminal session with tuistory or tmux, or re-run with --token and --base-url (or TINYBIRD_TOKEN and TINYBIRD_BASE_URL).")
+    }
+
     clack.log.info("Opening browser to authenticate with Tinybird...");
     return browserLogin();
   })();
@@ -165,9 +201,11 @@ export async function selfhostAction(
   const tokenSpinner = clack.spinner();
   tokenSpinner.start("Creating tokens...");
 
+  const tokenNameSuffix = createTokenNameSuffix()
+
   const [adminToken, readToken] = await Promise.all([
-    client.createToken({ name: "strada-admin", scope: "ADMIN" }),
-    client.createToken({ name: "strada-read", scope: "DATASOURCES:READ" }),
+    client.createToken({ name: `strada-admin-${tokenNameSuffix}`, scope: "ADMIN" }),
+    getDeploymentManagedReadToken(client),
   ]);
   if (adminToken instanceof Error) {
     tokenSpinner.stop("Failed to create admin token");

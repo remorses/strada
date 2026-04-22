@@ -1,4 +1,5 @@
 TOKEN OTEL_TINYBIRD_TOKEN APPEND
+TOKEN STRADA_READ_TOKEN READ
 
 DESCRIPTION >
     Extracted exception events from OpenTelemetry logs and traces.

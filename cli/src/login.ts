@@ -10,6 +10,8 @@ import { loadConfig, saveConfig, getBaseUrl } from "./config.ts";
 
 export const loginCli = goke();
 
+const CLI_CLIENT_ID = "strada-cli"
+
 loginCli
   .command("login", "Authenticate with Strada via browser login")
   .option("-u, --url [url]", "Strada website URL (default: https://strada.sh)")
@@ -35,7 +37,7 @@ async function loginAction(
   const deviceRes = await fetch(new URL("/api/auth/device/code", baseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ client_id: CLI_CLIENT_ID }),
   });
 
   if (!deviceRes.ok) {
@@ -70,15 +72,19 @@ async function loginAction(
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
-    const pollRes = await fetch(new URL("/api/auth/device/verify", baseUrl), {
+    const pollRes = await fetch(new URL("/api/auth/device/token", baseUrl), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device_code: deviceData.device_code }),
+      body: JSON.stringify({
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        device_code: deviceData.device_code,
+        client_id: CLI_CLIENT_ID,
+      }),
     });
 
     if (pollRes.ok) {
-      const result = await pollRes.json() as { token?: string; session?: { token?: string } };
-      const token = result.token || result.session?.token;
+      const result = await pollRes.json() as { access_token?: string };
+      const token = result.access_token;
       if (token) {
         spinner.stop("Approved!");
         saveConfig({ sessionToken: token, baseUrl });

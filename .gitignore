@@ -11,3 +11,4 @@ opensrc
 *.local.*
 .env
 tmp
+.wrangler

@@ -48,6 +48,36 @@ async function parseJsonBody<TSchema extends z.ZodTypeAny>(
   return bodySchema.parse(await request.json())
 }
 
+function buildGoogleSignInHref(callbackURL: string) {
+  const url = new URL('/login/google', 'https://strada.sh')
+  url.searchParams.set('callbackURL', callbackURL)
+  return `${url.pathname}${url.search}`
+}
+
+async function createGoogleSignInRedirect(request: Request, callbackURL: string) {
+  const auth = getAuth()
+  const { response, headers } = await auth.api.signInSocial({
+    body: { provider: 'google', callbackURL },
+    headers: request.headers,
+    returnHeaders: true,
+  })
+  if (!response?.url) {
+    throw new Response(JSON.stringify({ error: 'failed to start google sign-in' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  const redirectResponse = new Response(null, {
+    status: 302,
+    headers: { Location: response.url },
+  })
+  for (const cookie of headers.getSetCookie()) {
+    redirectResponse.headers.append('Set-Cookie', cookie)
+  }
+  return redirectResponse
+}
+
 async function createOrgForUser(userId: string, name: string) {
   const db = getDb()
   const orgId = ulid()
@@ -84,12 +114,14 @@ export const app = new Spiceflow()
   .page('/login', async ({ request }) => {
     const session = await getSession(request)
     if (session) return redirect('/')
+    const url = new URL(request.url)
+    const callbackURL = url.searchParams.get('callbackURL') || '/'
     return (
       <html lang="en">
         <body style={{ fontFamily: 'system-ui', maxWidth: 400, margin: '100px auto', textAlign: 'center' }}>
           <h1>Strada</h1>
           <p>Sign in to manage your observability projects</p>
-          <a href="/api/auth/sign-in/social?provider=google&callbackURL=/" style={{
+          <a href={buildGoogleSignInHref(callbackURL)} style={{
             display: 'inline-block', padding: '12px 24px',
             background: '#000', color: '#fff', borderRadius: 8,
             textDecoration: 'none', fontWeight: 600,
@@ -101,24 +133,115 @@ export const app = new Spiceflow()
     )
   })
 
+  .get('/login/google', async ({ request }) => {
+    const url = new URL(request.url)
+    const callbackURL = url.searchParams.get('callbackURL') || '/'
+    return createGoogleSignInRedirect(request, callbackURL)
+  })
+
   // ── Device flow verification page ─────────────────────────────
   .page('/device', async ({ request }) => {
-    const session = await getSession(request)
-    if (!session) return redirect('/login')
     const url = new URL(request.url)
     const userCode = url.searchParams.get('user_code') ?? ''
+    const status = url.searchParams.get('status') ?? ''
+    const auth = getAuth()
+
+    if (!userCode) {
+      return (
+        <html lang="en">
+          <body style={{ fontFamily: 'system-ui', maxWidth: 400, margin: '100px auto', textAlign: 'center' }}>
+            <h1>Strada CLI Login</h1>
+            <p>Open this page from the CLI login flow with a valid device code.</p>
+          </body>
+        </html>
+      )
+    }
+
+    const device = await auth.api.deviceVerify({ query: { user_code: userCode } }).catch(() => null)
+    if (!device) {
+      return (
+        <html lang="en">
+          <body style={{ fontFamily: 'system-ui', maxWidth: 400, margin: '100px auto', textAlign: 'center' }}>
+            <h1>Strada CLI Login</h1>
+            <p>That device code is invalid or expired.</p>
+          </body>
+        </html>
+      )
+    }
+
+    const session = await getSession(request)
+    if (!session) return redirect(`/login?callbackURL=${encodeURIComponent(url.pathname + url.search)}`)
+
     return (
       <html lang="en">
         <body style={{ fontFamily: 'system-ui', maxWidth: 400, margin: '100px auto', textAlign: 'center' }}>
           <h1>Strada CLI Login</h1>
-          <p>Enter the code shown in your terminal to authorize the CLI.</p>
-          <p>Code: <strong>{userCode || '(enter below)'}</strong></p>
-          <p style={{ color: '#666', fontSize: 14 }}>
-            After approving, you can close this page.
-          </p>
+          {status === 'approved'
+            ? (
+                <>
+                  <p>The CLI was approved successfully.</p>
+                  <p style={{ color: '#666', fontSize: 14 }}>You can close this page and return to the terminal.</p>
+                </>
+              )
+            : status === 'denied'
+              ? (
+                  <>
+                    <p>The CLI login was denied.</p>
+                    <p style={{ color: '#666', fontSize: 14 }}>You can close this page and start the login flow again.</p>
+                  </>
+                )
+              : (
+                  <>
+                    <p>A CLI is requesting access to your account.</p>
+                    <p>Code: <strong>{userCode}</strong></p>
+                    <p style={{ color: '#666', fontSize: 14 }}>
+                      Current status: {device.status}. Approve to let the CLI finish logging in.
+                    </p>
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24 }}>
+                      <form method="post" action="/device/approve">
+                        <input type="hidden" name="userCode" value={userCode} />
+                        <button type="submit" style={{ padding: '12px 24px', background: '#000', color: '#fff', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
+                          Approve CLI
+                        </button>
+                      </form>
+                      <form method="post" action="/device/deny">
+                        <input type="hidden" name="userCode" value={userCode} />
+                        <button type="submit" style={{ padding: '12px 24px', background: '#fff', color: '#000', borderRadius: 8, border: '1px solid #ccc', fontWeight: 600, cursor: 'pointer' }}>
+                          Deny
+                        </button>
+                      </form>
+                    </div>
+                  </>
+                )}
         </body>
       </html>
     )
+  })
+
+  .route({
+    method: 'POST',
+    path: '/device/approve',
+    async handler({ request }) {
+      await requireSession(request)
+      const formData = await request.formData()
+      const userCode = String(formData.get('userCode') || '')
+      const auth = getAuth()
+      await auth.api.deviceApprove({ body: { userCode }, headers: request.headers })
+      return redirect(`/device?user_code=${encodeURIComponent(userCode)}&status=approved`)
+    },
+  })
+
+  .route({
+    method: 'POST',
+    path: '/device/deny',
+    async handler({ request }) {
+      await requireSession(request)
+      const formData = await request.formData()
+      const userCode = String(formData.get('userCode') || '')
+      const auth = getAuth()
+      await auth.api.deviceDeny({ body: { userCode }, headers: request.headers })
+      return redirect(`/device?user_code=${encodeURIComponent(userCode)}&status=denied`)
+    },
   })
 
   // ── API: Create org ───────────────────────────────────────────

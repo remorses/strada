@@ -63,22 +63,37 @@ export interface TinybirdCliLoginResponse {
 export interface TinybirdToken {
   token: string;
   name: string;
-  scope: string;
+  description?: string;
+  scopes: Array<{ type: string; resource?: string; filter?: string }>;
+}
+
+export interface TinybirdTokensListResponse {
+  tokens: TinybirdToken[];
 }
 
 class TinybirdResponseShapeError extends errore.createTaggedError({
   name: "TinybirdResponseShapeError",
-  message: "Tinybird returned an invalid response for $operation",
+  message: "Tinybird returned an invalid response for $operation. $details",
 }) {}
 
 class TinybirdRequestError extends errore.createTaggedError({
   name: "TinybirdRequestError",
-  message: "Tinybird request failed for $operation",
+  message: "Tinybird request failed for $operation at $baseUrl. $details",
 }) {}
+
+function formatBodyForError(body: string) {
+  const trimmed = body.trim()
+  if (!trimmed) return "Response body was empty."
+  if (trimmed.length <= 1200) return `Response body: ${trimmed}`
+  return `Response body: ${trimmed.slice(0, 1200)}…`
+}
 
 function expectObject({ value, operation }: { value: unknown; operation: string }) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return new TinybirdResponseShapeError({ operation });
+    return new TinybirdResponseShapeError({
+      operation,
+      details: `Expected an object but received ${Array.isArray(value) ? "an array" : String(value)}.`,
+    });
   }
 
   const record: Record<string, unknown> = {};
@@ -89,7 +104,10 @@ function expectObject({ value, operation }: { value: unknown; operation: string 
 function expectString({ record, key, operation }: { record: Record<string, unknown>; key: string; operation: string }) {
   const value = record[key];
   if (typeof value !== "string") {
-    return new TinybirdResponseShapeError({ operation });
+    return new TinybirdResponseShapeError({
+      operation,
+      details: `Expected field ${key} to be a string but received ${JSON.stringify(value)}. Response keys: ${Object.keys(record).sort().join(", ")}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    });
   }
 
   return value;
@@ -110,6 +128,33 @@ function optionalStringArray({ record, key }: { record: Record<string, unknown>;
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 }
 
+function parseScopes({ record, key, operation }: { record: Record<string, unknown>; key: string; operation: string }) {
+  const value = record[key]
+  if (!Array.isArray(value)) {
+    return new TinybirdResponseShapeError({
+      operation,
+      details: `Expected field ${key} to be an array but received ${JSON.stringify(value)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
+
+  const scopes: TinybirdToken["scopes"] = []
+  for (const item of value) {
+    const scopeRecord = expectObject({ value: item, operation: `${operation} scope item` })
+    if (scopeRecord instanceof Error) return scopeRecord
+
+    const type = expectString({ record: scopeRecord, key: "type", operation: `${operation} scope.type` })
+    if (type instanceof Error) return type
+
+    scopes.push({
+      type,
+      ...(optionalString({ record: scopeRecord, key: "resource" }) ? { resource: optionalString({ record: scopeRecord, key: "resource" }) } : undefined),
+      ...(optionalString({ record: scopeRecord, key: "filter" }) ? { filter: optionalString({ record: scopeRecord, key: "filter" }) } : undefined),
+    })
+  }
+
+  return scopes
+}
+
 function parseDeploymentError({ value }: { value: unknown }) {
   const record = expectObject({ value, operation: "deployment error item" });
   if (record instanceof Error) return record;
@@ -125,7 +170,13 @@ function parseDeploymentError({ value }: { value: unknown }) {
 
 function parseDeploymentErrors({ record, key }: { record: Record<string, unknown>; key: string }) {
   const value = record[key];
-  if (!Array.isArray(value)) return undefined;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    return new TinybirdResponseShapeError({
+      operation: `deployment errors.${key}`,
+      details: `Expected ${key} to be an array but received ${JSON.stringify(value)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
 
   const errors: TinybirdDeploymentError[] = [];
   for (const item of value) {
@@ -168,7 +219,12 @@ function parseDeployment({ value }: { value: unknown }) {
 
   const id = optionalString({ record, key: "id" });
   const status = optionalString({ record, key: "status" });
-  if (!id || !status) return null;
+  if (!id || !status) {
+    return new TinybirdResponseShapeError({
+      operation: "deployment",
+      details: `Expected deployment to include string id and status. Received id=${JSON.stringify(record.id)} status=${JSON.stringify(record.status)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
 
   return {
     id,
@@ -179,7 +235,7 @@ function parseDeployment({ value }: { value: unknown }) {
 
 function parseDeploymentDetails({ value }: { value: unknown }) {
   const deployment = parseDeployment({ value });
-  if (deployment instanceof Error || deployment === null) return deployment;
+  if (deployment instanceof Error) return deployment;
 
   const record = expectObject({ value, operation: "deployment details" });
   if (record instanceof Error) return record;
@@ -200,7 +256,13 @@ function parseDeploymentsList({ value }: { value: unknown }) {
   if (record instanceof Error) return record;
 
   const deployments = record.deployments;
-  if (!Array.isArray(deployments)) return [];
+  if (deployments === undefined) return [];
+  if (!Array.isArray(deployments)) {
+    return new TinybirdResponseShapeError({
+      operation: "deployments list.deployments",
+      details: `Expected deployments to be an array but received ${JSON.stringify(deployments)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
 
   const parsed: TinybirdDeployment[] = [];
   for (const item of deployments) {
@@ -218,7 +280,10 @@ function parseDeployResponse({ value }: { value: unknown }) {
 
   const result = optionalString({ record, key: "result" });
   if (result !== "success" && result !== "failed" && result !== "no_changes") {
-    return new TinybirdResponseShapeError({ operation: "deploy result" });
+    return new TinybirdResponseShapeError({
+      operation: "deploy result",
+      details: `Expected result to be one of success, failed, no_changes but received ${JSON.stringify(result)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    });
   }
 
   const deployment = record.deployment ? parseDeploymentDetails({ value: record.deployment }) : undefined;
@@ -242,7 +307,10 @@ function parseDeploymentStatusResponse({ value }: { value: unknown }) {
   const deployment = parseDeployment({ value: record.deployment });
   if (deployment instanceof Error) return deployment;
   if (deployment === null) {
-    return new TinybirdResponseShapeError({ operation: "deployment status payload" });
+    return new TinybirdResponseShapeError({
+      operation: "deployment status payload",
+      details: `Expected deployment object with id and status. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    });
   }
 
   return {
@@ -259,10 +327,45 @@ function parseTokenResponse({ value }: { value: unknown }) {
   if (token instanceof Error) return token;
   const name = expectString({ record, key: "name", operation: "token.name" });
   if (name instanceof Error) return name;
-  const scope = expectString({ record, key: "scope", operation: "token.scope" });
-  if (scope instanceof Error) return scope;
+  const scopes = parseScopes({ record, key: "scopes", operation: "token.scopes" })
+  if (scopes instanceof Error) return scopes
 
-  return { token, name, scope } satisfies TinybirdToken;
+  return { token, name, scopes } satisfies TinybirdToken;
+}
+
+function parseTokensListResponse({ value }: { value: unknown }) {
+  const record = expectObject({ value, operation: "list tokens" })
+  if (record instanceof Error) return record
+
+  const valueTokens = record.tokens
+  if (!Array.isArray(valueTokens)) {
+    return new TinybirdResponseShapeError({
+      operation: "list tokens.tokens",
+      details: `Expected tokens to be an array but received ${JSON.stringify(valueTokens)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
+
+  const tokens: TinybirdToken[] = []
+  for (const item of valueTokens) {
+    const tokenRecord = expectObject({ value: item, operation: "list tokens token item" })
+    if (tokenRecord instanceof Error) return tokenRecord
+
+    const token = expectString({ record: tokenRecord, key: "token", operation: "list tokens token.token" })
+    if (token instanceof Error) return token
+    const name = expectString({ record: tokenRecord, key: "name", operation: "list tokens token.name" })
+    if (name instanceof Error) return name
+    const scopes = parseScopes({ record: tokenRecord, key: "scopes", operation: "list tokens token.scopes" })
+    if (scopes instanceof Error) return scopes
+
+    tokens.push({
+      token,
+      name,
+      scopes,
+      ...(optionalString({ record: tokenRecord, key: "description" }) ? { description: optionalString({ record: tokenRecord, key: "description" }) } : undefined),
+    })
+  }
+
+  return { tokens } satisfies TinybirdTokensListResponse
 }
 
 function parseCliLoginResponse({ value }: { value: unknown }) {
@@ -288,8 +391,18 @@ function parseCliLoginResponse({ value }: { value: unknown }) {
 function toHttpError({ operation, response }: { operation: string; response: Response }) {
   return response
     .text()
-    .then((body) => new TinybirdRequestError({ operation, cause: new Error(`HTTP ${response.status} ${response.statusText}: ${body}`) }))
-    .catch((cause: unknown) => new TinybirdRequestError({ operation, cause }));
+    .then((body) => new TinybirdRequestError({
+      operation,
+      baseUrl: response.url || "unknown Tinybird endpoint",
+      details: `HTTP ${response.status} ${response.statusText}. ${formatBodyForError(body)}`,
+      cause: new Error(`HTTP ${response.status} ${response.statusText}: ${body}`),
+    }))
+    .catch((cause: unknown) => new TinybirdRequestError({
+      operation,
+      baseUrl: response.url || "unknown Tinybird endpoint",
+      details: "Failed to read the error response body.",
+      cause,
+    }));
 }
 
 export class TinybirdClient {
@@ -310,13 +423,19 @@ export class TinybirdClient {
   }
 
   private async request({ path, init }: { path: string; init?: RequestInit }) {
-    return this.fetchFn(`${this.baseUrl}${path}`, {
+    const url = `${this.baseUrl}${path}`
+    return this.fetchFn(url, {
       ...init,
       headers: {
         Authorization: `Bearer ${this.config.token}`,
         ...(init?.headers ?? {}),
       },
-    }).catch((cause: unknown) => new TinybirdRequestError({ operation: path, cause }));
+    }).catch((cause: unknown) => new TinybirdRequestError({
+      operation: path,
+      baseUrl: url,
+      details: "Network request failed before Tinybird returned a response.",
+      cause,
+    }));
   }
 
   private async requestJson<T>({ path, parser, init }: { path: string; parser: (args: { value: unknown }) => Error | T; init?: RequestInit }) {
@@ -324,7 +443,12 @@ export class TinybirdClient {
     if (response instanceof Error) return response;
     if (!response.ok) return toHttpError({ operation: path, response });
 
-    const body = await response.json().catch((cause: unknown) => new TinybirdRequestError({ operation: `${path} json`, cause }));
+    const body = await response.json().catch((cause: unknown) => new TinybirdRequestError({
+      operation: `${path} json`,
+      baseUrl: response.url || `${this.baseUrl}${path}`,
+      details: "Tinybird returned a non-JSON response for a JSON endpoint.",
+      cause,
+    }));
     if (body instanceof Error) return body;
 
     return parser({ value: body });
@@ -381,6 +505,10 @@ export class TinybirdClient {
       init: { method: "POST" },
     });
   }
+
+  async listTokens() {
+    return this.requestJson({ path: "/v0/tokens", parser: parseTokensListResponse })
+  }
 }
 
 export async function exchangeTinybirdCliCode({ authHost, code, fetch: customFetch }: { authHost: string; code: string; fetch?: typeof fetch }) {
@@ -389,13 +517,23 @@ export async function exchangeTinybirdCliCode({ authHost, code, fetch: customFet
   url.searchParams.set("code", code);
 
   const response = await fetchFn(url.toString()).catch(
-    (cause: unknown) => new TinybirdRequestError({ operation: "cli login exchange", cause }),
+    (cause: unknown) => new TinybirdRequestError({
+      operation: "cli login exchange",
+      baseUrl: url.toString(),
+      details: "Could not reach Tinybird CLI login exchange endpoint.",
+      cause,
+    }),
   );
   if (response instanceof Error) return response;
   if (!response.ok) return toHttpError({ operation: "cli login exchange", response });
 
   const body = await response.json().catch(
-    (cause: unknown) => new TinybirdRequestError({ operation: "cli login exchange json", cause }),
+    (cause: unknown) => new TinybirdRequestError({
+      operation: "cli login exchange json",
+      baseUrl: url.toString(),
+      details: "Tinybird CLI login exchange returned invalid JSON.",
+      cause,
+    }),
   );
   if (body instanceof Error) return body;
 
