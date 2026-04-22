@@ -208,7 +208,7 @@ parentSpan.end()
 
 ## Emit logs with OpenTelemetry
 
-The standard OTel logs API is `logs.getLogger().emit()`.
+The standard OTel logs API is `logs.getLogger().emit()`. In most cases, `severityNumber` is enough. `severityText` is optional.
 
 Important: **`console.log()` and other console methods are not sent by default**. The browser SDK exports logs you emit through the OTel logs API, `track()`, `captureException()`, and uncaught browser errors. It does not monkey-patch `console.log`, `console.info`, `console.warn`, or `console.error`.
 
@@ -224,7 +224,6 @@ const logger = logs.getLogger("app")
 
 logger.emit({
   severityNumber: SeverityNumber.INFO,
-  severityText: "INFO",
   body: "checkout started",
   attributes: {
     "event.name": "checkout_started",
@@ -253,7 +252,6 @@ try {
 
   logger.emit({
     severityNumber: SeverityNumber.ERROR,
-    severityText: "ERROR",
     body: err.message,
     attributes: {
       "exception.type": err.name,
