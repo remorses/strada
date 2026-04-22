@@ -28,7 +28,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "browser": "./dist/browser.js",
+      "workerd": "./dist/cloudflare.js",
       "default": "./dist/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "default": "./dist/cloudflare.js"
     },
     "./node": {
       "types": "./dist/node.d.ts",
