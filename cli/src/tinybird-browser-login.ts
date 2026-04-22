@@ -3,6 +3,7 @@
 import { openInBrowser } from "goke";
 import dedent from "string-dedent";
 import { Spiceflow } from "spiceflow";
+import { exchangeTinybirdCliCode } from "./tinybird.ts";
 
 const authServerPort = 49160;
 const authHost = "https://cloud.tinybird.co";
@@ -13,47 +14,6 @@ export interface TinybirdAuthResult {
   baseUrl: string;
   workspaceName?: string;
   userEmail?: string;
-}
-
-interface TokenResponse {
-  workspace_token: string;
-  user_token: string;
-  api_host: string;
-  workspace_name?: string;
-  user_email?: string;
-}
-
-function getRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Expected JSON object response");
-  }
-
-  return { ...value };
-}
-
-function getRequiredString(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  if (typeof value !== "string") {
-    throw new Error(`Missing ${key} in Tinybird auth response`);
-  }
-
-  return value;
-}
-
-function getOptionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function parseTokenResponse(value: unknown): TokenResponse {
-  const record = getRecord(value);
-  return {
-    workspace_token: getRequiredString(record, "workspace_token"),
-    user_token: getRequiredString(record, "user_token"),
-    api_host: getRequiredString(record, "api_host"),
-    workspace_name: getOptionalString(record, "workspace_name"),
-    user_email: getOptionalString(record, "user_email"),
-  };
 }
 
 function getCallbackHtml(): string {
@@ -207,21 +167,10 @@ function createAuthCallbackApp(onCode: (code: string) => void) {
       if (!code) {
         return new Response("Missing code", { status: 400 });
       }
+
       onCode(code);
       return new Response("", { status: 200 });
     });
-}
-
-async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
-  const url = new URL("/api/cli-login", authHost);
-  url.searchParams.set("code", code);
-
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    throw new Error(`Token exchange failed: ${response.status} ${response.statusText}`);
-  }
-
-  return parseTokenResponse(await response.json());
 }
 
 export async function browserLogin(): Promise<TinybirdAuthResult> {
@@ -258,7 +207,7 @@ export async function browserLogin(): Promise<TinybirdAuthResult> {
     void openInBrowser(authUrl.toString());
 
     const code = await codePromise;
-    const tokens = await exchangeCodeForTokens(code);
+    const tokens = await exchangeTinybirdCliCode({ authHost, code });
 
     return {
       token: tokens.workspace_token,

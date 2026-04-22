@@ -8,28 +8,9 @@ import { goke } from "goke";
 import type { GokeExecutionContext } from "goke";
 import picocolors from "picocolors";
 import dedent from "string-dedent";
-import { loadTinybirdResources } from "./tinybird-resources.ts";
 import { browserLogin } from "./tinybird-browser-login.ts";
-
-// ── Types ──
-
-interface DeployResponse {
-  result: "success" | "failed" | "no_changes";
-  deployment?: {
-    id: string;
-    status: string;
-    new_datasource_names?: string[];
-    new_pipe_names?: string[];
-    errors?: Array<{ filename?: string; error: string }>;
-  };
-  error?: string;
-  errors?: Array<{ filename?: string; error: string }>;
-}
-
-interface DeploymentStatusResponse {
-  result: string;
-  deployment: { id: string; status: string; live?: boolean };
-}
+import { loadTinybirdResources } from "./tinybird-resources.ts";
+import { TinybirdClient } from "./tinybird.ts";
 
 export interface SelfhostOptions {
   token?: string;
@@ -59,235 +40,65 @@ selfhostCli
   .example("strada selfhost --token p.eyXXX --base-url https://api.tinybird.co")
   .action((options, context) => selfhostAction(options, context));
 
-// ── Workspace info ──
-
-interface WorkspaceInfo {
-  name: string;
-  userEmail: string;
-}
-
-function getRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Expected JSON object response");
-  }
-
-  return { ...value };
-}
-
-function getOptionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function parseWorkspaceResponse(value: unknown): WorkspaceInfo {
-  const record = getRecord(value);
-  return {
-    name: getOptionalString(record, "name") || "unknown",
-    userEmail: getOptionalString(record, "user_email") || "unknown",
-  };
-}
-
-function parseDeploymentsResponse(value: unknown): Array<{ id: string; status: string; live?: boolean }> {
-  const record = getRecord(value);
-  const deployments = record.deployments;
-
-  if (!Array.isArray(deployments)) {
-    return [];
-  }
-
-  return deployments.flatMap((deployment) => {
-    const item = getRecord(deployment);
-    const id = getOptionalString(item, "id");
-    const status = getOptionalString(item, "status");
-    const live = typeof item.live === "boolean" ? item.live : undefined;
-
-    if (!id || !status) {
-      return [];
-    }
-
-    return [{ id, status, live }];
-  });
-}
-
-function parseDeployResponse(value: unknown): DeployResponse {
-  const record = getRecord(value);
-  const result = getOptionalString(record, "result");
-
-  if (result !== "success" && result !== "failed" && result !== "no_changes") {
-    throw new Error("Unexpected deployment response");
-  }
-
-  const deploymentRecord = record.deployment ? getRecord(record.deployment) : undefined;
-  const errors = Array.isArray(record.errors)
-    ? record.errors.flatMap((error) => {
-        const item = getRecord(error);
-        const message = getOptionalString(item, "error");
-        if (!message) return [];
-        return [{ filename: getOptionalString(item, "filename"), error: message }];
-      })
-    : undefined;
-
-  const deploymentErrors = Array.isArray(deploymentRecord?.errors)
-    ? deploymentRecord.errors.flatMap((error) => {
-        const item = getRecord(error);
-        const message = getOptionalString(item, "error");
-        if (!message) return [];
-        return [{ filename: getOptionalString(item, "filename"), error: message }];
-      })
-    : undefined;
-
-  return {
-    result,
-    error: getOptionalString(record, "error"),
-    errors,
-    deployment: deploymentRecord
-      ? {
-          id: getOptionalString(deploymentRecord, "id") || "",
-          status: getOptionalString(deploymentRecord, "status") || "",
-          new_datasource_names: Array.isArray(deploymentRecord.new_datasource_names)
-            ? deploymentRecord.new_datasource_names.filter((value): value is string => typeof value === "string")
-            : undefined,
-          new_pipe_names: Array.isArray(deploymentRecord.new_pipe_names)
-            ? deploymentRecord.new_pipe_names.filter((value): value is string => typeof value === "string")
-            : undefined,
-          errors: deploymentErrors,
-        }
-      : undefined,
-  };
-}
-
-function parseDeploymentStatusResponse(value: unknown): DeploymentStatusResponse {
-  const record = getRecord(value);
-  const deployment = getRecord(record.deployment);
-  const id = getOptionalString(deployment, "id");
-  const status = getOptionalString(deployment, "status");
-
-  if (!id || !status) {
-    throw new Error("Unexpected deployment status response");
-  }
-
-  return {
-    result: getOptionalString(record, "result") || "unknown",
-    deployment: {
-      id,
-      status,
-      live: typeof deployment.live === "boolean" ? deployment.live : undefined,
-    },
-  };
-}
-
-async function fetchWorkspaceInfo(baseUrl: string, token: string): Promise<WorkspaceInfo> {
-  const resp = await fetch(new URL("/v1/workspace", baseUrl).toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch workspace info: ${resp.status} ${resp.statusText}`);
-  }
-  return parseWorkspaceResponse(await resp.json());
-}
-
-// ── Deploy ──
-
-interface ResourceFile {
-  name: string;
-  content: string;
-}
-
 async function deployResources(
-  baseUrl: string,
-  token: string,
-  datasources: ResourceFile[],
-  pipes: ResourceFile[],
+  client: TinybirdClient,
+  datasources: Array<{ name: string; content: string }>,
+  pipes: Array<{ name: string; content: string }>,
 ): Promise<{ success: boolean; error?: string; errors?: Array<{ filename?: string; error: string }> }> {
-  const base = baseUrl.replace(/\/$/, "");
-
-  // Clean up stale non-live deployments
   try {
-    const resp = await fetch(`${base}/v1/deployments`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (resp.ok) {
-      for (const d of parseDeploymentsResponse(await resp.json())) {
-        if (!d.live && d.status !== "live") {
-          await fetch(`${base}/v1/deployments/${d.id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        }
+    for (const deployment of await client.listDeployments()) {
+      if (!deployment.live && deployment.status !== "live") {
+        await client.deleteDeployment(deployment.id);
       }
     }
   } catch {
-    // ignore cleanup errors
+    // Ignore cleanup errors and try deployment anyway.
   }
 
-  // Build multipart form
-  const formData = new FormData();
-  for (const ds of datasources) {
-    formData.append("data_project://", new Blob([ds.content], { type: "text/plain" }), `${ds.name}.datasource`);
-  }
-  for (const pipe of pipes) {
-    formData.append("data_project://", new Blob([pipe.content], { type: "text/plain" }), `${pipe.name}.pipe`);
-  }
+  const deployResponse = await client.createDeployment({ datasources, pipes });
 
-  // Create deployment
-  const deployResp = await fetch(`${base}/v1/deploy`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  const deployBody = parseDeployResponse(await deployResp.json());
-
-  if (deployBody.result === "failed") {
-    const errors = deployBody.errors ?? deployBody.deployment?.errors;
+  if (deployResponse.result === "failed") {
+    const errors = deployResponse.errors ?? deployResponse.deployment?.errors;
     return {
       success: false,
-      ...(deployBody.error !== undefined ? { error: deployBody.error } : undefined),
+      ...(deployResponse.error !== undefined ? { error: deployResponse.error } : undefined),
       ...(errors !== undefined ? { errors } : undefined),
     };
   }
 
-  if (deployBody.result === "no_changes") {
+  if (deployResponse.result === "no_changes") {
     return { success: true };
   }
 
-  const deploymentId = deployBody.deployment?.id;
+  const deploymentId = deployResponse.deployment?.id;
   if (!deploymentId) {
-    return { success: false, error: "No deployment ID in response" };
+    return { success: false, error: "No deployment ID in Tinybird response" };
   }
 
-  // Poll until ready
   for (let i = 0; i < 120; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const statusResponse = await client.getDeploymentStatus(deploymentId);
 
-    const statusResp = await fetch(`${base}/v1/deployments/${deploymentId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const statusBody = parseDeploymentStatusResponse(await statusResp.json());
-
-    if (statusBody.deployment.status === "data_ready") {
+    if (statusResponse.deployment.status === "data_ready") {
       break;
     }
-    if (statusBody.deployment.status === "failed") {
-      return { success: false, error: "Deployment failed during data migration" };
+
+    if (statusResponse.deployment.status === "failed" || statusResponse.deployment.status === "error") {
+      return { success: false, error: `Deployment failed with status ${statusResponse.deployment.status}` };
     }
   }
 
-  // Promote to live
-  const promoteResp = await fetch(`${base}/v1/deployments/${deploymentId}/set-live`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!promoteResp.ok) {
-    const text = await promoteResp.text();
-    return { success: false, error: `Failed to promote deployment: ${text}` };
+  try {
+    await client.promoteDeployment(deploymentId);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
   return { success: true };
 }
-
-// ── Command action ──
 
 export async function selfhostAction(
   options: SelfhostOptions,
@@ -298,7 +109,6 @@ export async function selfhostAction(
   let token = options.token;
   let baseUrl = options.baseUrl;
 
-  // ── Auth ──
   if (token && baseUrl) {
     clack.log.info(`Using provided token for ${baseUrl}`);
   } else if (token && !baseUrl) {
@@ -312,14 +122,13 @@ export async function selfhostAction(
       token = auth.token;
       baseUrl = auth.baseUrl;
 
-      // Fetch workspace info (the OAuth callback doesn't always include it)
-      const workspace = await fetchWorkspaceInfo(baseUrl, token);
+      const workspace = await new TinybirdClient({ baseUrl, token }).getWorkspace();
 
       clack.log.success(
-        `Authenticated as ${picocolors.cyan(workspace.userEmail)} ` + `in workspace ${picocolors.cyan(workspace.name)}`,
+        `Authenticated as ${picocolors.cyan(workspace.user_email)} ` + `in workspace ${picocolors.cyan(workspace.name)}`,
       );
-    } catch (err) {
-      clack.log.error(err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      clack.log.error(error instanceof Error ? error.message : String(error));
       return process.exit(1);
     }
   }
@@ -329,46 +138,43 @@ export async function selfhostAction(
     return process.exit(1);
   }
 
-  // ── Load resources ──
+  const client = new TinybirdClient({ baseUrl, token });
+
   const spinner = clack.spinner();
   spinner.start("Loading Tinybird resource files...");
 
   let resources;
   try {
     resources = loadTinybirdResources();
-  } catch (err) {
+  } catch (error) {
     spinner.stop("Failed to load resources");
-    clack.log.error(err instanceof Error ? err.message : String(err));
+    clack.log.error(error instanceof Error ? error.message : String(error));
     return process.exit(1);
   }
 
   spinner.message(`Found ${resources.datasources.length} datasources, ${resources.pipes.length} pipes`);
-
-  // ── Deploy ──
   spinner.message("Deploying to Tinybird...");
 
   try {
-    const result = await deployResources(baseUrl, token, resources.datasources, resources.pipes);
-
+    const result = await deployResources(client, resources.datasources, resources.pipes);
     if (!result.success) {
       spinner.stop("Deployment failed");
       if (result.error) clack.log.error(result.error);
       if (result.errors?.length) {
-        for (const e of result.errors) {
-          clack.log.error(`  ${e.filename || ""}: ${e.error}`);
+        for (const error of result.errors) {
+          clack.log.error(`  ${error.filename || ""}: ${error.error}`);
         }
       }
       return process.exit(1);
     }
 
     spinner.stop("Deployed successfully");
-  } catch (err) {
+  } catch (error) {
     spinner.stop("Deployment failed");
-    clack.log.error(err instanceof Error ? err.message : String(err));
+    clack.log.error(error instanceof Error ? error.message : String(error));
     return process.exit(1);
   }
 
-  // ── Output ──
   clack.log.success("Strada is deployed to your Tinybird workspace!");
 
   output.log("");
