@@ -1,26 +1,22 @@
 {
   "name": "strada-otel-ingester",
   "main": "src/index.ts",
-  "compatibility_date": "2026-03-25",
+  "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
-  // Route pattern: each project gets {project}-ingest.strada.sh
-  // The worker extracts project_id from the hostname and injects it into every row.
+  // Route pattern: each project gets {projectId}-ingest.strada.sh
+  // The worker extracts project_id from the hostname and resolves config from D1.
   "routes": [
     {
       "pattern": "*-ingest.strada.sh/*",
       "zone_name": "strada.sh",
     },
   ],
-  // Backend selection: set TINYBIRD_* vars for Tinybird, or CLICKHOUSE_* for ClickHouse.
-  // Only one backend should be configured per deployment.
-  "vars": {
-    // ── Tinybird backend ──
-    "TINYBIRD_ENDPOINT": "https://api.us-east.aws.tinybird.co",
-    // TINYBIRD_TOKEN — set via `wrangler secret put TINYBIRD_TOKEN`
-    // ── ClickHouse backend (uncomment to use instead of Tinybird) ──
-    // "CLICKHOUSE_URL": "http://localhost:8123",
-    // "CLICKHOUSE_DATABASE": "default",
-    // "CLICKHOUSE_USER": "default",
-    // CLICKHOUSE_PASSWORD — set via `wrangler secret put CLICKHOUSE_PASSWORD`
-  },
+  // Shared D1 database with the website — used to resolve project → database config.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "strada-db",
+      "database_id": "PLACEHOLDER_CREATE_WITH_WRANGLER",
+    },
+  ],
 }

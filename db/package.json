@@ -1,0 +1,29 @@
+{
+  "name": "db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Drizzle schema and migrations for the Strada D1 database",
+  "exports": {
+    "./package.json": "./package.json",
+    "./src/*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./src/*.ts": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate && tsx scripts/flatten-migrations.ts ./drizzle",
+    "flatten": "tsx scripts/flatten-migrations.ts ./drizzle"
+  },
+  "devDependencies": {
+    "drizzle-kit": "1.0.0-beta.21",
+    "drizzle-orm": "1.0.0-beta.21",
+    "typescript": "^6.0.2",
+    "ulid": "^3.0.2"
+  }
+}

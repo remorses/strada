@@ -59,6 +59,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "strada-website": "workspace:^",
     "typescript": "^6.0.2"
   }
 }

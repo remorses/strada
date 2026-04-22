@@ -1,6 +1,8 @@
 // Extract project_id from the request hostname.
-// Project-scoped: {project}-ingest.{domain} → "acme"
-// Default:        ingest.{domain}, localhost, IP → "" (empty string)
+// The project ID is the ULID from the database project table.
+// Hostname format: {projectId}-ingest.{domain}
+// Example: 01JTHG5M7XPQR8KNCZ0W4D-ingest.strada.sh → "01JTHG5M7XPQR8KNCZ0W4D"
+// No match: ingest.strada.sh, localhost → "" (empty string)
 
 export function getProjectId(request: { url: string }): string {
   const hostname = new URL(request.url).hostname;

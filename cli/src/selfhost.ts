@@ -1,7 +1,6 @@
 // Self-hosted Tinybird setup command.
-//
-// Tinybird browser auth lives in tinybird-browser-login.ts because the local
-// callback server is easier to reason about as a small isolated module.
+// Requires `strada login` first. After deploying Tinybird resources,
+// saves the tokens to the Strada database via the website API.
 
 import * as clack from "@clack/prompts";
 import { goke } from "goke";
@@ -11,6 +10,8 @@ import dedent from "string-dedent";
 import { browserLogin } from "./tinybird-browser-login.ts";
 import { loadTinybirdResources } from "./tinybird-resources.ts";
 import { TinybirdClient } from "./tinybird.ts";
+import { requireAuth } from "./config.ts";
+import { createApiClient } from "./api-client.ts";
 
 export interface SelfhostOptions {
   token?: string;
@@ -25,11 +26,11 @@ selfhostCli
     dedent`
       Set up Strada on your own Tinybird workspace.
 
-      Authenticates with Tinybird via browser OAuth, then deploys all OTel
-      datasources and materialized views to your workspace. Outputs the
-      environment variables needed to configure the otel-collector.
+      Requires \`strada login\` first. Authenticates with Tinybird via browser
+      OAuth, deploys OTel datasources and materialized views, then saves the
+      tokens to your Strada database.
 
-      For non-interactive usage (CI), pass --token and --base-url directly.
+      For non-interactive Tinybird auth, pass --token and --base-url directly.
     `,
   )
   .option("-t, --token [token]", "Tinybird workspace admin token (skips browser login)")
@@ -86,10 +87,35 @@ async function deployResources({ client, datasources, pipes }: {
 
 export async function selfhostAction(
   options: SelfhostOptions,
-  { console: output, process }: GokeExecutionContext,
+  { console: output, process: proc }: GokeExecutionContext,
 ) {
   clack.intro(picocolors.bold("Strada — Self-hosted Tinybird setup"));
 
+  // Require Strada login first
+  let stradaAuth: { sessionToken: string; baseUrl: string };
+  try {
+    stradaAuth = requireAuth();
+  } catch (e) {
+    clack.log.error((e as Error).message);
+    return proc.exit(1);
+  }
+
+  const { safeFetch, authHeaders } = createApiClient(stradaAuth.baseUrl, stradaAuth.sessionToken);
+
+  // Get the user's org
+  const orgsRes = await safeFetch("/api/orgs", { headers: { ...authHeaders } });
+  if (orgsRes instanceof Error) {
+    clack.log.error(orgsRes.message);
+    return proc.exit(1);
+  }
+  if (orgsRes.orgs.length === 0) {
+    clack.log.error("No organizations found. Create one first.");
+    return proc.exit(1);
+  }
+  const org = orgsRes.orgs[0]!;
+  clack.log.info(`Using organization: ${picocolors.cyan(org.name)}`);
+
+  // Authenticate with Tinybird
   const auth = await (async () => {
     if (options.token && options.baseUrl) {
       clack.log.info(`Using provided token for ${options.baseUrl}`);
@@ -105,14 +131,14 @@ export async function selfhostAction(
   })();
   if (auth instanceof Error) {
     clack.log.error(auth.message);
-    return process.exit(1);
+    return proc.exit(1);
   }
 
   const client = new TinybirdClient({ baseUrl: auth.baseUrl, token: auth.token });
   const workspace = await client.getWorkspace();
   if (workspace instanceof Error) {
     clack.log.error(workspace.message);
-    return process.exit(1);
+    return proc.exit(1);
   }
 
   clack.log.success(`Authenticated as ${picocolors.cyan(workspace.user_email)} in workspace ${picocolors.cyan(workspace.name)}`);
@@ -124,7 +150,7 @@ export async function selfhostAction(
   if (resources instanceof Error) {
     spinner.stop("Failed to load resources");
     clack.log.error(resources.message);
-    return process.exit(1);
+    return proc.exit(1);
   }
 
   spinner.message(`Found ${resources.datasources.length} datasources, ${resources.pipes.length} pipes`);
@@ -134,20 +160,59 @@ export async function selfhostAction(
   if (deployment instanceof Error) {
     spinner.stop("Deployment failed");
     clack.log.error(deployment.message);
-    return process.exit(1);
+    return proc.exit(1);
   }
 
   spinner.stop("Deployed successfully");
-  clack.log.success("Strada is deployed to your Tinybird workspace!");
+
+  const tokenSpinner = clack.spinner();
+  tokenSpinner.start("Creating tokens...");
+
+  const [adminToken, readToken] = await Promise.all([
+    client.createToken({ name: "strada-admin", scope: "ADMIN" }),
+    client.createToken({ name: "strada-read", scope: "DATASOURCES:READ" }),
+  ]);
+  if (adminToken instanceof Error) {
+    tokenSpinner.stop("Failed to create admin token");
+    clack.log.error(adminToken.message);
+    return proc.exit(1);
+  }
+  if (readToken instanceof Error) {
+    tokenSpinner.stop("Failed to create read token");
+    clack.log.error(readToken.message);
+    return proc.exit(1);
+  }
+
+  tokenSpinner.stop("Tokens created");
+
+  // Save Tinybird config to the Strada database
+  const saveSpinner = clack.spinner();
+  saveSpinner.start("Saving database config to Strada...");
+
+  const saveRes = await safeFetch(`/api/orgs/${org.id}/database`, {
+    method: "PUT",
+    headers: { ...authHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      backend: "tinybird",
+      tinybirdEndpoint: auth.baseUrl,
+      tinybirdAdminToken: adminToken.token,
+      tinybirdReadToken: readToken.token,
+    }),
+  });
+  if (saveRes instanceof Error) {
+    saveSpinner.stop("Failed to save config");
+    clack.log.error(saveRes.message);
+    return proc.exit(1);
+  }
+  saveSpinner.stop("Database config saved");
+
+  clack.log.success("Strada is deployed to your Tinybird workspace and config is saved!");
 
   output.log("");
-  output.log(picocolors.bold("Add these environment variables to your otel-collector:"));
+  output.log(picocolors.bold("Next steps:"));
+  output.log(`  1. Create a project: ${picocolors.cyan("strada projects create my-app")}`);
+  output.log(`  2. Configure your SDK with the project's ingest endpoint`);
   output.log("");
-  output.log(`  ${picocolors.cyan("TINYBIRD_ENDPOINT")}=${auth.baseUrl}`);
-  output.log(`  ${picocolors.cyan("TINYBIRD_TOKEN")}=${auth.token}`);
-  output.log("");
-  output.log(picocolors.dim("ProjectId is always empty string for self-hosted — no row-level filtering needed."));
-  output.log(picocolors.dim("For reads, use this same workspace admin token with Tinybird /v0/sql queries."));
 
   clack.outro("Done");
 }

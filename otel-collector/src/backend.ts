@@ -11,7 +11,7 @@
 //   table name) for mapping lookup, so custom table names work correctly.
 
 import { remapNdjson, type SignalKind } from "./field-mapping.ts";
-import { env } from "./env.ts";
+import type { ProjectConfig } from "./env.ts";
 
 // ─── Backend interface ───
 
@@ -83,22 +83,26 @@ export class ClickHouseBackend implements Backend {
 
 // ─── Backend factory ───
 
-export function createBackend(): Backend {
-  if (env.CLICKHOUSE_URL) {
+/** Create a backend from a resolved ProjectConfig (from D1). */
+export function createBackend(config: ProjectConfig): Backend {
+  if (config.backend === "clickhouse") {
+    if (!config.clickhouseUrl) {
+      throw new Error(`Project ${config.projectId}: ClickHouse backend selected but no URL configured.`);
+    }
     return new ClickHouseBackend(
-      env.CLICKHOUSE_URL,
-      env.CLICKHOUSE_DATABASE,
-      env.CLICKHOUSE_USER,
-      env.CLICKHOUSE_PASSWORD,
+      config.clickhouseUrl,
+      config.clickhouseDatabase || "default",
+      config.clickhouseUser || "default",
+      config.clickhousePassword || "",
     );
   }
 
-  if (env.TINYBIRD_ENDPOINT && env.TINYBIRD_TOKEN) {
-    return new TinybirdBackend(env.TINYBIRD_ENDPOINT, env.TINYBIRD_TOKEN);
+  if (config.backend === "tinybird") {
+    if (!config.tinybirdEndpoint || !config.tinybirdAdminToken) {
+      throw new Error(`Project ${config.projectId}: Tinybird backend selected but endpoint/token not configured.`);
+    }
+    return new TinybirdBackend(config.tinybirdEndpoint, config.tinybirdAdminToken);
   }
 
-  throw new Error(
-    "Missing backend configuration. Set either CLICKHOUSE_URL (for ClickHouse) " +
-      "or TINYBIRD_ENDPOINT + TINYBIRD_TOKEN (for Tinybird).",
-  );
+  throw new Error(`Project ${config.projectId}: Unknown backend "${config.backend}".`);
 }

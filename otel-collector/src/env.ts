@@ -1,36 +1,8 @@
-// Type-safe environment variable access.
+// Type-safe environment variable access and project config resolution.
 //
-// All env vars are read once from process.env and exposed as a typed object.
-// Uses process.env for portability (Cloudflare Workers with nodejs_compat_v2,
-// Node.js, Bun).
-
-interface Env {
-  // ── Backend selection (one of these groups must be set) ──
-
-  /** Tinybird API endpoint. e.g. "https://api.us-east.aws.tinybird.co" */
-  TINYBIRD_ENDPOINT: string | undefined;
-  /** Tinybird API token with APPEND on all datasources */
-  TINYBIRD_TOKEN: string | undefined;
-
-  /** ClickHouse HTTP interface URL. e.g. "http://localhost:8123" */
-  CLICKHOUSE_URL: string | undefined;
-  /** ClickHouse target database. Defaults to "default" */
-  CLICKHOUSE_DATABASE: string;
-  /** ClickHouse user. Defaults to "default" */
-  CLICKHOUSE_USER: string;
-  /** ClickHouse password */
-  CLICKHOUSE_PASSWORD: string;
-}
-
-export const env: Env = {
-  TINYBIRD_ENDPOINT: process.env.TINYBIRD_ENDPOINT,
-  TINYBIRD_TOKEN: process.env.TINYBIRD_TOKEN,
-
-  CLICKHOUSE_URL: process.env.CLICKHOUSE_URL,
-  CLICKHOUSE_DATABASE: process.env.CLICKHOUSE_DATABASE || "default",
-  CLICKHOUSE_USER: process.env.CLICKHOUSE_USER || "default",
-  CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD || "",
-};
+// The collector resolves project config from a shared D1 database.
+// Project ID is extracted from the hostname, then looked up in D1
+// to get the database credentials (Tinybird or ClickHouse).
 
 /** Standard OTel table names. */
 export const datasources = {
@@ -42,3 +14,15 @@ export const datasources = {
   histogram: "otel_metrics_histogram",
   exponentialHistogram: "otel_metrics_exponential_histogram",
 } as const;
+
+/** Resolved database config for a project, fetched from D1. */
+export interface ProjectConfig {
+  projectId: string;
+  backend: "tinybird" | "clickhouse";
+  tinybirdEndpoint: string | null;
+  tinybirdAdminToken: string | null;
+  clickhouseUrl: string | null;
+  clickhouseDatabase: string | null;
+  clickhouseUser: string | null;
+  clickhousePassword: string | null;
+}

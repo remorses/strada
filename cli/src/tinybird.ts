@@ -60,6 +60,12 @@ export interface TinybirdCliLoginResponse {
   user_email?: string;
 }
 
+export interface TinybirdToken {
+  token: string;
+  name: string;
+  scope: string;
+}
+
 class TinybirdResponseShapeError extends errore.createTaggedError({
   name: "TinybirdResponseShapeError",
   message: "Tinybird returned an invalid response for $operation",
@@ -245,6 +251,20 @@ function parseDeploymentStatusResponse({ value }: { value: unknown }) {
   } satisfies TinybirdDeploymentStatusResponse;
 }
 
+function parseTokenResponse({ value }: { value: unknown }) {
+  const record = expectObject({ value, operation: "create token" });
+  if (record instanceof Error) return record;
+
+  const token = expectString({ record, key: "token", operation: "token.token" });
+  if (token instanceof Error) return token;
+  const name = expectString({ record, key: "name", operation: "token.name" });
+  if (name instanceof Error) return name;
+  const scope = expectString({ record, key: "scope", operation: "token.scope" });
+  if (scope instanceof Error) return scope;
+
+  return { token, name, scope } satisfies TinybirdToken;
+}
+
 function parseCliLoginResponse({ value }: { value: unknown }) {
   const record = expectObject({ value, operation: "cli login" });
   if (record instanceof Error) return record;
@@ -352,6 +372,14 @@ export class TinybirdClient {
     if (response instanceof Error) return response;
     if (!response.ok) return toHttpError({ operation: `promote deployment ${deploymentId}`, response });
     return null;
+  }
+
+  async createToken({ name, scope }: { name: string; scope: string }) {
+    return this.requestJson({
+      path: `/v0/tokens/?name=${encodeURIComponent(name)}&scope=${encodeURIComponent(scope)}`,
+      parser: parseTokenResponse,
+      init: { method: "POST" },
+    });
   }
 }
 

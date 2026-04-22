@@ -14,6 +14,10 @@ We use the standard OTel schema for ClickHouse: https://github.com/open-telemetr
 
 See other files in sqltemplates as well for other kinds of tables.
 
+## npm packages
+
+all publishable packages in this repo should have name `strada` (the main cli, cli folder) or be under the `@strada.sh` scope. 
+
 ## Architecture
 
 - **otel-collector**: Cloudflare Worker (Spiceflow) that receives OTLP HTTP/JSON and forwards to either Tinybird Events API or ClickHouse HTTP interface as NDJSON. Backend is selected by environment variables: set `TINYBIRD_ENDPOINT` + `TINYBIRD_TOKEN` for Tinybird, or `CLICKHOUSE_URL` for direct ClickHouse. No separate adapter needed for self-hosted ClickHouse.

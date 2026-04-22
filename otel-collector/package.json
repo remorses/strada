@@ -11,13 +11,14 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "test:integration": "vitest run src/collector-integration.test.ts",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "types": "wrangler types"
   },
   "dependencies": {
     "spiceflow": "^1.18.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250313.0",
+
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.214.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",

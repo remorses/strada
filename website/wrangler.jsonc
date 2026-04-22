@@ -1,0 +1,57 @@
+{
+  "name": "strada-website",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "spiceflow/cloudflare-entrypoint",
+  "observability": {
+    "enabled": true,
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "strada-db",
+      "database_id": "PLACEHOLDER_CREATE_WITH_WRANGLER",
+      "migrations_dir": "../db/drizzle",
+    },
+  ],
+  "secrets": {
+    "required": [
+      "BETTER_AUTH_SECRET",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+    ],
+  },
+  "routes": [
+    {
+      "pattern": "strada.sh",
+      "custom_domain": true,
+    },
+  ],
+  "env": {
+    "preview": {
+      "name": "strada-website-preview",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "strada-preview-db",
+          "database_id": "PLACEHOLDER_CREATE_WITH_WRANGLER",
+          "migrations_dir": "../db/drizzle",
+        },
+      ],
+      "secrets": {
+        "required": [
+          "BETTER_AUTH_SECRET",
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+        ],
+      },
+      "routes": [
+        {
+          "pattern": "preview.strada.sh",
+          "custom_domain": true,
+          "zone_name": "strada.sh",
+        },
+      ],
+    },
+  },
+}
