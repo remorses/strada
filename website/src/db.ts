@@ -48,10 +48,9 @@ export function getAuth() {
 
 function getBaseUrl(): string {
   // In production the URL comes from the custom domain route.
-  // In dev it's the BETTER_AUTH_URL env or fallback to localhost.
-  if (typeof env.BETTER_AUTH_URL === 'string' && env.BETTER_AUTH_URL) {
-    return env.BETTER_AUTH_URL
-  }
+  // In dev, BETTER_AUTH_URL can be set as a var in wrangler.jsonc [vars] or via .dev.vars.
+  const override = (env as unknown as Record<string, unknown>).BETTER_AUTH_URL
+  if (typeof override === 'string' && override) return override
   return 'https://strada.sh'
 }
 

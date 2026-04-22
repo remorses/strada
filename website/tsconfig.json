@@ -1,5 +1,10 @@
 {
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "ESNext",
@@ -12,7 +17,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "types": []
   },
   "include": ["src", "worker-configuration.d.ts"]

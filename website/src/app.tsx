@@ -2,6 +2,7 @@
 // Google social login, device flow for CLI, project management, query bridge.
 
 import { Spiceflow, redirect } from 'spiceflow'
+import type { SpiceflowRegister } from 'spiceflow/react'
 import { z } from 'zod'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
@@ -10,9 +11,7 @@ import {
   hashToken, generateProjectToken,
 } from './db.ts'
 
-export const app = new Spiceflow({
-  allowedActionOrigins: [/\.kimaki\.dev$/],
-})
+export const app = new Spiceflow()
 
   // ── BetterAuth middleware ──────────────────────────────────────
   .use(async ({ request }, next) => {
