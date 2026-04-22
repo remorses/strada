@@ -138,10 +138,36 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 The Node entry (`sdk/src/node.ts`) wraps `@opentelemetry/sdk-node`:
 
 - Configures OTLP HTTP exporters for traces, logs, and metrics
+- Configures W3C Baggage extraction via `BaggageSpanProcessor` and `BaggageLogProcessor`
 - Installs `process.on('uncaughtException')` and `process.on('unhandledRejection')`
 - Flushes and exits on fatal errors
 - Graceful shutdown on SIGTERM/SIGINT
 - Auto-instrumentation via `@opentelemetry/auto-instrumentations-node` (optional peer dep, loaded via dynamic import)
+
+### Browser-to-server context propagation (W3C Baggage)
+
+The SDK propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
+
+**Browser side:** The `PageviewContextManager` injects a Baggage object containing `strada.session.id` and `strada.user.id` into the active OTel context. A `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator` serializes both headers on every outgoing `fetch`/`XHR`.
+
+**Node side:** `BaggageSpanProcessor` reads the baggage from the incoming request context and sets `session.id` and `user.id` as span attributes. `BaggageLogProcessor` does the same for log records. This happens automatically for every backend span/log within a browser-initiated request.
+
+**Result:** Backend spans and logs carry the same `session.id` and `user.id` as browser telemetry. No app code needed. The data lands in the same ClickHouse attribute maps (`SpanAttributes`, `LogAttributes`), so existing SQL queries that filter by `session.id` or `user.id` automatically return both browser and backend rows. `ServiceName` distinguishes the origin.
+
+```
+Browser request (session.id = abc, user.id = user_123)
+  |
+  | headers: traceparent: ..., baggage: strada.session.id=abc,strada.user.id=user_123
+  |
+  v
+Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
+  +-- span: POST /api/checkout     -> session.id=abc, user.id=user_123
+  +-- log: "purchase" event        -> session.id=abc, user.id=user_123
+```
+
+**Baggage key names:** `strada.session.id` and `strada.user.id` (prefixed with `strada.` to avoid collision with other baggage entries). Constants are in `shared.ts` as `BAGGAGE_SESSION_ID` and `BAGGAGE_USER_ID`.
+
+**No SQL changes needed.** Baggage is only a transport mechanism. Once extracted, the values become regular span/log attributes stored in the same Map columns, indexed by the same bloom filters.
 
 ### Optional peer dependencies
 
