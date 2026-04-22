@@ -436,10 +436,10 @@ export function initStrada(options: StradaOptions): void {
   _logger = _loggerProvider.getLogger("strada-web");
 
   // Try to load web auto-instrumentations (optional peer dep).
-  // The specifier is constructed at runtime so bundlers don't resolve and
-  // inline the entire auto-instrumentations dependency tree into the bundle.
-  const autoInstPkg = ["@opentelemetry", "auto-instrumentations-web"].join("/");
-  import(autoInstPkg)
+  // Unlike Node, we keep the literal specifier here so bundlers can resolve
+  // and inline it. Browsers can't resolve bare specifiers at runtime, so
+  // the non-static trick used in node.ts would silently break this.
+  import("@opentelemetry/auto-instrumentations-web")
     .then((mod) => {
       if (typeof mod.getWebAutoInstrumentations === "function") {
         registerInstrumentations({

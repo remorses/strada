@@ -21,7 +21,14 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
-import { resourceFromAttributes } from "@opentelemetry/resources";
+import {
+  defaultResource,
+  detectResources,
+  envDetector,
+  processDetector,
+  hostDetector,
+  resourceFromAttributes,
+} from "@opentelemetry/resources";
 import { logs } from "@opentelemetry/api-logs";
 import type { Logger } from "@opentelemetry/api-logs";
 import { context as otelContext, metrics, propagation, trace } from "@opentelemetry/api";
@@ -194,13 +201,19 @@ export function initStrada(options: StradaOptions): void {
 
   _options = options;
 
-  const resource = resourceFromAttributes({
-    [ATTR.SERVICE_NAME]: options.service,
-    ...(options.version ? { [ATTR.SERVICE_VERSION]: options.version } : {}),
-    ...(options.environment
-      ? { [ATTR.DEPLOYMENT_ENVIRONMENT_NAME]: options.environment }
-      : {}),
-  });
+  // Build resource by merging layers, same as NodeSDK did:
+  // 1. defaultResource() adds telemetry.sdk.* attributes
+  // 2. detectResources() adds process.*, host.*, and OTEL_RESOURCE_ATTRIBUTES
+  // 3. Our custom service.* attributes take highest priority (last merge wins)
+  const resource = defaultResource()
+    .merge(detectResources({ detectors: [envDetector, processDetector, hostDetector] }))
+    .merge(resourceFromAttributes({
+      [ATTR.SERVICE_NAME]: options.service,
+      ...(options.version ? { [ATTR.SERVICE_VERSION]: options.version } : {}),
+      ...(options.environment
+        ? { [ATTR.DEPLOYMENT_ENVIRONMENT_NAME]: options.environment }
+        : {}),
+    }));
 
   const endpoint = options.endpoint.replace(/\/+$/, "");
 
