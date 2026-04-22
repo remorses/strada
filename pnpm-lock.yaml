@@ -83,6 +83,22 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2
 
+  example-app:
+    dependencies:
+      '@strada.sh/sdk':
+        specifier: workspace:^
+        version: link:../sdk
+      spiceflow:
+        specifier: 1.19.0-rsc.3
+        version: 1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.9(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+
   otel-collector:
     dependencies:
       spiceflow:
