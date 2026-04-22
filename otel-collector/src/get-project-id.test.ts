@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import { getProjectId } from "./get-project-id.ts";
 
 describe("getProjectId", () => {
-  it("extracts project from standard ingest subdomain", () => {
-    const req = new Request("https://acme-ingest.strada.sh/v1/traces");
-    expect(getProjectId(req)).toBe("acme");
+  it("normalizes ULID project ids to uppercase", () => {
+    const req = new Request("https://01kpvgtt9cjw4znef414vhgrfd-ingest.strada.sh/v1/traces");
+    expect(getProjectId(req)).toBe("01KPVGTT9CJW4ZNEF414VHGRFD");
   });
 
-  it("extracts project with hyphens in name", () => {
+  it("keeps mixed project prefixes uppercased for hostname-insensitive matching", () => {
     const req = new Request("https://my-company-ingest.strada.sh/v1/logs");
-    expect(getProjectId(req)).toBe("my-company");
+    expect(getProjectId(req)).toBe("MY-COMPANY");
   });
 
   it("returns empty string for plain ingest subdomain (self-hosted)", () => {
