@@ -53,6 +53,105 @@ Column names follow the **standard OTel ClickHouse exporter schema** (PascalCase
 
 The only Strada addition is `ProjectId` as the first column in every Tinybird table for project isolation. The self-hosted ClickHouse schema (`clickhouse.sql`) does not have this column.
 
+## SDK (`@strada.sh/sdk`)
+
+The SDK lives in `sdk/` and is the main package users install. It is **OTel-first**: after `initStrada()`, the global OTel providers are registered and users can use standard OTel APIs (`trace.getTracer()`, `logs.getLogger()`, `metrics.getMeter()`) directly. The SDK re-exports these from `@opentelemetry/api` so users don't need to install it separately.
+
+### Design principle
+
+The SDK is a **configuration and convenience layer**, not a replacement for OTel. It:
+
+1. Configures OTel providers, exporters, and processors for the Strada endpoint
+2. Installs global error handlers (uncaughtException, unhandledrejection, window.error)
+3. Provides convenience helpers (`captureException`, `track`, `setUser`, `setTags`)
+4. Injects Strada-specific context (session.id, url.*, user.id) into every span and log
+
+Users migrating from raw OTel code only need to replace their provider setup with `initStrada()`. Their existing `tracer.startSpan()`, `logger.emit()`, `meter.createCounter()` code works unchanged.
+
+### Re-exported OTel APIs
+
+These are re-exported from all entry points (`@strada.sh/sdk`, `@strada.sh/sdk/node`, `@strada.sh/sdk/browser`):
+
+| Export | From | Purpose |
+|--------|------|---------|
+| `trace` | `@opentelemetry/api` | `trace.getTracer()` to create spans |
+| `context` | `@opentelemetry/api` | Context propagation |
+| `metrics` | `@opentelemetry/api` | `metrics.getMeter()` for counters, histograms |
+| `propagation` | `@opentelemetry/api` | Trace context propagation |
+| `diag` | `@opentelemetry/api` | OTel diagnostic logging |
+| `logs` | `@opentelemetry/api-logs` | `logs.getLogger()` for log records |
+| `SpanStatusCode` | `@opentelemetry/api` | Span status enum (OK, ERROR, UNSET) |
+| `SpanKind` | `@opentelemetry/api` | Span kind enum (SERVER, CLIENT, etc.) |
+| `SeverityNumber` | `@opentelemetry/api-logs` | Log severity enum (INFO, ERROR, etc.) |
+
+Plus types: `Tracer`, `Span`, `SpanContext`, `SpanOptions`, `SpanAttributes`, `Logger`.
+
+### Convenience helpers (optional sugar)
+
+These are thin wrappers over OTel APIs with Strada conventions baked in:
+
+| Helper | What it does under the hood |
+|--------|----------------------------|
+| `captureException(error, opts?)` | Normalizes the error, applies filtering (ignoreErrors/denyUrls/beforeSend), builds `exception.*` attributes, emits an OTel log record |
+| `track(name, props?)` | Emits an OTel log record with `event.name` and `custom.*` attributes, correlated to active pageview span (browser only) |
+| `setUser({ id, email, ... })` | Sets user context injected into subsequent spans and log records |
+| `setTags({ key: value })` | Sets tags merged into subsequent error attributes |
+
+### Conditional exports
+
+| Import path | Resolves to | When |
+|-------------|-------------|------|
+| `@strada.sh/sdk` | `node.ts` | Default (Node.js, Bun, Deno) |
+| `@strada.sh/sdk` | `browser.ts` | When bundler sees `"browser"` condition |
+| `@strada.sh/sdk/node` | `node.ts` | Explicit Node import |
+| `@strada.sh/sdk/browser` | `browser.ts` | Explicit browser import |
+
+### Browser-specific features
+
+The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of error tracking:
+
+**Session management.** A per-tab UUID stored in `sessionStorage` under the key `strada.session_id`. Survives page refreshes, new on tab close. Injected as `session.id` into every span and log record.
+
+**Browser detection.** Inline detection (no external package) of `browser.platform`, `browser.brands`, `browser.mobile`, `browser.language`, `user_agent.original` from `navigator.userAgentData` and `navigator.userAgent`. Set as resource attributes.
+
+**StradaSpanProcessor.** Custom SpanProcessor that injects into every span on `onStart`:
+
+| Attribute | Source |
+|-----------|--------|
+| `session.id` | sessionStorage UUID |
+| `url.path` | `window.location.pathname` |
+| `url.query` | `window.location.search` |
+| `url.full` | `window.location.href` |
+| `http.request.header.referer` | `document.referrer` |
+| `user.id` | From `setUser()` or `StradaOptions.userId` |
+
+**ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `user.id` into every log record.
+
+**FilteringLogProcessor.** Drops known browser noise at the processor level: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
+
+**Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. SPA router plugins call these on navigation.
+
+**track() API.** Custom events as OTel log records with `event.name` attribute and `custom.*` prefixed properties. Correlated to the active pageview span via OTel context propagation (TraceId/SpanId set automatically).
+
+### Node-specific features
+
+The Node entry (`sdk/src/node.ts`) wraps `@opentelemetry/sdk-node`:
+
+- Configures OTLP HTTP exporters for traces, logs, and metrics
+- Installs `process.on('uncaughtException')` and `process.on('unhandledRejection')`
+- Flushes and exits on fatal errors
+- Graceful shutdown on SIGTERM/SIGINT
+- Auto-instrumentation via `@opentelemetry/auto-instrumentations-node` (optional peer dep, loaded via dynamic import)
+
+### Optional peer dependencies
+
+| Package | What it adds | Loaded via |
+|---------|-------------|------------|
+| `@opentelemetry/auto-instrumentations-node` | Auto-instrument http, express, pg, mysql, redis, etc. | `import()` in node.ts |
+| `@opentelemetry/auto-instrumentations-web` | Auto-instrument fetch, XHR, document load, user interaction | `import()` in browser.ts |
+
+Both are loaded with dynamic `import()` so the package stays ESM-clean and works without them installed.
+
 ## Project isolation
 
 ### How project_id is determined
