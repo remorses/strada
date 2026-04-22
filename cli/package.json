@@ -19,7 +19,7 @@
     "url": "https://github.com/remorses/strada",
     "directory": "cli"
   },
-  "bin": "dist/cli.js",
+  "bin": "dist/bin.js",
   "files": [
     "src",
     "dist"
@@ -43,9 +43,9 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/cli.js",
+    "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/bin.js",
     "prepublishOnly": "pnpm run build",
-    "cli": "tsx src/cli",
+    "cli": "tsx src/bin",
     "typecheck": "tsc -b"
   },
   "dependencies": {
