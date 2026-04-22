@@ -11,6 +11,42 @@ import {
   hashToken, generateProjectToken,
 } from './db.ts'
 
+const createOrgRequestSchema = z.object({ name: z.string().min(1) })
+
+const updateDatabaseRequestSchema = z.discriminatedUnion('backend', [
+  z.object({
+    backend: z.literal('tinybird'),
+    tinybirdEndpoint: z.string().url(),
+    tinybirdAdminToken: z.string().min(1),
+    tinybirdReadToken: z.string().min(1),
+  }),
+  z.object({
+    backend: z.literal('clickhouse'),
+    clickhouseUrl: z.string().url(),
+    clickhouseDatabase: z.string().optional(),
+    clickhouseUser: z.string().optional(),
+    clickhousePassword: z.string().optional(),
+  }),
+])
+
+const createProjectRequestSchema = z.object({
+  slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
+})
+
+const createProjectTokenRequestSchema = z.object({
+  name: z.string().min(1),
+  scope: z.enum(['ingest', 'read']),
+})
+
+const queryProjectRequestSchema = z.object({ sql: z.string().min(1) })
+
+async function parseJsonBody<TSchema extends z.ZodTypeAny>(
+  request: Request,
+  bodySchema: TSchema,
+): Promise<z.infer<TSchema>> {
+  return bodySchema.parse(await request.json())
+}
+
 export const app = new Spiceflow()
 
   // ── BetterAuth middleware ──────────────────────────────────────
@@ -74,11 +110,11 @@ export const app = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/orgs',
-    request: z.object({ name: z.string().min(1) }),
+    request: createOrgRequestSchema,
     async handler({ request }) {
       const session = await requireSession(request)
       const db = getDb()
-      const body = await request.json() as { name: string }
+      const body = await parseJsonBody(request, createOrgRequestSchema)
 
       const orgId = (await import('ulid')).ulid()
       const dbId = (await import('ulid')).ulid()
@@ -87,7 +123,7 @@ export const app = new Spiceflow()
         db.insert(schema.org).values({ id: orgId, name: body.name }),
         db.insert(schema.orgMember).values({ orgId, userId: session.userId, role: 'admin' }),
         db.insert(schema.database).values({ id: dbId, orgId, backend: 'tinybird' }),
-      ] as const)
+      ])
 
       return { id: orgId, name: body.name, databaseId: dbId }
     },
@@ -112,26 +148,12 @@ export const app = new Spiceflow()
   .route({
     method: 'PUT',
     path: '/api/orgs/:orgId/database',
-    request: z.discriminatedUnion('backend', [
-      z.object({
-        backend: z.literal('tinybird'),
-        tinybirdEndpoint: z.string().url(),
-        tinybirdAdminToken: z.string().min(1),
-        tinybirdReadToken: z.string().min(1),
-      }),
-      z.object({
-        backend: z.literal('clickhouse'),
-        clickhouseUrl: z.string().url(),
-        clickhouseDatabase: z.string().optional(),
-        clickhouseUser: z.string().optional(),
-        clickhousePassword: z.string().optional(),
-      }),
-    ]),
+    request: updateDatabaseRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
       await requireOrgMember(session.userId, params.orgId)
       const db = getDb()
-      const body = await request.json() as Record<string, string>
+      const body = await parseJsonBody(request, updateDatabaseRequestSchema)
 
       const existing = await db.query.database.findFirst({
         where: { orgId: params.orgId },
@@ -207,12 +229,12 @@ export const app = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/orgs/:orgId/projects',
-    request: z.object({ slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens') }),
+    request: createProjectRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
       await requireOrgMember(session.userId, params.orgId)
       const db = getDb()
-      const body = await request.json() as { slug: string }
+      const body = await parseJsonBody(request, createProjectRequestSchema)
 
       const dbRow = await db.query.database.findFirst({
         where: { orgId: params.orgId },
@@ -279,10 +301,7 @@ export const app = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/projects/:projectId/tokens',
-    request: z.object({
-      name: z.string().min(1),
-      scope: z.enum(['ingest', 'read']),
-    }),
+    request: createProjectTokenRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
       const db = getDb()
@@ -296,7 +315,7 @@ export const app = new Spiceflow()
       }
       await requireOrgMember(session.userId, proj.orgId)
 
-      const body = await request.json() as { name: string; scope: 'ingest' | 'read' }
+      const body = await parseJsonBody(request, createProjectTokenRequestSchema)
       const { fullKey, prefix } = generateProjectToken()
       const hashed = await hashToken(fullKey)
 
@@ -369,7 +388,7 @@ export const app = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/projects/:projectId/query',
-    request: z.object({ sql: z.string().min(1) }),
+    request: queryProjectRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
       const db = getDb()
@@ -391,7 +410,7 @@ export const app = new Spiceflow()
         })
       }
 
-      const body = await request.json() as { sql: string }
+      const body = await parseJsonBody(request, queryProjectRequestSchema)
 
       if (dbConfig.backend === 'tinybird') {
         if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdReadToken) {
