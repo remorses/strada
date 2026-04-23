@@ -21,6 +21,10 @@ describe("anyValueToString", () => {
     expect(anyValueToString({ intValue: "42" })).toBe("42");
   });
 
+  it("handles intValue when numeric payloads slip through", () => {
+    expect(anyValueToString({ intValue: 42 as never })).toBe("42");
+  });
+
   it("handles doubleValue", () => {
     expect(anyValueToString({ doubleValue: 3.14 })).toBe("3.14");
   });
@@ -84,6 +88,19 @@ describe("convertAttributes", () => {
         "dbl": "1.5",
         "num": "42",
         "str": "hello",
+      }
+    `);
+  });
+
+  it("stringifies numeric intValue fields inside attribute maps", () => {
+    const result = convertAttributes([
+      { key: "process.pid", value: { intValue: 58160 as never } },
+      { key: "http.status_code", value: { intValue: 200 as never } },
+    ]);
+    expect(result).toMatchInlineSnapshot(`
+      {
+        "http.status_code": "200",
+        "process.pid": "58160",
       }
     `);
   });

@@ -6,7 +6,7 @@ import type { AnyValue, KeyValue, Exemplar } from "./otlp-types.ts";
 export function anyValueToString(v: AnyValue | undefined): string {
   if (!v) return "";
   if (v.stringValue !== undefined) return v.stringValue;
-  if (v.intValue !== undefined) return v.intValue; // already a string in JSON
+  if (v.intValue !== undefined) return String(v.intValue);
   if (v.doubleValue !== undefined) return String(v.doubleValue);
   if (v.boolValue !== undefined) return String(v.boolValue);
   if (v.arrayValue) {
