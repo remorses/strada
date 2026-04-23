@@ -5,6 +5,13 @@
  * LoggerProvider) instead of using @opentelemetry/sdk-node which pulls in
  * every exporter variant (gRPC, proto, zipkin, prometheus), YAML config
  * parsing, and ~2MB of unnecessary dependencies. We only need HTTP/JSON.
+ *
+ * Vercel auto-detection: when VERCEL=1 is set, the SDK switches from
+ * timer-based batch flushing to per-span/log waitUntil flushing. Vercel
+ * freezes the Node.js process between requests so batch timers never fire,
+ * and kills it on scale-to-zero so buffered data is lost. waitUntil keeps
+ * the function alive until telemetry is delivered. No extra imports needed —
+ * Vercel exposes waitUntil via globalThis[Symbol.for('@vercel/request-context')].
  */
 
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -79,6 +86,94 @@ export {
   type SpanAttributes,
   type Logger,
 } from "./shared.ts";
+
+// ---------------------------------------------------------------------------
+// Vercel waitUntil (no package import — reads from native request context)
+// ---------------------------------------------------------------------------
+// Vercel populates globalThis[Symbol.for('@vercel/request-context')] on every
+// request. Calling .waitUntil() on it keeps the function alive after the HTTP
+// response is sent, preventing buffered telemetry from being dropped on freeze
+// or scale-to-zero.
+//
+// Detection: we read the native request context directly rather than checking
+// process.env.VERCEL, because Vercel only sets that env var when "System
+// Environment Variables" are enabled in project settings — a valid Vercel
+// deployment can have the request context without the env var.
+//
+// Pattern from spiceflow's wait-until.ts and @vercel/functions source:
+//   https://npmx.dev/package-code/@vercel/functions/v/3.4.3/wait-until.js
+
+const _VERCEL_CTX = Symbol.for("@vercel/request-context");
+
+function getNativeVercelWaitUntil(): ((p: Promise<unknown>) => void) | undefined {
+  return (globalThis as any)[_VERCEL_CTX]?.get?.()?.waitUntil;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-flush processors (always installed, no-op when not on Vercel)
+// ---------------------------------------------------------------------------
+// BatchSpanProcessor timers are suspended when Vercel freezes the process
+// between requests. AutoFlushSpanProcessor and AutoFlushLogProcessor call
+// scheduleFlush() after each span/log. scheduleFlush() checks for the native
+// Vercel waitUntil at call time — if it's present (i.e. we're inside a Vercel
+// request), it registers a flush that keeps the function alive. If not (local
+// dev, long-running server), it's a no-op so batch timers handle export as usual.
+
+class AutoFlushSpanProcessor implements SpanProcessor {
+  onStart(): void {}
+
+  onEnd(): void {
+    scheduleFlush();
+  }
+
+  forceFlush(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class AutoFlushLogProcessor implements LogRecordProcessor {
+  constructor(private readonly inner: LogRecordProcessor) {}
+
+  onEmit(...args: Parameters<LogRecordProcessor["onEmit"]>): void {
+    this.inner.onEmit(...args);
+    scheduleFlush();
+  }
+
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush();
+  }
+
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+}
+
+let _flushScheduled = false;
+
+function scheduleFlush(): void {
+  // Only activate when Vercel's native waitUntil is present in the current
+  // request context. On a regular long-running Node.js server this returns
+  // undefined and we skip the flush — batch timers handle export as usual.
+  const waitUntil = getNativeVercelWaitUntil();
+  if (!waitUntil) return;
+
+  if (_flushScheduled) return;
+  _flushScheduled = true;
+  waitUntil(
+    Promise.resolve().then(async () => {
+      _flushScheduled = false;
+      await Promise.all([
+        _tracerProvider?.forceFlush(),
+        _loggerProvider?.forceFlush(),
+        _meterProvider?.forceFlush(),
+      ]);
+    }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Baggage-extracting span processor
@@ -178,6 +273,11 @@ let _options: StradaOptions | undefined;
  * application code runs (ideally in a separate instrumentation.ts loaded
  * via --import).
  *
+ * On Vercel, automatically switches to waitUntil-based flushing so telemetry
+ * is not lost when the function freezes or scales to zero. Detected via
+ * Vercel's native request context (not process.env.VERCEL which is unreliable).
+ * No extra imports or config needed — works automatically.
+ *
  * This sets up:
  * - NodeTracerProvider with BaggageSpanProcessor + BatchSpanProcessor (HTTP/JSON)
  * - MeterProvider with PeriodicExportingMetricReader (HTTP/JSON)
@@ -216,13 +316,20 @@ export function initStrada(options: StradaOptions): void {
   // Log provider (used for both logs and error capture).
   // Wrapped in BaggageLogProcessor to extract session.id and user.id from
   // incoming W3C Baggage (propagated by the browser SDK via fetch headers).
-  const logExporter = new OTLPLogExporter({
-    url: `${endpoint}/v1/logs`,
-  });
+  // AutoFlushLogProcessor calls scheduleFlush() on every emit — scheduleFlush()
+  // is a no-op unless Vercel's native waitUntil is present in the request context,
+  // so this adds zero overhead on regular long-running servers.
   _loggerProvider = new LoggerProvider({
     resource,
     processors: [
-      new BaggageLogProcessor(new BatchLogRecordProcessor(logExporter)),
+      new AutoFlushLogProcessor(
+        new BaggageLogProcessor(
+          new BatchLogRecordProcessor(
+            new OTLPLogExporter({ url: `${endpoint}/v1/logs` }),
+            options.telemetry?.logs,
+          ),
+        ),
+      ),
     ],
   });
   logs.setGlobalLoggerProvider(_loggerProvider);
@@ -230,15 +337,18 @@ export function initStrada(options: StradaOptions): void {
 
   // Tracer provider with BaggageSpanProcessor to extract session.id and
   // user.id from incoming W3C Baggage, plus BatchSpanProcessor for export.
-  _tracerProvider = new NodeTracerProvider({
-    resource,
-    spanProcessors: [
-      new BaggageSpanProcessor(),
-      new BatchSpanProcessor(
-        new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
-      ),
-    ],
-  });
+  // AutoFlushSpanProcessor calls scheduleFlush() on every span end — no-op
+  // unless Vercel's native waitUntil is present in the current request context.
+  const spanProcessors: SpanProcessor[] = [
+    new BaggageSpanProcessor(),
+    new BatchSpanProcessor(
+      new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
+      options.telemetry?.traces,
+    ),
+    new AutoFlushSpanProcessor(),
+  ];
+
+  _tracerProvider = new NodeTracerProvider({ resource, spanProcessors });
   // register() sets global tracer provider, enables AsyncLocalStorageContextManager,
   // and configures W3C TraceContext + Baggage propagation.
   _tracerProvider.register({
@@ -255,10 +365,8 @@ export function initStrada(options: StradaOptions): void {
     resource,
     readers: [
       new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter({
-          url: `${endpoint}/v1/metrics`,
-        }),
-        exportIntervalMillis: 10_000,
+        exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
+        ...resolveMetricReaderOptions(options),
       }),
     ],
   });
