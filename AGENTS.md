@@ -18,6 +18,26 @@ See other files in sqltemplates as well for other kinds of tables.
 
 all publishable packages in this repo should have name `strada` (the main cli, cli folder) or be under the `@strada.sh` scope. 
 
+## CLI conventions (goke)
+
+The CLI uses [goke](https://github.com/remorses/goke) as the command framework. Load the `goke` skill before writing CLI commands.
+
+**Repeatable options instead of comma-separated values.** Never accept comma-separated strings for multi-value options. Use `z.array(z.string())` from zod so the user passes the flag multiple times:
+
+```ts
+import { z } from "zod";
+
+cli
+  .command("errors list", "List error groups")
+  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
+  .action((options) => {
+    // options.project is string[]
+    // Usage: strada errors list -p frontend -p api -p worker
+  });
+```
+
+Never do `options.project.split(",")`. The user passes `-p frontend -p api` instead of `-p frontend,api`.
+
 ## Spiceflow version
 
 All packages that depend on `spiceflow` must use the **exact same version**. The typed fetch client passes the `App` type as a generic, and mismatched versions cause `Types have separate declarations of a private property` errors because TypeScript sees two different `Spiceflow` class declarations.

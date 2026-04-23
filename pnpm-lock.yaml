@@ -54,6 +54,9 @@ importers:
       string-dedent:
         specifier: ^3.0.2
         version: 3.0.2
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@types/node':
         specifier: ^25.5.0

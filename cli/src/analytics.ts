@@ -7,6 +7,7 @@
 // ProjectId is never referenced; the JWT filter handles it automatically.
 
 import { goke, type GokeExecutionContext } from "goke";
+import { z } from "zod";
 import { bold, cyan, dim, green, yellow, gray } from "./colors.ts";
 import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
 import { queryProject } from "./errors.ts";
@@ -18,7 +19,7 @@ export const analyticsCli = goke();
 // ── Shared helpers ────────────────────────────────────────────────
 
 interface AnalyticsOptions {
-  project?: string;
+  project?: string[];
   service?: string;
   since?: string;
   limit?: string | number;
@@ -26,7 +27,7 @@ interface AnalyticsOptions {
 }
 
 /** Build WHERE conditions shared by all analytics MV queries */
-function buildPagesMvConditions(opts: AnalyticsOptions): string[] {
+function buildMvConditions(opts: AnalyticsOptions): string[] {
   const since = parseDuration(opts.since || "7d");
   const conditions: string[] = [`Date >= today() - INTERVAL ${since}`];
   if (opts.service) conditions.push(`ServiceName = '${opts.service}'`);
@@ -34,15 +35,7 @@ function buildPagesMvConditions(opts: AnalyticsOptions): string[] {
   return conditions;
 }
 
-function buildSessionsMvConditions(opts: AnalyticsOptions): string[] {
-  const since = parseDuration(opts.since || "7d");
-  const conditions: string[] = [`Date >= today() - INTERVAL ${since}`];
-  if (opts.service) conditions.push(`ServiceName = '${opts.service}'`);
-  if (opts.domain) conditions.push(`Domain = '${opts.domain}'`);
-  return conditions;
-}
-
-/** Resolve projects from comma-separated slugs and query all in parallel */
+/** Resolve projects and query all in parallel */
 async function queryAllProjects(slugs: string[], sql: string) {
   const org = await ensureDefaultOrg();
   const projects = await Promise.all(slugs.map((s) => resolveProjectId(org.id, s)));
@@ -50,30 +43,25 @@ async function queryAllProjects(slugs: string[], sql: string) {
   return results.flatMap((data) => data.data ?? []);
 }
 
-function parseSlugs(project: string | undefined): string[] {
-  if (!project) return [];
-  return project.split(",").map((s: string) => s.trim()).filter(Boolean);
-}
-
 function requireProject(
   options: AnalyticsOptions,
   output: { log: (msg: string) => void },
   proc: { exit: (code: number) => void },
 ): string[] | null {
-  if (!options.project) {
+  if (!options.project || options.project.length === 0) {
     output.log("Missing required option: --project <slug>");
     output.log(dim("Run `strada projects list` to see available project slugs."));
     proc.exit(1);
     return null;
   }
-  return parseSlugs(options.project);
+  return options.project;
 }
 
 // ── Shared option definitions ─────────────────────────────────────
 
 const sharedOptions = (cmd: ReturnType<typeof goke.prototype.command>) =>
   cmd
-    .option("-p, --project <slugs>", "Project slug(s), comma-separated")
+    .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
     .option("-s, --service [name]", "Filter by service name")
     .option("--since [duration]", "Time range, e.g. 1h, 24h, 7d (default: 7d)")
     .option("-n, --limit [count]", "Max number of rows (default: 20)")
@@ -86,7 +74,7 @@ sharedOptions(analyticsCli.command("analytics pages", "Top pages by pageviews"))
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
 
     const sql = `
@@ -136,7 +124,7 @@ sharedOptions(analyticsCli.command("analytics browsers", "Top browsers by visito
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
 
     const sql = `
@@ -185,7 +173,7 @@ sharedOptions(analyticsCli.command("analytics devices", "Top devices by visitors
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
 
     const sql = `
@@ -234,7 +222,7 @@ sharedOptions(analyticsCli.command("analytics countries", "Top countries by visi
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
 
     const sql = `
@@ -283,7 +271,7 @@ sharedOptions(analyticsCli.command("analytics referrers", "Top traffic sources b
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     conditions.push(`Referrer != ''`);
     if (options.domain) {
       conditions.push(`Referrer != '${options.domain}'`);
@@ -336,7 +324,7 @@ sharedOptions(analyticsCli.command("analytics languages", "Top languages by visi
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const conditions = buildPagesMvConditions(options);
+    const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
 
     const sql = `
@@ -385,8 +373,8 @@ sharedOptions(analyticsCli.command("analytics kpis", "Summary KPIs: visitors, pa
     const slugs = requireProject(options, output, proc);
     if (!slugs) return;
 
-    const pagesConditions = buildPagesMvConditions(options);
-    const sessionsConditions = buildSessionsMvConditions(options);
+    const pagesConditions = buildMvConditions(options);
+    const sessionsConditions = buildMvConditions(options);
 
     const pagesSql = `
 SELECT
@@ -516,7 +504,7 @@ LIMIT ${limit}
 
 analyticsCli
   .command("analytics realtime", "Active visitors in the last 5 minutes")
-  .option("-p, --project <slugs>", "Project slug(s), comma-separated")
+  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .option("-s, --service [name]", "Filter by service name")
   .option("--domain [domain]", "Filter by domain")
   .action(async (options: AnalyticsOptions, { console: output, process: proc }: GokeExecutionContext) => {

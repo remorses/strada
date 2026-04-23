@@ -3,6 +3,7 @@
 // error group with stacktrace and recent events.
 
 import { goke } from "goke";
+import { z } from "zod";
 import { bold, cyan, dim, red, yellow, gray, green, white } from "./colors.ts";
 import { getApiClient } from "./api-client.ts";
 import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
@@ -35,21 +36,21 @@ function str(row: Record<string, unknown>, key: string): string {
 
 errorsCli
   .command("errors list", "List error groups sorted by frequency")
-  .option("-p, --project <slugs>", "Project slug(s), comma-separated (run `strada projects list` to see slugs)")
+  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .option("-s, --service [name]", "Filter by service name")
   .option("--since [duration]", "Time range, e.g. 1h, 24h, 7d (default: 24h)")
   .option("-n, --limit [count]", "Max number of error groups (default: 20)")
   .option("--unhandled", "Show only unhandled errors")
   .action(async (options, { console: output, process: proc }) => {
-    if (!options.project) {
+    if (!options.project || options.project.length === 0) {
       output.log("Missing required option: --project <slug>");
       output.log(dim("Run `strada projects list` to see available project slugs."));
       return proc.exit(1);
     }
 
     const org = await ensureDefaultOrg();
-    const slugs = options.project.split(",").map((s: string) => s.trim()).filter(Boolean);
-    const projects = await Promise.all(slugs.map((s: string) => resolveProjectId(org.id, s)));
+    const slugs = options.project;
+    const projects = await Promise.all(slugs.map((s) => resolveProjectId(org.id, s)));
 
     const since = parseDuration(options.since || "24h");
     const limit = Number(options.limit) || 20;

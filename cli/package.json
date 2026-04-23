@@ -55,7 +55,8 @@
     "errore": "^0.14.1",
     "goke": "^6.9.0",
     "spiceflow": "1.19.0-rsc.5",
-    "string-dedent": "^3.0.2"
+    "string-dedent": "^3.0.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
