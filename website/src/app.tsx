@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { getActionRequest, json, parseFormData, Spiceflow, redirect } from 'spiceflow'
 import { Head, router } from 'spiceflow/react'
 import { z } from 'zod'
+import dedent from 'string-dedent'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
 import { ulid } from 'ulid'
@@ -53,17 +54,48 @@ const createProjectTokenRequestSchema = z.object({
 const queryProjectRequestSchema = z.object({ sql: z.string().min(1) })
 const deviceUserCodeSchema = z.object({ userCode: z.string().min(1) })
 
-/** ClickHouse FORMAT JSON response shape, shared by Tinybird and direct ClickHouse. */
+/**
+ * ClickHouse FORMAT JSON response shape.
+ *
+ * When the user's SQL has no FORMAT clause, the website appends FORMAT JSON and
+ * returns this structured shape (used by errors commands and the default query path).
+ *
+ * When the user's SQL already contains a FORMAT clause, the website passes the SQL
+ * through and returns raw: the response body as a string plus the Content-Type
+ * header that Tinybird/ClickHouse sent back (e.g. "text/csv; charset=UTF-8;
+ * header=present"). The CLI prints raw directly to stdout, making it pipeable.
+ *
+ * NOTE: Tinybird's default format (no FORMAT clause) is TSV, not JSON. That is
+ * why we must always inject FORMAT JSON when no format is specified — without it
+ * the errors commands and table rendering would receive tab-separated text.
+ */
 export interface QueryResponse {
-  data: Record<string, unknown>[]
-  rows: number
+  // Structured path (no FORMAT in SQL — website injects FORMAT JSON)
+  data?: Record<string, unknown>[]
+  rows?: number
   meta?: { name: string; type: string }[]
   statistics?: { elapsed: number; rows_read: number; bytes_read: number }
+  // Passthrough path (FORMAT present in SQL — website forwards raw response)
+  raw?: string
+  contentType?: string
 }
 
-function ensureJsonFormat(sql: string) {
-  const normalized = sql.trim().replace(/;+\s*$/, '').trimEnd()
-  return /\bFORMAT\s+\w+\s*$/i.test(normalized) ? normalized : `${normalized} FORMAT JSON`
+/** Strip trailing semicolons from SQL. ClickHouse HTTP interface rejects them. */
+function stripSemicolons(sql: string) {
+  return sql.trim().replace(/;+\s*$/, '').trimEnd()
+}
+
+/**
+ * Detect a trailing FORMAT clause in a SQL string.
+ * Returns the format name (e.g. "CSV", "JSON", "PrettyCompact") or null.
+ * Handles trailing semicolons and whitespace after the format name.
+ */
+function detectFormat(sql: string): string | null {
+  // Strip semicolons before checking — Tinybird accepts "FORMAT JSON;" but we
+  // normalise first so the regex stays simple.
+  const normalized = stripSemicolons(sql)
+  const match = normalized.match(/\bFORMAT\s+(\w+)\s*$/i)
+  return match ? match[1]! : null
 }
 
 function safeRedirectPath(value: string | undefined) {
@@ -626,6 +658,73 @@ export const app = new Spiceflow()
     method: 'POST',
     path: '/api/projects/:projectId/query',
     request: queryProjectRequestSchema,
+    detail: {
+      summary: 'Run a SQL query against a project',
+      tags: ['query'],
+      description: dedent`
+        Proxies a ClickHouse SQL \`SELECT\` statement to the project's configured
+        backend (Tinybird or self-hosted ClickHouse) with project-scoped auth.
+
+        ## Output format
+
+        The output format is controlled by a \`FORMAT\` clause at the end of the SQL.
+        There is no separate format parameter.
+
+        **No \`FORMAT\` clause (default)**
+
+        The server injects \`FORMAT JSON\` automatically and returns a structured JSON
+        envelope. Note: Tinybird's own default format is TSV — the injection is required
+        to get JSON back.
+
+        \`\`\`json
+        {
+          "data": [{ "col": "value" }],
+          "meta": [{ "name": "col", "type": "String" }],
+          "rows": 1,
+          "statistics": { "elapsed": 0.001, "rows_read": 1, "bytes_read": 8 }
+        }
+        \`\`\`
+
+        **\`FORMAT\` clause present**
+
+        The SQL is sent to the backend unchanged and the raw response body is returned
+        as \`{ raw: string, contentType: string }\`. The \`contentType\` field mirrors the
+        \`Content-Type\` header that Tinybird/ClickHouse sent back (e.g.
+        \`"text/csv; charset=UTF-8; header=present"\`).
+
+        ## Supported FORMAT values
+
+        | FORMAT | Content-Type | Description |
+        |--------|--------------|-------------|
+        | \`JSON\` | \`application/json\` | Full JSON envelope with data, meta, rows, statistics |
+        | \`JSONEachRow\` | \`application/x-ndjson\` | One JSON object per line (NDJSON) |
+        | \`CSV\` | \`text/csv; header=absent\` | Comma-separated values, no header row |
+        | \`CSVWithNames\` | \`text/csv; header=present\` | Comma-separated values with a header row |
+        | \`TSV\` | \`text/tab-separated-values\` | Tab-separated values, no header row |
+        | \`TSVWithNames\` | \`text/tab-separated-values\` | Tab-separated values with a header row |
+        | \`PrettyCompact\` | \`text/plain\` | Unicode box-drawing table for human reading |
+        | \`Parquet\` | \`application/octet-stream\` | Binary columnar format |
+        | \`Prometheus\` | \`text/plain\` | Prometheus text-based exposition format |
+
+        ## Semicolons
+
+        Trailing semicolons are stripped before the query is forwarded. Both
+        \`SELECT 1 FORMAT JSON;\` and \`SELECT 1;\` are accepted.
+
+        ## Examples
+
+        \`\`\`bash
+        # Default — structured JSON envelope
+        curl -X POST .../query -d '{"sql":"SELECT count() FROM otel_errors"}'
+
+        # CSV export
+        curl -X POST .../query -d '{"sql":"SELECT * FROM otel_errors FORMAT CSVWithNames"}'
+
+        # NDJSON for streaming consumers
+        curl -X POST .../query -d '{"sql":"SELECT * FROM otel_logs LIMIT 100 FORMAT JSONEachRow"}'
+        \`\`\`
+      `,
+    },
     async handler({ request, params }) {
       const session = await requireSession(request)
       const db = getDb()
@@ -660,11 +759,21 @@ export const app = new Spiceflow()
         return result
       }
 
+      // Normalise SQL: strip trailing semicolons, detect explicit FORMAT clause.
+      // If no FORMAT is present we inject FORMAT JSON so both backends return the
+      // structured { data, meta, rows, statistics } envelope (Tinybird's default
+      // format is TSV — without this injection errors commands would get raw text).
+      // If a FORMAT clause is already in the SQL we pass it through unchanged and
+      // forward the raw response body + Content-Type header back to the caller.
+      const normalizedSql = stripSemicolons(body.sql)
+      const format = detectFormat(normalizedSql)
+      const sqlToSend = format ? normalizedSql : `${normalizedSql} FORMAT JSON`
+      const hasExplicitFormat = format !== null
+
       if (dbConfig.backend === 'tinybird') {
         if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdAdminToken) {
           throw json({ error: 'tinybird not configured' }, { status: 400 })
         }
-        const sql = ensureJsonFormat(body.sql)
         const url = `${dbConfig.tinybirdEndpoint}/v0/sql`
 
         async function queryWithJwt(jwt: string) {
@@ -674,7 +783,7 @@ export const app = new Spiceflow()
               'Content-Type': 'application/json',
               Authorization: `Bearer ${jwt}`,
             },
-            body: JSON.stringify({ q: sql }),
+            body: JSON.stringify({ q: sqlToSend }),
           })
         }
 
@@ -702,6 +811,12 @@ export const app = new Spiceflow()
           try { parsed = JSON.parse(text) } catch { parsed = null }
           throw json(parsed ?? { error: text }, { status: res.status })
         }
+
+        if (hasExplicitFormat) {
+          const raw = redact(await res.text())
+          const contentType = res.headers.get('content-type') ?? 'text/plain'
+          return { raw, contentType } satisfies QueryResponse
+        }
         return await res.json() as QueryResponse
       }
 
@@ -709,7 +824,7 @@ export const app = new Spiceflow()
         if (!dbConfig.clickhouseUrl) {
           throw json({ error: 'clickhouse not configured' }, { status: 400 })
         }
-        const endpoint = `${dbConfig.clickhouseUrl}/?database=${encodeURIComponent(dbConfig.clickhouseDatabase || 'default')}&query=${encodeURIComponent(ensureJsonFormat(body.sql))}`
+        const endpoint = `${dbConfig.clickhouseUrl}/?database=${encodeURIComponent(dbConfig.clickhouseDatabase || 'default')}&query=${encodeURIComponent(sqlToSend)}`
         const res = await fetch(endpoint, {
           headers: {
             'X-ClickHouse-User': dbConfig.clickhouseUser || 'default',
@@ -722,6 +837,12 @@ export const app = new Spiceflow()
           let parsed: unknown
           try { parsed = JSON.parse(text) } catch { parsed = null }
           throw json(parsed ?? { error: text }, { status: res.status })
+        }
+
+        if (hasExplicitFormat) {
+          const raw = redact(await res.text())
+          const contentType = res.headers.get('content-type') ?? 'text/plain'
+          return { raw, contentType } satisfies QueryResponse
         }
         return await res.json() as QueryResponse
       }
