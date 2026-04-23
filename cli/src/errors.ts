@@ -15,7 +15,7 @@ export const errorsCli = goke();
 /** Run a SQL query against a project. Shared by errors subcommands and the query command. */
 export async function queryProject(projectId: string, sql: string) {
   const { safeFetch } = getApiClient();
-  const res = await safeFetch("/api/projects/:projectId/query", {
+  const res = await safeFetch("/api/v0/projects/:projectId/query", {
     method: "POST",
     params: { projectId },
     body: { sql },

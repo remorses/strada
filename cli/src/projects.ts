@@ -17,7 +17,7 @@ export const projectsCli = goke();
 
 export async function ensureDefaultOrg() {
   const { safeFetch } = getApiClient();
-  const res = await safeFetch("/api/orgs/ensure-default", { method: "POST" });
+  const res = await safeFetch("/api/v0/orgs/ensure-default", { method: "POST" });
   if (res instanceof Error) throw res;
   return { id: res.id, name: res.name, role: "admin" as const };
 }
@@ -28,7 +28,7 @@ export async function ensureDefaultOrg() {
 
 async function fetchAndCacheProjects(orgId: string): Promise<CachedProject[]> {
   const { safeFetch } = getApiClient();
-  const res = await safeFetch("/api/orgs/:orgId/projects", { params: { orgId } });
+  const res = await safeFetch("/api/v0/orgs/:orgId/projects", { params: { orgId } });
   if (res instanceof Error) throw res;
   const projects: CachedProject[] = res.projects.map((p) => ({
     id: p.id,
@@ -78,7 +78,7 @@ projectsCli
   .action(async (slug, _options, { console: output }) => {
     const { safeFetch } = getApiClient();
     const org = await ensureDefaultOrg();
-    const res = await safeFetch("/api/orgs/:orgId/projects", {
+    const res = await safeFetch("/api/v0/orgs/:orgId/projects", {
       method: "POST",
       params: { orgId: org.id },
       body: { slug },
@@ -102,7 +102,7 @@ projectsCli
   .command("projects delete <id>", "Delete a project")
   .action(async (id, _options, { console: output }) => {
     const { safeFetch } = getApiClient();
-    const res = await safeFetch("/api/projects/:id", {
+    const res = await safeFetch("/api/v0/projects/:id", {
       method: "DELETE",
       params: { id },
     });
@@ -126,7 +126,7 @@ projectsCli
     const org = await ensureDefaultOrg();
     const project = await resolveProjectId(org.id, options.project);
 
-    const res = await safeFetch("/api/projects/:projectId/query", {
+    const res = await safeFetch("/api/v0/projects/:projectId/query", {
       method: "POST",
       params: { projectId: project.id },
       body: { sql },

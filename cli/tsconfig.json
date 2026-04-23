@@ -4,6 +4,5 @@
     "types": ["node"],
     "jsx": "react-jsx"
   },
-  "include": ["src"],
-  "references": [{ "path": "../website" }]
+  "include": ["src"]
 }

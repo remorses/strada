@@ -12,7 +12,7 @@ curl -s https://raw.githubusercontent.com/remorses/spiceflow/main/README.md
 
 Key rules:
 
-- **Pass `App` type as generic** to `createSpiceflowFetch<App>()`. No `declare module` augmentation.
+- **Pass the CLI website API contract type as generic** to `createSpiceflowFetch<...>()`. No `declare module` augmentation.
 - **Use `:param` paths with `params` object**, never interpolate IDs into the path string. Interpolation breaks type inference.
 - **`body` is a plain object**, not `JSON.stringify()`. The client serializes it automatically.
 - **No `Content-Type` header needed.** It's set automatically for JSON bodies.
@@ -21,7 +21,7 @@ Key rules:
 
 ```ts
 // GOOD: :param path, params object, body as object, response is typed
-const res = await safeFetch("/api/orgs/:orgId/projects", {
+const res = await safeFetch("/api/v0/orgs/:orgId/projects", {
   method: "POST",
   params: { orgId: org.id },
   body: { slug },
@@ -30,7 +30,7 @@ if (res instanceof Error) throw res;
 // res.id, res.slug, res.ingestEndpoint are all typed
 
 // BAD: interpolated path is just `string`, breaks all type inference
-const res = await safeFetch(`/api/orgs/${org.id}/projects`, {
+const res = await safeFetch(`/api/v0/orgs/${org.id}/projects`, {
   method: "POST",
   body: { slug },
 });

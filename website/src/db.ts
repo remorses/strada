@@ -60,7 +60,9 @@ function getBaseUrl(): string {
 
 type Session = { userId: string; user: { id: string; name: string; email: string } }
 
-export async function getSession(request: Request): Promise<Session | null> {
+type RequestHeaders = Pick<Request, 'headers'>
+
+export async function getSession(request: RequestHeaders): Promise<Session | null> {
   const hasCookie = request.headers.has('cookie')
   const hasAuthorization = request.headers.has('authorization')
   if (!hasCookie && !hasAuthorization) {
@@ -75,7 +77,7 @@ export async function getSession(request: Request): Promise<Session | null> {
   }
 }
 
-export async function requireSession(request: Request): Promise<Session> {
+export async function requireSession(request: RequestHeaders): Promise<Session> {
   const session = await getSession(request)
   if (!session) {
     throw json({ error: 'unauthorized' }, { status: 401 })

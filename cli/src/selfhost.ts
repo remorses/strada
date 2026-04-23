@@ -198,7 +198,7 @@ export async function selfhostAction(
   saveSpinner.start("Saving database config to Strada...");
 
   const { safeFetch } = getApiClient();
-  const saveRes = await safeFetch("/api/orgs/:orgId/database", {
+  const saveRes = await safeFetch("/api/v0/orgs/:orgId/database", {
     method: "PUT",
     params: { orgId: org.id },
     body: {
@@ -249,7 +249,7 @@ export async function selfhostMigrateAction(
   spinner.start("Migrating Tinybird schema...");
 
   const { safeFetch } = getApiClient();
-  const result = await safeFetch("/api/orgs/:orgId/database/migrate", {
+  const result = await safeFetch("/api/v0/orgs/:orgId/database/migrate", {
     method: "POST",
     params: { orgId: org.id },
   });
