@@ -9,7 +9,7 @@ import { bold, cyan } from "./colors.ts";
 import dedent from "string-dedent";
 import { browserLogin } from "./tinybird-browser-login.ts";
 import { loadTinybirdResources } from "./tinybird-resources.ts";
-import { TinybirdClient } from "./tinybird.ts";
+import { deployTinybirdResources, getDeploymentManagedReadToken, TinybirdClient } from "./tinybird.ts";
 import { requireAuth } from "./config.ts";
 import { getApiClient } from "./api-client.ts";
 import { ensureDefaultOrg } from "./projects.ts";
@@ -31,18 +31,6 @@ function getTinybirdEnvAuth() {
 
 function createTokenNameSuffix() {
   return Date.now().toString(36)
-}
-
-async function getDeploymentManagedReadToken(client: TinybirdClient) {
-  const tokens = await client.listTokens()
-  if (tokens instanceof Error) return tokens
-
-  const readToken = tokens.tokens.find((token) => token.name === 'STRADA_READ_TOKEN')
-  if (!readToken) {
-    return new Error('Tinybird deployment succeeded but the deployment-managed STRADA_READ_TOKEN was not found. Make sure the datasource files define TOKEN STRADA_READ_TOKEN READ.')
-  }
-
-  return readToken
 }
 
 export const selfhostCli = goke();
@@ -68,49 +56,17 @@ selfhostCli
   .example("strada selfhost --token p.eyXXX --base-url https://api.tinybird.co")
   .action((options, context) => selfhostAction(options, context));
 
-async function deployResources({ client, datasources, pipes }: {
-  client: TinybirdClient;
-  datasources: Array<{ name: string; content: string }>;
-  pipes: Array<{ name: string; content: string }>;
-}) {
-  const deployments = await client.listDeployments();
-  if (!(deployments instanceof Error)) {
-    for (const deployment of deployments) {
-      if (!deployment.live && deployment.status !== "live") {
-        const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id });
-        if (deleteResult instanceof Error) {
-          console.warn(`Failed to delete stale deployment ${deployment.id}:`, deleteResult.message);
-        }
-      }
-    }
-  } else {
-    console.warn("Failed to list stale deployments before deploy:", deployments.message);
-  }
+selfhostCli
+  .command(
+    "selfhost migrate",
+    dedent`
+      Update the Tinybird schema for the current organization's saved self-hosted workspace.
 
-  const deployResponse = await client.createDeployment({ datasources, pipes });
-  if (deployResponse instanceof Error) return deployResponse;
-  if (deployResponse.result === "failed") {
-    return new Error(deployResponse.error || deployResponse.errors?.map((error) => error.error).join("\n") || "Tinybird deployment failed");
-  }
-  if (deployResponse.result === "no_changes") return null;
+      Requires \
 
-  const deploymentId = deployResponse.deployment?.id;
-  if (!deploymentId) {
-    return new Error("No deployment ID in Tinybird response");
-  }
-
-  for (let i = 0; i < 120; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const statusResponse = await client.getDeploymentStatus({ deploymentId });
-    if (statusResponse instanceof Error) return statusResponse;
-    if (statusResponse.deployment.status === "data_ready") break;
-    if (statusResponse.deployment.status === "failed" || statusResponse.deployment.status === "error") {
-      return new Error(`Deployment failed with status ${statusResponse.deployment.status}`);
-    }
-  }
-
-  return client.promoteDeployment({ deploymentId });
-}
+      `,
+  )
+  .action(async (_options, context) => selfhostMigrateAction(context));
 
 export async function selfhostAction(
   options: SelfhostOptions,

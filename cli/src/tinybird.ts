@@ -103,6 +103,19 @@ export interface TinybirdTokensListResponse {
   tokens: TinybirdToken[];
 }
 
+export interface TinybirdDeployResourcesOptions {
+  client: Pick<TinybirdClient, "listDeployments" | "deleteDeployment" | "createDeployment" | "getDeploymentStatus" | "promoteDeployment">;
+  datasources: TinybirdResourceFile[];
+  pipes: TinybirdResourceFile[];
+  pollIntervalMs?: number;
+  maxPollAttempts?: number;
+}
+
+export interface TinybirdDeployResourcesResult {
+  result: "updated" | "no_changes";
+  deploymentId?: string;
+}
+
 class TinybirdResponseShapeError extends errore.createTaggedError({
   name: "TinybirdResponseShapeError",
   message: "Tinybird returned an invalid response for $operation. $details",
@@ -569,6 +582,69 @@ export class TinybirdClient {
       },
     })
   }
+}
+
+export async function getDeploymentManagedReadToken(client: Pick<TinybirdClient, "listTokens">) {
+  const tokens = await client.listTokens()
+  if (tokens instanceof Error) return tokens
+
+  const readToken = tokens.tokens.find((token) => token.name === 'STRADA_READ_TOKEN')
+  if (!readToken) {
+    return new Error('Tinybird deployment succeeded but the deployment-managed STRADA_READ_TOKEN was not found. Make sure the datasource files define TOKEN STRADA_READ_TOKEN READ.')
+  }
+
+  return readToken
+}
+
+export async function deployTinybirdResources({
+  client,
+  datasources,
+  pipes,
+  pollIntervalMs = 1000,
+  maxPollAttempts = 120,
+}: TinybirdDeployResourcesOptions): Promise<Error | TinybirdDeployResourcesResult> {
+  const deployments = await client.listDeployments()
+  if (!(deployments instanceof Error)) {
+    for (const deployment of deployments) {
+      if (!deployment.live && deployment.status !== 'live') {
+        const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id })
+        if (deleteResult instanceof Error) {
+          console.warn(`Failed to delete stale deployment ${deployment.id}:`, deleteResult.message)
+        }
+      }
+    }
+  } else {
+    console.warn('Failed to list stale deployments before deploy:', deployments.message)
+  }
+
+  const deployResponse = await client.createDeployment({ datasources, pipes })
+  if (deployResponse instanceof Error) return deployResponse
+  if (deployResponse.result === 'failed') {
+    return new Error(deployResponse.error || deployResponse.errors?.map((error) => error.error).join('\n') || 'Tinybird deployment failed')
+  }
+  if (deployResponse.result === 'no_changes') {
+    return { result: 'no_changes' }
+  }
+
+  const deploymentId = deployResponse.deployment?.id
+  if (!deploymentId) {
+    return new Error('No deployment ID in Tinybird response')
+  }
+
+  for (let i = 0; i < maxPollAttempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    const statusResponse = await client.getDeploymentStatus({ deploymentId })
+    if (statusResponse instanceof Error) return statusResponse
+    if (statusResponse.deployment.status === 'data_ready') break
+    if (statusResponse.deployment.status === 'failed' || statusResponse.deployment.status === 'error') {
+      return new Error(`Deployment failed with status ${statusResponse.deployment.status}`)
+    }
+  }
+
+  const promoteResult = await client.promoteDeployment({ deploymentId })
+  if (promoteResult instanceof Error) return promoteResult
+
+  return { result: 'updated', deploymentId }
 }
 
 export async function exchangeTinybirdCliCode({ authHost, code, fetch: customFetch }: { authHost: string; code: string; fetch?: typeof fetch }) {
