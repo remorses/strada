@@ -663,6 +663,30 @@ To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitem
 - Forward uses `tb deploy` instead of `tb push`
 
 
+## Debugging ingestion with quarantine tables
+
+Tinybird does **not** support disabling quarantine or failing at ingestion time. Rows that don't match the schema are silently moved to a quarantine table instead of being rejected. The Events API response includes `quarantined_rows` in the JSON body, so the collector can detect issues.
+
+Every datasource has an associated `{datasource_name}_quarantine` table. Use `tb sql` to inspect quarantined rows:
+
+```bash
+# See recent quarantined rows for a specific table
+tb sql "SELECT * FROM otel_traces_quarantine ORDER BY insertion_date DESC LIMIT 20"
+tb sql "SELECT * FROM otel_logs_quarantine ORDER BY insertion_date DESC LIMIT 20"
+
+# See distinct error types to understand what's failing
+tb sql "SELECT DISTINCT c__error FROM otel_traces_quarantine"
+
+# See quarantine activity over time (useful to spot when ingestion broke)
+tb sql "SELECT toDate(insertion_date) AS day, count() FROM otel_traces_quarantine GROUP BY day ORDER BY day DESC"
+```
+
+Quarantine table extra columns:
+- `c__error_column` Array(String) — column names with invalid values
+- `c__error` Array(String) — error messages explaining why each column failed
+- `c__import_id` Nullable(String) — job identifier
+- `insertion_date` DateTime — when the row was quarantined (use this to correlate with deploy/code changes)
+
 ## Reading worker logs (wrangler tail)
 
 Cloudflare Workers Observability is enabled (`observability.enabled: true` in both `website/wrangler.jsonc` and `otel-collector/wrangler.jsonc`). Logs are retained for 7 days and visible in the dashboard Query Builder.
@@ -689,7 +713,7 @@ STRADA_ENDPOINT=https://01KPVGTT9CJW4ZNEF414VHGRFD-ingest.strada.sh \
 pnpm vitest run  # run from example-app/
 
 # Read captured logs
-bunx tuistory -s collector-tail read --trim
+bunx tuistory -s collector-tail read
 
 # Stop tail when done
 bunx tuistory -s collector-tail press ctrl c
