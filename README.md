@@ -33,6 +33,17 @@ initStrada({ projectId: "01JTHG...", service: "api" })
 
 All of this data lands in the **same database**, queryable with the **same SQL**. No context switching between five different tools.
 
+## Use cases
+
+- **Run SQL queries from agents**: agents call `strada query "SELECT ..."` to answer any question about your system. Raw ClickHouse SQL, no proprietary API
+- **List and inspect errors**: agents run `strada errors list` to see error groups, read stacktraces, identify regressions, and open fix PRs
+- **Read logs to debug issues**: agents query `otel_logs` filtered by trace ID, session, or time range to reconstruct what happened before a failure
+- **Analyze and improve performance**: agents query span durations, identify slow endpoints, compare p95 latency across releases
+- **Monitor payment funnels**: track `checkout_started` and `purchase_completed` as custom events. Query success rates with SQL to catch drops early
+- **Debug by user session**: errors, pageviews, custom events, and backend traces for a single user in one query. Join across `otel_errors`, `otel_logs`, and `otel_traces`
+- **Correlate errors with revenue**: compare error rates before and after a fix against conversion events to measure impact
+- **Replace Google Analytics**: browser pageviews, sessions, referrers, devices, all stored in the same ClickHouse tables as errors and traces
+
 ## How it works
 
 ```
