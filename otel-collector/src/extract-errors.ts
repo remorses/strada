@@ -17,6 +17,10 @@ import { parseStackTrace } from "./parse-stacktrace.ts";
 import { convertAttributes, getServiceName, nanosToRFC3339, anyValueToString } from "./transform-attributes.ts";
 import { ATTR } from "@strada.sh/sdk/src/attrs";
 
+const CLOUDFLARE_WORKERS_PLATFORM = "cloudflare.workers";
+const CLOUDFLARE_EXCEPTION_OUTCOME = "exception";
+const CLOUDFLARE_WORKER_EXCEPTION_TYPE = "CloudflareWorkerException";
+
 // ─── Public API ───
 
 export function extractErrorsFromLogs(body: ExportLogsServiceRequest, projectId: string): string {
@@ -34,8 +38,24 @@ export function extractErrorsFromLogs(body: ExportLogsServiceRequest, projectId:
       for (const log of sl.logRecords ?? []) {
         const attrs = convertAttributes(log.attributes);
 
-        const exceptionType = attrs[ATTR["exception.type"]] ?? "";
-        const exceptionMessage = attrs[ATTR["exception.message"]] ?? "";
+        let exceptionType = attrs[ATTR["exception.type"]] ?? "";
+        let exceptionMessage = attrs[ATTR["exception.message"]] ?? "";
+
+        if (!exceptionType && !exceptionMessage) {
+          const cloudflareException = getCloudflareLogException({
+            attrs,
+            resourceAttrs,
+            body: anyValueToString(log.body),
+          });
+          if (cloudflareException) {
+            exceptionType = cloudflareException.type;
+            exceptionMessage = cloudflareException.message;
+            attrs[ATTR["exception.type"]] = exceptionType;
+            attrs[ATTR["exception.message"]] = exceptionMessage;
+            attrs[ATTR["exception.mechanism.type"]] = "cloudflare.log.outcome";
+            attrs[ATTR["exception.mechanism.handled"]] = "false";
+          }
+        }
 
         // Skip if no exception data
         if (!exceptionType && !exceptionMessage) continue;
@@ -81,6 +101,8 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
       const scopeAttrs = convertAttributes(ss.scope?.attributes);
 
       for (const span of ss.spans ?? []) {
+        let extractedStandardException = false;
+
         for (const event of span.events ?? []) {
           // OTel convention: exception events have name "exception"
           if (event.name !== "exception") continue;
@@ -90,6 +112,7 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
           const exceptionMessage = attrs[ATTR["exception.message"]] ?? "";
 
           if (!exceptionType && !exceptionMessage) continue;
+          extractedStandardException = true;
 
           const row = buildErrorRow({
             projectId,
@@ -109,6 +132,39 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
 
           rows.push(JSON.stringify(row));
         }
+
+        if (extractedStandardException) continue;
+
+        const spanAttrs = convertAttributes(span.attributes);
+        const cloudflareException = getCloudflareTraceException({
+          span,
+          spanAttrs,
+          resourceAttrs,
+        });
+        if (!cloudflareException) continue;
+
+        spanAttrs[ATTR["exception.type"]] = cloudflareException.type;
+        spanAttrs[ATTR["exception.message"]] = cloudflareException.message;
+        spanAttrs[ATTR["exception.mechanism.type"]] = "cloudflare.outcome";
+        spanAttrs[ATTR["exception.mechanism.handled"]] = "false";
+
+        const row = buildErrorRow({
+          projectId,
+          timestamp: nanosToRFC3339(span.endTimeUnixNano),
+          traceId: span.traceId,
+          spanId: span.spanId,
+          serviceName,
+          exceptionType: cloudflareException.type,
+          exceptionMessage: cloudflareException.message,
+          attrs: spanAttrs,
+          resourceAttrs,
+          scopeAttrs,
+          release,
+          environment,
+          sourceSignal: "trace",
+        });
+
+        rows.push(JSON.stringify(row));
       }
     }
   }
@@ -158,11 +214,15 @@ interface StructuredFrame {
  * 2. If no structured frames → [type, stripped_message]
  * 3. If neither type nor message → ["unknown"]
  */
-export function computeDefaultFingerprint(
-  exceptionType: string,
-  exceptionMessage: string,
-  structuredFramesJson: string,
-): string[] {
+export function computeDefaultFingerprint({
+  exceptionType,
+  exceptionMessage,
+  structuredFramesJson,
+}: {
+  exceptionType: string;
+  exceptionMessage: string;
+  structuredFramesJson: string;
+}): string[] {
   // Try structured frames first
   if (structuredFramesJson) {
     try {
@@ -231,6 +291,57 @@ function getResourceAttr(kvs: KeyValue[] | undefined, key: string): string {
   return attr ? anyValueToString(attr.value) : "";
 }
 
+function getCloudflareLogException({
+  attrs,
+  resourceAttrs,
+  body,
+}: {
+  attrs: Record<string, string>;
+  resourceAttrs: Record<string, string>;
+  body: string;
+}): { type: string; message: string } | null {
+  if (resourceAttrs["cloud.platform"] !== CLOUDFLARE_WORKERS_PLATFORM) return null;
+
+  const outcome =
+    attrs["$workers.outcome"] ||
+    attrs["workers.outcome"] ||
+    attrs["cloudflare.outcome"] ||
+    "";
+  if (outcome !== CLOUDFLARE_EXCEPTION_OUTCOME) return null;
+
+  const message =
+    attrs["$metadata.error"] ||
+    attrs["metadata.error"] ||
+    body ||
+    "Worker invocation failed with cloudflare outcome=exception";
+
+  return {
+    type: CLOUDFLARE_WORKER_EXCEPTION_TYPE,
+    message,
+  };
+}
+
+function getCloudflareTraceException({
+  span,
+  spanAttrs,
+  resourceAttrs,
+}: {
+  span: { parentSpanId?: string; name: string; status?: { message?: string } };
+  spanAttrs: Record<string, string>;
+  resourceAttrs: Record<string, string>;
+}): { type: string; message: string } | null {
+  if (resourceAttrs["cloud.platform"] !== CLOUDFLARE_WORKERS_PLATFORM) return null;
+  if ((span.parentSpanId ?? "") !== "") return null;
+  if (spanAttrs["cloudflare.outcome"] !== CLOUDFLARE_EXCEPTION_OUTCOME) return null;
+
+  return {
+    type: CLOUDFLARE_WORKER_EXCEPTION_TYPE,
+    message:
+      span.status?.message ||
+      `Worker span ${span.name} failed with cloudflare.outcome=exception`,
+  };
+}
+
 interface BuildErrorRowParams {
   projectId: string;
   timestamp: string;
@@ -289,7 +400,11 @@ function buildErrorRow(params: BuildErrorRowParams): OtelErrorRow {
       fingerprint = [fingerprintAttr];
     }
   } else {
-    fingerprint = computeDefaultFingerprint(exceptionType, exceptionMessage, structuredFrames);
+    fingerprint = computeDefaultFingerprint({
+      exceptionType,
+      exceptionMessage,
+      structuredFramesJson: structuredFrames,
+    });
   }
 
   // Prefix projectId so the same fingerprint in different projects hashes differently

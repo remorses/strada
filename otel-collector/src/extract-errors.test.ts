@@ -44,40 +44,40 @@ describe("computeDefaultFingerprint", () => {
       { filename: "src/app.js", function: "processOrder", in_app: true },
       { filename: "src/utils.js", function: "validate", in_app: true },
     ]);
-    expect(computeDefaultFingerprint("TypeError", "x is null", frames)).toEqual(["TypeError", "processOrder"]);
+    expect(computeDefaultFingerprint({ exceptionType: "TypeError", exceptionMessage: "x is null", structuredFramesJson: frames })).toEqual(["TypeError", "processOrder"]);
   });
 
   it("falls back to type + stripped message when no in-app frames", () => {
     const frames = JSON.stringify([{ filename: "node_modules/lib.js", function: "libFn", in_app: false }]);
-    expect(computeDefaultFingerprint("TypeError", "Error at row 42", frames)).toEqual([
+    expect(computeDefaultFingerprint({ exceptionType: "TypeError", exceptionMessage: "Error at row 42", structuredFramesJson: frames })).toEqual([
       "TypeError",
       "Error at row <N>",
     ]);
   });
 
   it("falls back to type + stripped message when no structured frames", () => {
-    expect(computeDefaultFingerprint("ValueError", "Invalid port 8080", "")).toEqual([
+    expect(computeDefaultFingerprint({ exceptionType: "ValueError", exceptionMessage: "Invalid port 8080", structuredFramesJson: "" })).toEqual([
       "ValueError",
       "Invalid port <N>",
     ]);
   });
 
   it("uses type alone when no message", () => {
-    expect(computeDefaultFingerprint("TypeError", "", "")).toEqual(["TypeError"]);
+    expect(computeDefaultFingerprint({ exceptionType: "TypeError", exceptionMessage: "", structuredFramesJson: "" })).toEqual(["TypeError"]);
   });
 
   it("uses stripped message alone when no type", () => {
-    expect(computeDefaultFingerprint("", "Connection refused on port 5432", "")).toEqual([
+    expect(computeDefaultFingerprint({ exceptionType: "", exceptionMessage: "Connection refused on port 5432", structuredFramesJson: "" })).toEqual([
       "Connection refused on port <N>",
     ]);
   });
 
   it("returns unknown when neither type nor message", () => {
-    expect(computeDefaultFingerprint("", "", "")).toEqual(["unknown"]);
+    expect(computeDefaultFingerprint({ exceptionType: "", exceptionMessage: "", structuredFramesJson: "" })).toEqual(["unknown"]);
   });
 
   it("handles invalid JSON in structured frames gracefully", () => {
-    expect(computeDefaultFingerprint("TypeError", "test error", "not-json")).toEqual(["TypeError", "test error"]);
+    expect(computeDefaultFingerprint({ exceptionType: "TypeError", exceptionMessage: "test error", structuredFramesJson: "not-json" })).toEqual(["TypeError", "test error"]);
   });
 });
 
@@ -249,6 +249,52 @@ describe("extractErrorsFromLogs", () => {
     // Tags should contain non-exception attributes
     expect(row.tags["request.url"]).toBe("/api/users");
     expect(row.tags["exception.type"]).toBeUndefined();
+  });
+
+  it("extracts Cloudflare uncaught exception logs from outcome markers", () => {
+    const input: ExportLogsServiceRequest = {
+      resourceLogs: [
+        {
+          resource: {
+            attributes: [
+              { key: "cloud.platform", value: { stringValue: "cloudflare.workers" } },
+              { key: "service.name", value: { stringValue: "edge-api" } },
+            ],
+          },
+          scopeLogs: [
+            {
+              logRecords: [
+                {
+                  timeUnixNano: "1544712660123456789",
+                  severityText: "ERROR",
+                  body: { stringValue: "Worker threw a JavaScript exception" },
+                  traceId: "trace-cloudflare-log",
+                  spanId: "span-cloudflare-log",
+                  attributes: [
+                    { key: "$workers.outcome", value: { stringValue: "exception" } },
+                    { key: "$metadata.error", value: { stringValue: "Worker threw a JavaScript exception" } },
+                    { key: "cloudflare.ray_id", value: { stringValue: "ray-123" } },
+                    { key: "url.path", value: { stringValue: "/api/users" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const ndjson = extractErrorsFromLogs(input, "acme");
+    const row = JSON.parse(ndjson.trim());
+
+    expect(row.service_name).toBe("edge-api");
+    expect(row.exception_type).toBe("CloudflareWorkerException");
+    expect(row.exception_message).toBe("Worker threw a JavaScript exception");
+    expect(row.trace_id).toBe("trace-cloudflare-log");
+    expect(row.mechanism_type).toBe("cloudflare.log.outcome");
+    expect(row.mechanism_handled).toBe(false);
+    expect(row.tags["$workers.outcome"]).toBe("exception");
+    expect(row.tags["$metadata.error"]).toBe("Worker threw a JavaScript exception");
   });
 
   it("uses SDK-provided fingerprint when available", () => {
@@ -532,6 +578,102 @@ describe("extractErrorsFromTraces", () => {
     expect(row.source_signal).toBe("trace");
     expect(row.release).toBe("2.0.0");
     expect(row.fingerprint_hash).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("extracts Cloudflare uncaught exceptions from root span outcome when no exception event exists", () => {
+    const input: ExportTraceServiceRequest = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: "cloud.platform", value: { stringValue: "cloudflare.workers" } },
+              { key: "service.name", value: { stringValue: "edge-api" } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: "trace-cloudflare-span",
+                  spanId: "span-cloudflare-span",
+                  parentSpanId: "",
+                  name: "fetch",
+                  startTimeUnixNano: "1544712660000000000",
+                  endTimeUnixNano: "1544712661000000000",
+                  status: { code: 2, message: "Worker threw a JavaScript exception" },
+                  attributes: [
+                    { key: "cloudflare.outcome", value: { stringValue: "exception" } },
+                    { key: "cloudflare.handler_type", value: { stringValue: "fetch" } },
+                    { key: "cloudflare.ray_id", value: { stringValue: "ray-456" } },
+                    { key: "url.path", value: { stringValue: "/api/users" } },
+                  ],
+                  events: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const ndjson = extractErrorsFromTraces(input, "acme");
+    const row = JSON.parse(ndjson.trim());
+
+    expect(row.service_name).toBe("edge-api");
+    expect(row.exception_type).toBe("CloudflareWorkerException");
+    expect(row.exception_message).toBe("Worker threw a JavaScript exception");
+    expect(row.trace_id).toBe("trace-cloudflare-span");
+    expect(row.span_id).toBe("span-cloudflare-span");
+    expect(row.mechanism_type).toBe("cloudflare.outcome");
+    expect(row.mechanism_handled).toBe(false);
+    expect(row.tags["cloudflare.outcome"]).toBe("exception");
+    expect(row.tags["cloudflare.handler_type"]).toBe("fetch");
+  });
+
+  it("does not duplicate Cloudflare fallback when a standard exception event exists", () => {
+    const input: ExportTraceServiceRequest = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: "cloud.platform", value: { stringValue: "cloudflare.workers" } },
+              { key: "service.name", value: { stringValue: "edge-api" } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: "trace-cloudflare-dedupe",
+                  spanId: "span-cloudflare-dedupe",
+                  parentSpanId: "",
+                  name: "fetch",
+                  startTimeUnixNano: "1544712660000000000",
+                  endTimeUnixNano: "1544712661000000000",
+                  status: { code: 2, message: "boom" },
+                  attributes: [
+                    { key: "cloudflare.outcome", value: { stringValue: "exception" } },
+                  ],
+                  events: [
+                    {
+                      timeUnixNano: "1544712660500000000",
+                      name: "exception",
+                      attributes: [
+                        { key: "exception.type", value: { stringValue: "TypeError" } },
+                        { key: "exception.message", value: { stringValue: "boom" } },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const ndjson = extractErrorsFromTraces(input, "acme");
+    expect(ndjson.trim().split("\n")).toHaveLength(1);
   });
 
   it("extracts multiple exceptions from multiple spans", () => {
