@@ -1,5 +1,6 @@
 // Example Spiceflow app that emits traces, logs, metrics, and errors to Strada.
 
+import dns from 'node:dns'
 import { Spiceflow } from 'spiceflow'
 import {
   captureException,
@@ -18,9 +19,38 @@ if (!projectId) {
   throw new Error('Missing STRADA_PROJECT_ID for example-app.')
 }
 
+const endpoint = process.env.STRADA_ENDPOINT || `https://${projectId}-ingest.strada.sh`
+const ingestIp = process.env.STRADA_INGEST_IP
+
+if (ingestIp) {
+  const endpointHost = new URL(endpoint).hostname
+  const originalLookup = dns.lookup
+  dns.lookup = function patchedLookup(hostname: string, options: any, callback?: any) {
+    if (hostname !== endpointHost) {
+      return callback == null
+        ? originalLookup(hostname as any, options as any)
+        : originalLookup(hostname as any, options as any, callback as any)
+    }
+
+    const resolvedOptions = typeof options === 'function' || options == null ? {} : options
+    const resolvedCallback = typeof options === 'function' ? options : callback
+
+    if (!resolvedCallback) {
+      return originalLookup(hostname as any, options as any)
+    }
+
+    if (resolvedOptions.all) {
+      resolvedCallback(null, [{ address: ingestIp, family: 4 }])
+      return
+    }
+
+    resolvedCallback(null, ingestIp, 4)
+  } as typeof dns.lookup
+}
+
 initStrada({
   projectId,
-  ...(process.env.STRADA_ENDPOINT ? { endpoint: process.env.STRADA_ENDPOINT } : {}),
+  endpoint,
   service: 'example-app',
   environment: process.env.NODE_ENV || 'development',
   telemetry: {
