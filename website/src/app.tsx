@@ -624,6 +624,21 @@ export const app = new Spiceflow()
 
       const body = await request.json()
 
+      // Scrub secrets from response text so tokens/passwords never leak to clients
+      const secrets = [
+        dbConfig.tinybirdAdminToken,
+        dbConfig.tinybirdReadToken,
+        dbConfig.clickhousePassword,
+      ].filter((s): s is string => !!s && s.length > 0)
+
+      function redact(text: string) {
+        let result = text
+        for (const secret of secrets) {
+          result = result.replaceAll(secret, '[REDACTED]')
+        }
+        return result
+      }
+
       if (dbConfig.backend === 'tinybird') {
         if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdReadToken) {
           throw json({ error: 'tinybird not configured' }, { status: 400 })
@@ -641,7 +656,7 @@ export const app = new Spiceflow()
         if (!res.ok) {
           // Forward Tinybird error as-is so clients get readable messages
           // (e.g. "mutation not allowed" when using a read-only token)
-          const text = await res.text()
+          const text = redact(await res.text())
           let parsed: unknown
           try { parsed = JSON.parse(text) } catch { parsed = null }
           throw json(parsed ?? { error: text }, { status: res.status })
@@ -662,7 +677,7 @@ export const app = new Spiceflow()
         })
         if (!res.ok) {
           // Forward ClickHouse error as-is for readable messages
-          const text = await res.text()
+          const text = redact(await res.text())
           let parsed: unknown
           try { parsed = JSON.parse(text) } catch { parsed = null }
           throw json(parsed ?? { error: text }, { status: res.status })
