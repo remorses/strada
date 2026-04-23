@@ -49,8 +49,8 @@ importers:
         specifier: ^6.9.0
         version: 6.9.0
       spiceflow:
-        specifier: 1.19.0-rsc.3
-        version: 1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
       string-dedent:
         specifier: ^3.0.2
         version: 3.0.2
@@ -86,8 +86,8 @@ importers:
         specifier: workspace:^
         version: link:../sdk
       spiceflow:
-        specifier: 1.19.0-rsc.3
-        version: 1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^25.6.0
@@ -102,8 +102,8 @@ importers:
   otel-collector:
     dependencies:
       spiceflow:
-        specifier: ^1.18.0
-        version: 1.18.0
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
     devDependencies:
       '@opentelemetry/api':
         specifier: ^1.9.1
@@ -154,8 +154,8 @@ importers:
   otel-logs-prototype:
     dependencies:
       spiceflow:
-        specifier: ^1.18.0
-        version: 1.18.0
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20250313.0
@@ -246,8 +246,8 @@ importers:
         specifier: ^19.2.4
         version: 19.2.5(react@19.2.5)
       spiceflow:
-        specifier: 1.19.0-rsc.0
-        version: 1.19.0-rsc.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -298,8 +298,8 @@ importers:
         specifier: ^19.2.5
         version: 19.2.5(react@19.2.5)
       spiceflow:
-        specifier: 1.19.0-rsc.3
-        version: 1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
+        specifier: 1.19.0-rsc.5
+        version: 1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6)
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -1646,10 +1646,6 @@ packages:
 
   '@manypkg/get-packages@1.1.3':
     resolution: {integrity: sha512-fo+QhuU3qE/2TQMQmbVMqaQ6EWbMhi4ABWP+O4AM1NqPBuy0OrApV5LO6BrrgnhtAHS2NH6RrVk9OL181tTi8A==}
-
-  '@medley/router@0.2.1':
-    resolution: {integrity: sha512-mdvS1spIxmZoUbTdYmWknHtwm72WwrGNoQCDd4RTvcXJ9G6XThxeC3g+cpOf6Fw6vIERHt50pYiJpsk5XTJQ5w==}
-    engines: {node: '>=8'}
 
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
@@ -3455,10 +3451,6 @@ packages:
     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
     engines: {node: '>=18'}
 
-  copy-anything@3.0.5:
-    resolution: {integrity: sha512-yCEafptTtb4bk7GLEQoM8KVJpxAfdBJYaXyzQEgQQQgYrZiDp8SJmGKlYza6CYjEDNstAdNdKA3UuoULlEbS6w==}
-    engines: {node: '>=12.13'}
-
   copy-anything@4.0.5:
     resolution: {integrity: sha512-7Vv6asjS4gMOuILabD3l739tsaxFQmC+a7pLZm02zyvs8p977bL3zEgq3yDk5rn9B0PbYgIv++jmHcuUab4RhA==}
     engines: {node: '>=18'}
@@ -3694,8 +3686,8 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
-  eventsource-parser@3.0.6:
-    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
+  eventsource-parser@3.0.8:
+    resolution: {integrity: sha512-70QWGkr4snxr0OXLRWsFLeRBIRPuQOvt4s8QYjmUlmlkyTZkRqS7EDVRZtzU3TiyDbXSzaOeF0XUKy8PchzukQ==}
     engines: {node: '>=18.0.0'}
 
   expect-type@1.3.0:
@@ -3829,10 +3821,6 @@ packages:
   is-subdir@1.2.0:
     resolution: {integrity: sha512-2AT6j+gXe/1ueqbW6fLZJiIw3F8iXGJtt0yDrZaBhAZEG1raiTxKWU+IPqMCzQAXOUCKdA4UDMgacKH25XG2Cw==}
     engines: {node: '>=4'}
-
-  is-what@4.1.16:
-    resolution: {integrity: sha512-ZhMwEosbFJkA0YhFnNDgTM4ZxDRsS6HqTo7qsZM08fehyRYIYa0yHu5R6mgo1n/8MgaPBXiPimPD77baVFYg+A==}
-    engines: {node: '>=12.13'}
 
   is-what@5.5.0:
     resolution: {integrity: sha512-oG7cgbmg5kLYae2N5IVd3jm2s+vldjxJzK1pcu9LfpGuQ93MQSzo0okvRna+7y5ifrD+20FE8FvjusyGaz14fw==}
@@ -4064,10 +4052,6 @@ packages:
   nf3@0.3.16:
     resolution: {integrity: sha512-Gs0xRPpUm2nDkqbi40NJ9g7qDIcjcJzgExiydnq6LAyqhI2jfno8wG3NKTL+IiJsx799UHOb1CnSd4Wg4SG4Pw==}
 
-  object-treeify@1.1.33:
-    resolution: {integrity: sha512-EFVjAYfzWqWsBMRHPMAXLCDIJnpMhdWAqR7xG6M6a2cs6PMFpl/+Z20w9zDW4vkxOFfddegBKq9Rehd0bxWE7A==}
-    engines: {node: '>= 10'}
-
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
 
@@ -4148,8 +4132,8 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
-  periscopic@4.0.2:
-    resolution: {integrity: sha512-sqpQDUy8vgB7ycLkendSKS6HnVz1Rneoc3Rc+ZBUCe2pbqlVuCC5vF52l0NJ1aiMg/r1qfYF9/myz8CZeI2rjA==}
+  periscopic@4.0.3:
+    resolution: {integrity: sha512-iD/CnjEI6TJYwqLXmEVByEbT1RwUGSW3W51t/uWf+2Ag7FMHLqJ1XNhawGaXBf9/gZr+DhF3bTGLOw+03GJnzg==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -4351,27 +4335,8 @@ packages:
   spawndamnit@3.0.1:
     resolution: {integrity: sha512-MmnduQUuHCoFckZoWnXsTg7JaiLBJrKFj9UI2MbRPGaJeVpsLcVBu6P/IGZovziM/YBsellCmsprgNA+w0CzVg==}
 
-  spiceflow@1.18.0:
-    resolution: {integrity: sha512-ZtHDB3Gsl6CxPSxWZml5AVoQMmXhQ9jxb3/LbVlQtYPK5am2edB2rce62IlbAib4hb7DcvMGC2KgDAFj+XwXFw==}
-    peerDependencies:
-      '@modelcontextprotocol/sdk': '*'
-    peerDependenciesMeta:
-      '@modelcontextprotocol/sdk':
-        optional: true
-
-  spiceflow@1.19.0-rsc.0:
-    resolution: {integrity: sha512-j30NECIDa7ONLGOYSW5fIdGI68QX37kpbxL1pRheff/WYU7mNRs2E2/FgG12YG34FBGS5DlnQpOtkxtt8Z80Hw==}
-    peerDependencies:
-      '@modelcontextprotocol/sdk': '*'
-      react: '*'
-      react-dom: '*'
-      zod: ^4.0.0
-    peerDependenciesMeta:
-      '@modelcontextprotocol/sdk':
-        optional: true
-
-  spiceflow@1.19.0-rsc.3:
-    resolution: {integrity: sha512-1Ejg2dOGRoGNLxIaIeycxi+Jnz3XR/MwM1aUGTkmhJ+EjrAKXneIfKHhcUQP7sUA65PhscJxOLW83ofEIK7Slw==}
+  spiceflow@1.19.0-rsc.5:
+    resolution: {integrity: sha512-3Bde8osCTArHdUYtQPuOmOopaMknMBGFnwXGUdY0Q1+/6l33IfZupRszOpMw3y/qkWo4RCSfVqjdEiiWogGBwQ==}
     peerDependencies:
       '@modelcontextprotocol/sdk': '*'
       react: '*'
@@ -4798,11 +4763,6 @@ packages:
 
   zimmerframe@1.1.4:
     resolution: {integrity: sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ==}
-
-  zod-to-json-schema@3.25.1:
-    resolution: {integrity: sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA==}
-    peerDependencies:
-      zod: ^3.25 || ^4
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
@@ -5832,10 +5792,6 @@ snapshots:
       fs-extra: 8.1.0
       globby: 11.1.0
       read-yaml-file: 1.1.0
-
-  '@medley/router@0.2.1':
-    dependencies:
-      object-treeify: 1.1.33
 
   '@napi-rs/wasm-runtime@1.1.1':
     dependencies:
@@ -7245,7 +7201,7 @@ snapshots:
       es-module-lexer: 2.0.0
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      periscopic: 4.0.2
+      periscopic: 4.0.3
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
       srvx: 0.11.15
@@ -7260,7 +7216,7 @@ snapshots:
       es-module-lexer: 2.0.0
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      periscopic: 4.0.2
+      periscopic: 4.0.3
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
       srvx: 0.11.15
@@ -7275,7 +7231,7 @@ snapshots:
       es-module-lexer: 2.0.0
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      periscopic: 4.0.2
+      periscopic: 4.0.3
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
       srvx: 0.11.15
@@ -7459,10 +7415,6 @@ snapshots:
   convert-source-map@2.0.0: {}
 
   cookie@1.1.1: {}
-
-  copy-anything@3.0.5:
-    dependencies:
-      is-what: 4.1.16
 
   copy-anything@4.0.5:
     dependencies:
@@ -7694,7 +7646,7 @@ snapshots:
 
   events@3.3.0: {}
 
-  eventsource-parser@3.0.6: {}
+  eventsource-parser@3.0.8: {}
 
   expect-type@1.3.0: {}
 
@@ -7824,8 +7776,6 @@ snapshots:
   is-subdir@1.2.0:
     dependencies:
       better-path-resolve: 1.0.0
-
-  is-what@4.1.16: {}
 
   is-what@5.5.0: {}
 
@@ -8035,8 +7985,6 @@ snapshots:
 
   nf3@0.3.16: {}
 
-  object-treeify@1.1.33: {}
-
   obug@2.1.1: {}
 
   open@10.2.0:
@@ -8143,7 +8091,7 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  periscopic@4.0.2:
+  periscopic@4.0.3:
     dependencies:
       '@types/estree': 1.0.8
       is-reference: 3.0.3
@@ -8452,41 +8400,11 @@ snapshots:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
 
-  spiceflow@1.18.0:
-    dependencies:
-      '@medley/router': 0.2.1
-      '@standard-schema/spec': 1.1.0
-      copy-anything: 3.0.5
-      eventsource-parser: 3.0.6
-      openapi-types: 12.1.3
-      superjson: 2.2.6
-      zod: 4.3.6
-      zod-to-json-schema: 3.25.1(zod@4.3.6)
-
-  spiceflow@1.19.0-rsc.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
-    dependencies:
-      '@vitejs/plugin-rsc': 0.5.21(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
-      errore: 0.14.1
-      eventsource-parser: 3.0.6
-      history: 5.3.0
-      isbot: 4.4.0
-      its-fine: 2.0.0(@types/react@19.2.14)(react@19.2.5)
-      nf3: 0.3.16
-      openapi-types: 12.1.3
-      react: 19.2.5
-      react-dom: 19.2.5(react@19.2.5)
-      superjson: 2.2.6
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - '@types/react'
-      - react-server-dom-webpack
-      - vite
-
-  spiceflow@1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
+  spiceflow@1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
     dependencies:
       '@vitejs/plugin-rsc': 0.5.21(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.5.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
       errore: 0.14.1
-      eventsource-parser: 3.0.6
+      eventsource-parser: 3.0.8
       history: 5.3.0
       isbot: 4.4.0
       its-fine: 2.0.0(@types/react@19.2.14)(react@19.2.5)
@@ -8501,11 +8419,30 @@ snapshots:
       - react-server-dom-webpack
       - vite
 
-  spiceflow@1.19.0-rsc.3(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
+  spiceflow@1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
     dependencies:
       '@vitejs/plugin-rsc': 0.5.21(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
       errore: 0.14.1
-      eventsource-parser: 3.0.6
+      eventsource-parser: 3.0.8
+      history: 5.3.0
+      isbot: 4.4.0
+      its-fine: 2.0.0(@types/react@19.2.14)(react@19.2.5)
+      nf3: 0.3.16
+      openapi-types: 12.1.3
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
+      superjson: 2.2.6
+      zod: 4.3.6
+    transitivePeerDependencies:
+      - '@types/react'
+      - react-server-dom-webpack
+      - vite
+
+  spiceflow@1.19.0-rsc.5(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(zod@4.3.6):
+    dependencies:
+      '@vitejs/plugin-rsc': 0.5.21(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+      errore: 0.14.1
+      eventsource-parser: 3.0.8
       history: 5.3.0
       isbot: 4.4.0
       its-fine: 2.0.0(@types/react@19.2.14)(react@19.2.5)
@@ -8907,10 +8844,6 @@ snapshots:
       youch-core: 0.3.3
 
   zimmerframe@1.1.4: {}
-
-  zod-to-json-schema@3.25.1(zod@4.3.6):
-    dependencies:
-      zod: 4.3.6
 
   zod@3.25.76: {}
 

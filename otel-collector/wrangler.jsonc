@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-04-14",
   "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+  },
   // Route pattern: each project gets {projectId}-ingest.strada.sh
   // The worker extracts project_id from the hostname and resolves config from D1.
   "routes": [

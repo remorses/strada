@@ -17,10 +17,9 @@
     "secrets": "sigillo run --env preview --mount .env.preview --mount-format env -- wrangler secret bulk --env preview .env.preview && sigillo run --env prod --mount .env.prod --mount-format env -- wrangler secret bulk --env=\"\" .env.prod"
   },
   "dependencies": {
-    "spiceflow": "^1.18.0"
+    "spiceflow": "1.19.0-rsc.5"
   },
   "devDependencies": {
-
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.214.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",
