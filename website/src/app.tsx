@@ -639,8 +639,12 @@ export const app = new Spiceflow()
           body: JSON.stringify({ q: sql }),
         })
         if (!res.ok) {
+          // Forward Tinybird error as-is so clients get readable messages
+          // (e.g. "mutation not allowed" when using a read-only token)
           const text = await res.text()
-          throw json({ error: text }, { status: res.status })
+          let parsed: unknown
+          try { parsed = JSON.parse(text) } catch { parsed = null }
+          throw json(parsed ?? { error: text }, { status: res.status })
         }
         return res.json()
       }
@@ -657,8 +661,11 @@ export const app = new Spiceflow()
           },
         })
         if (!res.ok) {
+          // Forward ClickHouse error as-is for readable messages
           const text = await res.text()
-          throw json({ error: text }, { status: res.status })
+          let parsed: unknown
+          try { parsed = JSON.parse(text) } catch { parsed = null }
+          throw json(parsed ?? { error: text }, { status: res.status })
         }
         return res.json()
       }
