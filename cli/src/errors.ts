@@ -170,6 +170,7 @@ SELECT
     groupUniqArray(Environment) AS environments
 FROM otel_errors
 WHERE FingerprintHash = '${fingerprint}'
+LIMIT 1
 `.trim();
 
     // Query 2: Recent events with stacktrace
