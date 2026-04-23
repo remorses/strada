@@ -223,8 +223,9 @@ export async function selfhostAction(
   saveSpinner.start("Saving database config to Strada...");
 
   const { safeFetch } = getApiClient();
-  const saveRes = await safeFetch(`/api/orgs/${org.id}/database`, {
+  const saveRes = await safeFetch("/api/orgs/:orgId/database", {
     method: "PUT",
+    params: { orgId: org.id },
     body: {
       backend: "tinybird" as const,
       tinybirdEndpoint: auth.baseUrl,

@@ -28,9 +28,9 @@ export async function ensureDefaultOrg() {
 
 async function fetchAndCacheProjects(orgId: string): Promise<CachedProject[]> {
   const { safeFetch } = getApiClient();
-  const res = await safeFetch(`/api/orgs/${orgId}/projects`);
+  const res = await safeFetch("/api/orgs/:orgId/projects", { params: { orgId } });
   if (res instanceof Error) throw res;
-  const projects: CachedProject[] = res.projects.map((p: { id: string; slug: string }) => ({
+  const projects: CachedProject[] = res.projects.map((p) => ({
     id: p.id,
     slug: p.slug,
   }));
@@ -78,8 +78,9 @@ projectsCli
   .action(async (slug, _options, { console: output }) => {
     const { safeFetch } = getApiClient();
     const org = await ensureDefaultOrg();
-    const res = await safeFetch(`/api/orgs/${org.id}/projects`, {
+    const res = await safeFetch("/api/orgs/:orgId/projects", {
       method: "POST",
+      params: { orgId: org.id },
       body: { slug },
     });
     if (res instanceof Error) throw res;
@@ -101,7 +102,10 @@ projectsCli
   .command("projects delete <id>", "Delete a project")
   .action(async (id, _options, { console: output }) => {
     const { safeFetch } = getApiClient();
-    const res = await safeFetch(`/api/projects/${id}`, { method: "DELETE" });
+    const res = await safeFetch("/api/projects/:id", {
+      method: "DELETE",
+      params: { id },
+    });
     if (res instanceof Error) throw res;
     // Remove from cache
     const projects = (loadConfig().projects ?? []).filter((p) => p.id !== id);
@@ -122,8 +126,9 @@ projectsCli
     const org = await ensureDefaultOrg();
     const project = await resolveProjectId(org.id, options.project);
 
-    const res = await safeFetch(`/api/projects/${project.id}/query`, {
+    const res = await safeFetch("/api/projects/:projectId/query", {
       method: "POST",
+      params: { projectId: project.id },
       body: { sql },
     });
     if (res instanceof Error) throw res;

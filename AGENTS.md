@@ -18,6 +18,18 @@ See other files in sqltemplates as well for other kinds of tables.
 
 all publishable packages in this repo should have name `strada` (the main cli, cli folder) or be under the `@strada.sh` scope. 
 
+## Spiceflow version
+
+All packages that depend on `spiceflow` must use the **exact same version**. The typed fetch client passes the `App` type as a generic, and mismatched versions cause `Types have separate declarations of a private property` errors because TypeScript sees two different `Spiceflow` class declarations.
+
+Always use the `@rsc` tag. To sync all packages to the same version:
+
+```bash
+pnpm update -r spiceflow
+```
+
+Do not pass `--latest`; `pnpm update` without it respects the existing version range and resolves to the highest matching version across all packages.
+
 ## Architecture
 
 Four packages in a pnpm monorepo, sharing a single D1 database:
@@ -650,6 +662,81 @@ To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitem
 - Forward JWTs support `DATASOURCES:READ` scope with `filter` field (Classic JWTs only had `PIPES:READ`)
 - Forward uses `tb deploy` instead of `tb push`
 
+
+## Reading worker logs (wrangler tail)
+
+Cloudflare Workers Observability is enabled (`observability.enabled: true` in both `website/wrangler.jsonc` and `otel-collector/wrangler.jsonc`). Logs are retained for 7 days and visible in the dashboard Query Builder.
+
+There is no CLI command to query historical logs. `wrangler tail` streams logs in real time. To capture logs for debugging, run it in the background, trigger the traffic, then read the output.
+
+**Cloudflare account ID:** `103e73569e2f6d4aea0fb679ceb8709b`
+
+### Collector logs
+
+```bash
+# Check if a tail session is already running
+bunx tuistory sessions
+
+# If collector-tail exists, just read from it. Otherwise start a new one:
+bunx tuistory launch "pnpm wrangler tail --format json" -s collector-tail --cwd otel-collector --no-wait
+
+# Wait for wrangler to connect
+bunx tuistory -s collector-tail wait "/Connected/i" --timeout 15000
+
+# Generate traffic (e.g. run example-app tests)
+STRADA_PROJECT_ID=01KPVGTT9CJW4ZNEF414VHGRFD \
+STRADA_ENDPOINT=https://01KPVGTT9CJW4ZNEF414VHGRFD-ingest.strada.sh \
+pnpm vitest run  # run from example-app/
+
+# Read captured logs
+bunx tuistory -s collector-tail read --trim
+
+# Stop tail when done
+bunx tuistory -s collector-tail press ctrl c
+bunx tuistory -s collector-tail close
+```
+
+### Website logs
+
+```bash
+# Same pattern for the website worker
+bunx tuistory launch "pnpm wrangler tail --format json" -s website-tail --cwd website --no-wait
+```
+
+### Output format
+
+Each JSON object in the tail output contains:
+
+| Field | Description |
+| ----- | ----------- |
+| `outcome` | `"ok"` or `"exception"` |
+| `wallTime` | Wall clock time in ms |
+| `event.request.url` | The request URL |
+| `event.request.method` | HTTP method |
+| `event.response.status` | HTTP status code |
+| `logs` | Array of `console.log` output from the worker |
+| `exceptions` | Array of uncaught exceptions |
+
+### Filtering with jq
+
+```bash
+# Show only errors
+cat /tmp/collector-tail.log | jq -c 'select(.outcome == "exception" or .event.response.status >= 400)'
+
+# Show URLs and status codes
+cat /tmp/collector-tail.log | jq -c '{url: .event.request.url, status: .event.response.status, outcome: .outcome}'
+
+# Show entries with console.log output
+cat /tmp/collector-tail.log | jq -c 'select(.logs | length > 0)'
+```
+
+### Dashboard Query Builder (historical logs, last 7 days)
+
+For querying past logs without real-time tail, use the Cloudflare dashboard:
+1. Go to Workers & Pages → select worker → Observability
+2. Use the Query Builder to filter by time range, status codes, etc.
+
+Dashboard URL: https://dash.cloudflare.com/103e73569e2f6d4aea0fb679ceb8709b/workers-and-pages/observability
 
 ## opentelemetry docs
 

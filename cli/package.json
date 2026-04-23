@@ -53,7 +53,7 @@
     "@tinybirdco/sdk": "^0.0.64",
     "errore": "^0.14.1",
     "goke": "^6.9.0",
-    "spiceflow": "^1.18.0",
+    "spiceflow": "1.19.0-rsc.3",
     "string-dedent": "^3.0.2"
   },
   "devDependencies": {
