@@ -71,14 +71,9 @@ ORDER BY event_count DESC
 LIMIT ${limit}
 `.trim();
 
-    // Query all projects and merge results
-    const allRows: Record<string, string>[] = [];
-    for (const project of projects) {
-      const data = await queryProject(project.id, sql);
-      for (const row of data.data ?? []) {
-        allRows.push(row);
-      }
-    }
+    // Query all projects in parallel and merge results
+    const results = await Promise.all(projects.map((p) => queryProject(p.id, sql)));
+    const allRows = results.flatMap((data) => data.data ?? []);
 
     if (allRows.length === 0) {
       const slugLabel = slugs.join(", ");
