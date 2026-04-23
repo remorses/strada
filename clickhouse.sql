@@ -60,11 +60,11 @@ CREATE TABLE IF NOT EXISTS otel_traces_trace_id_ts
 (
     `ProjectId`  LowCardinality(String) CODEC(ZSTD(1)),
     `TraceId`  String,
-    `Start`    DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-    `End`      DateTime64(9) CODEC(Delta(8), ZSTD(1))
+    `Start`    AggregateFunction(min, DateTime64(9)),
+    `End`      AggregateFunction(max, DateTime64(9))
 )
-ENGINE = MergeTree
-ORDER BY (ProjectId, TraceId, toUnixTimestamp(Start));
+ENGINE = AggregatingMergeTree
+ORDER BY (ProjectId, TraceId);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS otel_traces_trace_id_ts_mv
 TO otel_traces_trace_id_ts
@@ -72,8 +72,8 @@ AS
 SELECT
     ProjectId,
     TraceId,
-    min(Timestamp) AS Start,
-    max(Timestamp) AS End
+    minState(Timestamp) AS Start,
+    maxState(Timestamp) AS End
 FROM otel_traces
 WHERE TraceId != ''
 GROUP BY ProjectId, TraceId;
@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS otel_analytics_pages
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY Date
-ORDER BY (ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Pathname)
+ORDER BY (ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer)
 TTL Date + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 

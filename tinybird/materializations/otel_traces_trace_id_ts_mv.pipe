@@ -7,8 +7,8 @@ SQL >
     SELECT
         ProjectId,
         TraceId,
-        min(Timestamp) AS Start,
-        max(Timestamp) AS End
+        minState(Timestamp) AS Start,
+        maxState(Timestamp) AS End
     FROM otel_traces
     WHERE TraceId != ''
     GROUP BY ProjectId, TraceId

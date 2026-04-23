@@ -176,11 +176,11 @@ FORMAT JSON
 ```sql
 SELECT
     TraceId,
-    Start,
-    End,
-    dateDiff('millisecond', Start, End) AS duration_ms
+    minMerge(Start) AS Start,
+    maxMerge(End) AS End,
+    dateDiff('millisecond', minMerge(Start), maxMerge(End)) AS duration_ms
 FROM otel_traces_trace_id_ts
-WHERE Start >= now() - INTERVAL 1 HOUR
+GROUP BY TraceId
 ORDER BY duration_ms DESC
 LIMIT 20
 FORMAT JSON

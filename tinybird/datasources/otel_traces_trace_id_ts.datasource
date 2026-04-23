@@ -5,8 +5,8 @@ DESCRIPTION >
 SCHEMA >
     `ProjectId` LowCardinality(String),
     `TraceId` String,
-    `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-    `End` DateTime64(9) CODEC(Delta(8), ZSTD(1))
+    `Start` AggregateFunction(min, DateTime64(9)),
+    `End` AggregateFunction(max, DateTime64(9))
 
-ENGINE "MergeTree"
-ENGINE_SORTING_KEY "ProjectId, TraceId, toUnixTimestamp(Start)"
+ENGINE "AggregatingMergeTree"
+ENGINE_SORTING_KEY "ProjectId, TraceId"
