@@ -662,6 +662,31 @@ To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitem
 - Forward JWTs support `DATASOURCES:READ` scope with `filter` field (Classic JWTs only had `PIPES:READ`)
 - Forward uses `tb deploy` instead of `tb push`
 
+### Authenticating with `tb` CLI
+
+The Strada workspace is on `us-east (aws)` (`https://api.us-east.aws.tinybird.co`). To authenticate:
+
+```bash
+# Launch browser login in a background session (keeps it alive for the callback)
+bunx tuistory launch "tb --cloud login --method browser" -s tb-login --no-wait
+
+# Wait for the browser prompt
+bunx tuistory -s tb-login wait "/Opening browser|manually/i" --timeout 15000
+
+# Read output to get the URL if browser didn't open
+bunx tuistory -s tb-login read
+
+# After approving in the browser, check it succeeded
+bunx tuistory -s tb-login wait "/authenticated/i" --timeout 60000
+bunx tuistory -s tb-login close
+```
+
+This creates a `.tinyb` file in the current directory with the workspace token. After login, all `tb` commands need `--cloud` to target the remote workspace (without it, `tb` defaults to local Docker mode).
+
+```bash
+# Verify auth works
+tb --cloud workspace current
+```
 
 ## Debugging ingestion with quarantine tables
 
@@ -671,14 +696,14 @@ Every datasource has an associated `{datasource_name}_quarantine` table. Use `tb
 
 ```bash
 # See recent quarantined rows for a specific table
-tb sql "SELECT * FROM otel_traces_quarantine ORDER BY insertion_date DESC LIMIT 20"
-tb sql "SELECT * FROM otel_logs_quarantine ORDER BY insertion_date DESC LIMIT 20"
+tb --cloud sql "SELECT * FROM otel_traces_quarantine ORDER BY insertion_date DESC LIMIT 20"
+tb --cloud sql "SELECT * FROM otel_logs_quarantine ORDER BY insertion_date DESC LIMIT 20"
 
 # See distinct error types to understand what's failing
-tb sql "SELECT DISTINCT c__error FROM otel_traces_quarantine"
+tb --cloud sql "SELECT DISTINCT c__error FROM otel_traces_quarantine"
 
 # See quarantine activity over time (useful to spot when ingestion broke)
-tb sql "SELECT toDate(insertion_date) AS day, count() FROM otel_traces_quarantine GROUP BY day ORDER BY day DESC"
+tb --cloud sql "SELECT toDate(insertion_date) AS day, count() FROM otel_traces_quarantine GROUP BY day ORDER BY day DESC"
 ```
 
 Quarantine table extra columns:

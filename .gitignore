@@ -12,3 +12,4 @@ opensrc
 .env
 tmp
 .wrangler
+.tinyb
