@@ -38,13 +38,13 @@ describe("stripDynamicValues", () => {
 });
 
 describe("computeDefaultFingerprint", () => {
-  it("uses type + top in-app frame function when structured frames available", () => {
+  it("uses type + first in-app frame function (innermost) when structured frames available", () => {
     const frames = JSON.stringify([
       { filename: "node_modules/lib.js", function: "libFn", in_app: false },
       { filename: "src/app.js", function: "processOrder", in_app: true },
       { filename: "src/utils.js", function: "validate", in_app: true },
     ]);
-    expect(computeDefaultFingerprint("TypeError", "x is null", frames)).toEqual(["TypeError", "validate"]);
+    expect(computeDefaultFingerprint("TypeError", "x is null", frames)).toEqual(["TypeError", "processOrder"]);
   });
 
   it("falls back to type + stripped message when no in-app frames", () => {
@@ -328,11 +328,12 @@ describe("extractErrorsFromLogs", () => {
     const frames = JSON.parse(row.exception_frames);
 
     expect(frames).toHaveLength(2);
+    // With fromOtel: true, JS frames are NOT reversed (OTel sends them in correct order)
     expect(frames[0]).toMatchObject({
-      function: "main",
-      filename: "/app/src/main.js",
-      lineno: 10,
-      colno: 3,
+      function: "processOrder",
+      filename: "/app/src/order.js",
+      lineno: 42,
+      colno: 15,
     });
     expect(row.fingerprint).toEqual(["TypeError", "processOrder"]);
   });

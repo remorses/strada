@@ -464,7 +464,7 @@ describe.sequential('collector integration with official OTel SDKs', () => {
               {
                 "DebugId": "",
                 "Environment": "",
-                "ExceptionFrames": "[{"filename":"file:///__vitest_runner__/dist/chunk-vitest.js:0:0","lineno":1893,"colno":20,"in_app":false},{"function":"processTicksAndRejections","filename":"node:internal/process/task_queues","lineno":104,"colno":5,"in_app":false},{"filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true},{"function":"emitOtelData","filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true}]",
+                "ExceptionFrames": "[{"function":"emitOtelData","filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true},{"filename":"/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts","lineno": 0,"colno": 0,"in_app":true},{"function":"processTicksAndRejections","filename":"node:internal/process/task_queues","lineno":104,"colno":5,"in_app":false},{"filename":"file:///__vitest_runner__/dist/chunk-vitest.js:0:0","lineno":1893,"colno":20,"in_app":false}]",
                 "ExceptionMessage": "payment declined",
                 "ExceptionStacktrace": "Error: payment declined
             at emitOtelData (/Users/morse/Documents/GitHub/strada/otel-collector/src/collector-integration.test.ts:0:0)

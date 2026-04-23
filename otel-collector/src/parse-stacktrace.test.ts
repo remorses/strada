@@ -1,7 +1,7 @@
 // Tests for stack trace parsing during ingest.
 
 import { describe, expect, it } from "vitest";
-import { parseStackTrace } from "./parse-stacktrace.ts";
+import { parseStackTrace, isInAppFrame } from "./parse-stacktrace.ts";
 
 interface ParserCase {
   language: string;
@@ -148,4 +148,170 @@ describe("parseStackTrace", () => {
       }
     });
   }
+
+  describe("fromOtel option", () => {
+    it("keeps language as js-otel when fromOtel is true for JS traces", () => {
+      const jsTrace =
+        "Error: test\n    at myFunc (/app/src/index.ts:10:5)\n    at Object.handler (/app/src/routes.ts:20:10)";
+
+      const withoutOtel = parseStackTrace(jsTrace);
+      expect(withoutOtel.language).toBe("js");
+
+      const withOtel = parseStackTrace(jsTrace, { fromOtel: true });
+      expect(withOtel.language).toBe("js-otel");
+    });
+
+    it("does not reverse frames when fromOtel is true for JS traces", () => {
+      const jsTrace =
+        "Error: test\n    at innerFunc (/app/src/inner.ts:10:5)\n    at outerFunc (/app/src/outer.ts:20:10)";
+
+      // Without fromOtel: JS frames get reversed (innermost first)
+      const withoutOtel = parseStackTrace(jsTrace);
+      expect(withoutOtel.frames[0]?.function).toBe("outerFunc");
+      expect(withoutOtel.frames[1]?.function).toBe("innerFunc");
+
+      // With fromOtel: frames stay in original order
+      const withOtel = parseStackTrace(jsTrace, { fromOtel: true });
+      expect(withOtel.frames[0]?.function).toBe("innerFunc");
+      expect(withOtel.frames[1]?.function).toBe("outerFunc");
+    });
+
+    it("keeps language as js-otel for anonymous JS frames when fromOtel is true", () => {
+      const jsTrace =
+        "Error: test\n    at async Promise.all (index 0)\n    at myFunc (/app/src/index.ts:10:5)";
+
+      const withOtel = parseStackTrace(jsTrace, { fromOtel: true });
+      expect(withOtel.language).toBe("js-otel");
+    });
+  });
+});
+
+describe("isInAppFrame", () => {
+  describe("universal exclusions", () => {
+    it("excludes node_modules", () => {
+      expect(isInAppFrame("/app/node_modules/express/index.js")).toBe(false);
+    });
+
+    it("excludes node:internal", () => {
+      expect(isInAppFrame("node:internal/process/task_queues")).toBe(false);
+    });
+
+    it("excludes node: built-in modules", () => {
+      expect(isInAppFrame("node:fs")).toBe(false);
+      expect(isInAppFrame("node:http")).toBe(false);
+      expect(isInAppFrame("node:events")).toBe(false);
+    });
+
+    it("excludes site-packages", () => {
+      expect(isInAppFrame("/lib/python3.10/site-packages/flask/app.py")).toBe(false);
+    });
+
+    it("excludes dist-packages", () => {
+      expect(isInAppFrame("/usr/lib/python3/dist-packages/apt/cache.py")).toBe(false);
+    });
+
+    it("excludes webpack-internal", () => {
+      expect(isInAppFrame("webpack-internal:///./node_modules/foo.js")).toBe(false);
+    });
+
+    it("excludes [native code]", () => {
+      expect(isInAppFrame("[native code]")).toBe(false);
+    });
+
+    it("excludes <anonymous>", () => {
+      expect(isInAppFrame("<anonymous>")).toBe(false);
+    });
+
+    it("excludes <eval>", () => {
+      expect(isInAppFrame("<eval>")).toBe(false);
+    });
+
+    it("excludes wasm://", () => {
+      expect(isInAppFrame("wasm://wasm/func123")).toBe(false);
+    });
+
+    it("excludes .cache/", () => {
+      expect(isInAppFrame("/home/user/.cache/pypoetry/virtualenvs/lib/module.py")).toBe(false);
+    });
+
+    it("includes regular app files", () => {
+      expect(isInAppFrame("/app/src/index.ts")).toBe(true);
+      expect(isInAppFrame("/Users/dev/project/main.py")).toBe(true);
+    });
+
+    it("returns false for undefined filename", () => {
+      expect(isInAppFrame(undefined)).toBe(false);
+    });
+  });
+
+  describe("Python-specific exclusions", () => {
+    it("excludes /lib/python paths", () => {
+      expect(isInAppFrame("/usr/lib/python3.11/asyncio/tasks.py", "python")).toBe(false);
+    });
+
+    it("excludes .venv/", () => {
+      expect(isInAppFrame("/app/.venv/lib/python3.11/site-packages/foo.py", "python")).toBe(false);
+    });
+
+    it("excludes /virtualenvs/", () => {
+      expect(isInAppFrame("/home/user/.cache/pypoetry/virtualenvs/highlight-io/lib/foo.py", "python")).toBe(false);
+    });
+
+    it("includes app Python files", () => {
+      expect(isInAppFrame("/app/src/main.py", "python")).toBe(true);
+    });
+  });
+
+  describe("Go-specific exclusions", () => {
+    it("excludes /usr/local/go/src/", () => {
+      expect(isInAppFrame("/usr/local/go/src/runtime/panic.go", "golang")).toBe(false);
+    });
+
+    it("excludes /go/pkg/mod/", () => {
+      expect(isInAppFrame("/go/pkg/mod/github.com/lib/pq@v1.10.9/conn.go", "golang")).toBe(false);
+    });
+
+    it("excludes runtime/ prefix", () => {
+      expect(isInAppFrame("runtime/panic.go", "golang")).toBe(false);
+      expect(isInAppFrame("runtime/proc.go", "golang")).toBe(false);
+    });
+
+    it("includes app Go files", () => {
+      expect(isInAppFrame("/build/backend/graph/resolver.go", "golang")).toBe(true);
+    });
+  });
+
+  describe("Ruby-specific exclusions", () => {
+    it("excludes /gems/", () => {
+      expect(isInAppFrame("/usr/local/lib/ruby/gems/3.1.0/gems/rack-2.2.4/lib/rack.rb", "ruby")).toBe(false);
+    });
+
+    it("excludes <internal: prefix", () => {
+      expect(isInAppFrame("<internal:kernel>", "ruby")).toBe(false);
+    });
+
+    it("includes app Ruby files", () => {
+      expect(isInAppFrame("/app/lib/controllers/main.rb", "ruby")).toBe(true);
+    });
+  });
+
+  describe(".NET-specific exclusions", () => {
+    it("excludes /_/src/ framework paths", () => {
+      expect(isInAppFrame("/_/src/aspnetcore/artifacts/source-build/self/src/Middleware.cs", "dotnet")).toBe(false);
+    });
+
+    it("includes app .NET files", () => {
+      expect(isInAppFrame("/home/user/project/Program.cs", "dotnet")).toBe(true);
+    });
+  });
+
+  describe("language-specific patterns do not leak to other languages", () => {
+    it("runtime/ is not excluded for JS", () => {
+      expect(isInAppFrame("runtime/helper.js", "js")).toBe(true);
+    });
+
+    it("/gems/ is not excluded for Python", () => {
+      expect(isInAppFrame("/app/gems/module.py", "python")).toBe(true);
+    });
+  });
 });
