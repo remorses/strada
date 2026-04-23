@@ -787,6 +787,94 @@ For querying past logs without real-time tail, use the Cloudflare dashboard:
 
 Dashboard URL: https://dash.cloudflare.com/103e73569e2f6d4aea0fb679ceb8709b/workers-and-pages/observability
 
+## Writing SQL queries (ClickHouse / Tinybird)
+
+All user-facing queries run through Tinybird's `/v0/sql` endpoint with a scoped JWT. The SQL dialect is **ClickHouse SQL**. Follow these rules to keep queries fast, correct, and safe.
+
+### Core principles
+
+1. **Filter early.** Put WHERE clauses first to minimize the data ClickHouse reads. Filter on sorting key columns (`ServiceName`, `FingerprintHash`, `Timestamp`) whenever possible.
+2. **Select only needed columns.** Never use `SELECT *` in application queries. List the exact columns you need. Wide reads waste I/O and bandwidth.
+3. **Always add LIMIT.** Every query must have a `LIMIT` clause. Even aggregations that expect 1 row should use `LIMIT 1` as a safety net. Unbounded queries can scan the entire table.
+4. **Never reference `ProjectId`.** The JWT filter injects `WHERE ProjectId = '...'` automatically. Adding it in SQL is redundant and error-prone. If a query uses `SELECT *`, `ProjectId` will appear in results but has no application meaning.
+
+### Operation order
+
+Structure queries in this order for readability and performance:
+
+```sql
+SELECT columns
+FROM table
+WHERE filters          -- 1. filter early
+GROUP BY keys          -- 2. aggregate
+ORDER BY ...           -- 3. sort
+LIMIT N                -- 4. always limit
+```
+
+### Filtering before aggregation
+
+Always filter in WHERE before GROUP BY, not in HAVING. WHERE filters skip data at the storage level; HAVING filters after ClickHouse already read and grouped everything.
+
+```sql
+-- GOOD: filter before grouping
+SELECT FingerprintHash, count() AS c
+FROM otel_errors
+WHERE Timestamp >= now() - INTERVAL 24 HOUR
+GROUP BY FingerprintHash
+ORDER BY c DESC
+LIMIT 20
+
+-- BAD: reads all data then filters
+SELECT FingerprintHash, count() AS c
+FROM otel_errors
+GROUP BY FingerprintHash
+HAVING max(Timestamp) >= now() - INTERVAL 24 HOUR
+ORDER BY c DESC
+LIMIT 20
+```
+
+### Filtering before JOINs
+
+When joining tables, filter each side before the JOIN. Do not join first and filter after.
+
+### Map column access
+
+Use `mapContains()` to check for key existence, bracket syntax `Map['key']` to read values:
+
+```sql
+-- check if a log is a custom event
+WHERE mapContains(LogAttributes, 'event.name')
+
+-- read a specific attribute value
+LogAttributes['session.id'] AS session_id
+```
+
+### Time filtering patterns
+
+Use ClickHouse's `now()` and `INTERVAL` syntax for relative time filters:
+
+```sql
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+WHERE Timestamp >= now() - INTERVAL 7 DAY
+```
+
+### Aggregation functions
+
+- `count()` for counts (not `count(*)`)
+- `anyLast()` for picking one representative value from a group
+- `groupUniqArray()` for collecting distinct values into an array
+- `countIf(condition)` for conditional counting in a single pass
+- Use `-Merge` combinators (`uniqMerge`, `countMerge`) when reading from `AggregatingMergeTree` tables (`otel_analytics_pages`, `otel_analytics_sessions`)
+
+### Avoid
+
+- **CTEs** (`WITH ... AS`). Use subqueries instead; Tinybird does not optimize CTEs well.
+- **Nested aggregates** like `max(count(...))`. Use a subquery instead.
+- **`SELECT *`** in application code. Always list columns explicitly.
+- **Unbounded queries** without LIMIT. Even `GROUP BY` queries need a LIMIT.
+- **`HAVING` for row-level filters.** Move them to WHERE.
+- **String interpolation for user input.** Use parameterized values or validate inputs before embedding in SQL.
+
 ## opentelemetry docs
 
 to read docs of OTEL packages and spec you can opensrc https://github.com/open-telemetry/opentelemetry.io and grep files inside content/en/docs which contain all the docs as markdown files.
