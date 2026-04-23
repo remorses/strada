@@ -32,7 +32,7 @@
 
 Strada uses [Tinybird](https://www.tinybird.co) as its default storage backend. Tinybird is managed ClickHouse with a great developer experience on top.
 
-- **Self-hostable in one command.** `strada selfhost` sets up your Tinybird workspace, deploys all datasources and materialized views. No infra to manage, no ClickHouse cluster to babysit.
+- **Self-hostable in one command.** `strada database create` sets up your Tinybird workspace, deploys all datasources and materialized views. No infra to manage, no ClickHouse cluster to babysit.
 - **Also runs on plain ClickHouse.** If you don't want Tinybird, point Strada at any ClickHouse instance. Same schema, same queries. No lock-in.
 - **Fast queries.** ClickHouse is columnar and designed for analytical workloads. Querying millions of spans or logs takes milliseconds, not seconds.
 - **Just SQL.** No custom query language, no proprietary DSL. Standard ClickHouse SQL. Your agents can query data directly with `SELECT`. 

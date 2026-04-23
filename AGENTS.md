@@ -59,7 +59,7 @@ Four packages in a pnpm monorepo, sharing a single D1 database:
 - **otel-collector/** — Cloudflare Worker (Spiceflow). Receives OTLP HTTP/JSON and forwards to Tinybird or ClickHouse as NDJSON. Shares the D1 binding with the website to resolve project config at ingest time. No env vars for credentials; everything comes from D1.
 - **cli/** — CLI tool (`strada`). Authenticates via device flow, manages projects, runs queries through the website API. Uses spiceflow typed fetch client with the website App type.
 - **sdk/** — OTel-first SDK for Node.js and browser.
-- **tinybird/** — Tinybird datasource definitions and materialized views, deployed with `tb deploy` via the CLI selfhost command.
+- **tinybird/** — Tinybird datasource definitions and materialized views, deployed with `tb deploy` via the CLI database create command.
 
 ## Website multi-tenant security
 
@@ -98,7 +98,7 @@ Tinybird Events API  or  ClickHouse HTTP Interface
 
 ### Backend selection
 
-Each org has one database config row storing either Tinybird or ClickHouse credentials. The CLI `selfhost` command deploys Tinybird resources and saves tokens to the database. The collector reads these credentials from D1 at ingest time.
+Each org has one database config row storing either Tinybird or ClickHouse credentials. The CLI `database create` command deploys Tinybird resources and saves tokens to the database. The collector reads these credentials from D1 at ingest time.
 
 When using ClickHouse backend, the collector remaps NDJSON keys from snake_case to PascalCase (the OTel ClickHouse standard) before INSERT. The field mapping logic lives in `otel-collector/src/field-mapping.ts`.
 

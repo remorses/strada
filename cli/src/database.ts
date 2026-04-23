@@ -1,6 +1,6 @@
-// Self-hosted Tinybird commands.
-// `strada selfhost` bootstraps a workspace and saves its config.
-// `strada selfhost migrate` updates the saved workspace to the latest schema.
+// Database management commands.
+// `strada database create` bootstraps a Tinybird workspace and saves its config.
+// `strada database upgrade` updates the saved workspace to the latest schema.
 
 import * as clack from "@clack/prompts";
 import { goke } from "goke";
@@ -14,7 +14,7 @@ import { requireAuth } from "./config.ts";
 import { getApiClient } from "./api-client.ts";
 import { ensureDefaultOrg } from "./projects.ts";
 
-export interface SelfhostOptions {
+export interface DatabaseCreateOptions {
   token?: string;
   baseUrl?: string;
 }
@@ -33,13 +33,13 @@ function createTokenNameSuffix() {
   return Date.now().toString(36)
 }
 
-export const selfhostCli = goke();
+export const databaseCli = goke();
 
-selfhostCli
+databaseCli
   .command(
-    "selfhost",
+    "database create",
     dedent`
-      Set up Strada on your own Tinybird workspace.
+      Create a Strada database on your own Tinybird workspace.
 
       Requires \`strada login\` first. Authenticates with Tinybird via browser
       OAuth, deploys OTel datasources and materialized views, then saves the
@@ -51,30 +51,30 @@ selfhostCli
   .option("-t, --token [token]", "Tinybird workspace admin token (skips browser login)")
   .option("-u, --base-url [url]", "Tinybird API base URL (e.g. https://api.us-east.aws.tinybird.co)")
   .example("# Interactive setup (opens browser)")
-  .example("strada selfhost")
+  .example("strada database create")
   .example("# Non-interactive with existing token")
-  .example("strada selfhost --token p.eyXXX --base-url https://api.tinybird.co")
-  .action((options, context) => selfhostAction(options, context));
+  .example("strada database create --token p.eyXXX --base-url https://api.tinybird.co")
+  .action((options, context) => databaseCreateAction(options, context));
 
-selfhostCli
+databaseCli
   .command(
-    "selfhost migrate",
+    "database upgrade",
     dedent`
-      Update the Tinybird schema for the current organization's saved self-hosted workspace.
+      Upgrade the Tinybird schema to the latest version.
 
       Requires \`strada login\` first. Uses the Tinybird workspace already saved
-      in Strada for the current org. This is for updating an existing Strada
-      Tinybird workspace to the latest schema, not for first-time setup.
+      in Strada for the current org. Applies any new datasource or materialized
+      view changes from the latest CLI version.
     `,
   )
-  .example("strada selfhost migrate")
-  .action(async (_options, context) => selfhostMigrateAction(context));
+  .example("strada database upgrade")
+  .action(async (_options, context) => databaseUpgradeAction(context));
 
-export async function selfhostAction(
-  options: SelfhostOptions,
+export async function databaseCreateAction(
+  options: DatabaseCreateOptions,
   { console: output, process: proc }: GokeExecutionContext,
 ) {
-  clack.intro(bold("Strada — Self-hosted Tinybird setup"));
+  clack.intro(bold("Strada — Database setup"));
 
   // Require Strada login first
   let stradaAuth: { sessionToken: string; baseUrl: string };
@@ -85,7 +85,7 @@ export async function selfhostAction(
     return proc.exit(1);
   }
 
-  // Create a default personal org on first use so `strada login` -> `strada selfhost`
+  // Create a default personal org on first use so `strada login` -> `strada database create`
   // works end to end without a manual org bootstrap step.
   const org = await ensureDefaultOrg().catch((error) => error as Error);
   if (org instanceof Error) {
@@ -112,7 +112,7 @@ export async function selfhostAction(
     }
 
     if (!process.stdin.isTTY) {
-      return new Error("Tinybird login needs browser interaction. Run `strada selfhost` in a background terminal session with tuistory or tmux, or re-run with --token and --base-url (or TINYBIRD_TOKEN and TINYBIRD_BASE_URL).")
+      return new Error("Tinybird login needs browser interaction. Run `strada database create` in a background terminal session with tuistory or tmux, or re-run with --token and --base-url (or TINYBIRD_TOKEN and TINYBIRD_BASE_URL).")
     }
 
     clack.log.info("Opening browser to authenticate with Tinybird...");
@@ -144,7 +144,7 @@ export async function selfhostAction(
       message: `Deploy Strada OTel tables into workspace "${workspace.name}"?`,
     });
     if (clack.isCancel(confirmed) || !confirmed) {
-      clack.outro("Cancelled. Create a new dedicated Tinybird workspace and re-run strada selfhost.");
+      clack.outro("Cancelled. Create a new dedicated Tinybird workspace and re-run strada database create.");
       return proc.exit(0);
     }
   }
@@ -226,10 +226,10 @@ export async function selfhostAction(
   clack.outro("Done");
 }
 
-export async function selfhostMigrateAction(
+export async function databaseUpgradeAction(
   { console: output, process: proc }: GokeExecutionContext,
 ) {
-  clack.intro(bold("Strada — Self-hosted Tinybird schema migration"));
+  clack.intro(bold("Strada — Database schema upgrade"));
 
   try {
     requireAuth();
@@ -246,7 +246,7 @@ export async function selfhostMigrateAction(
   clack.log.info(`Using organization: ${cyan(org.name)}`);
 
   const spinner = clack.spinner();
-  spinner.start("Migrating Tinybird schema...");
+  spinner.start("Upgrading database schema...");
 
   const { safeFetch } = getApiClient();
   const result = await safeFetch("/api/v0/orgs/:orgId/database/migrate", {
@@ -255,15 +255,15 @@ export async function selfhostMigrateAction(
   });
 
   if (result instanceof Error) {
-    spinner.stop("Migration failed");
+    spinner.stop("Upgrade failed");
     clack.log.error(result.message);
     return proc.exit(1);
   }
 
-  spinner.stop(result.result === "no_changes" ? "Schema already up to date" : "Schema migrated");
+  spinner.stop(result.result === "no_changes" ? "Schema already up to date" : "Schema upgraded");
 
   output.log("");
-  output.log(bold("Migration summary:"));
+  output.log(bold("Upgrade summary:"));
   output.log(`  Result: ${cyan(result.result)}`);
   output.log(`  Backend: ${cyan(result.backend)}`);
   output.log(`  Endpoint: ${cyan(result.tinybirdEndpoint)}`);

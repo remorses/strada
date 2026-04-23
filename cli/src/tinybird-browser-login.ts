@@ -1,4 +1,4 @@
-// Tinybird browser OAuth flow for the selfhost CLI command.
+// Tinybird browser OAuth flow for the database create CLI command.
 
 import { createServer } from 'node:http'
 import { once } from 'node:events'

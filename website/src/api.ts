@@ -230,7 +230,7 @@ export const api = new Spiceflow()
           throw json({ error: 'no database config for this org' }, { status: 404 })
         }
         if (existing.backend !== 'tinybird') {
-          throw json({ error: 'selfhost migrate only supports Tinybird backends' }, { status: 400 })
+          throw json({ error: 'database upgrade only supports Tinybird backends' }, { status: 400 })
         }
         if (!existing.tinybirdEndpoint || !existing.tinybirdAdminToken) {
           throw json({ error: 'missing Tinybird endpoint or admin token for this org' }, { status: 400 })

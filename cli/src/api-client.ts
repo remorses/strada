@@ -2,7 +2,7 @@
 // with the built website declaration type for compile-time route validation.
 //
 // Prefer getApiClient() which reads auth from config automatically.
-// Use createApiClient() only when you have explicit credentials (e.g. selfhost).
+// Use createApiClient() only when you have explicit credentials (e.g. database create).
 //
 // The safeFetch client accepts `body` as a plain object (auto-serialized to JSON)
 // and is fully type-safe on path params, query, body, and response. No need for

@@ -7,7 +7,7 @@
 // so __dirname is cli/dist/ and tinybird/ is still at ../../tinybird/.
 //
 // When published to npm, the tinybird/ folder won't exist — this module
-// is only usable from a repo checkout (which is the expected selfhost flow).
+// is only usable from a repo checkout (which is the expected database create flow).
 
 import fs from "node:fs";
 import path from "node:path";
