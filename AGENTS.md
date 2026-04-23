@@ -226,72 +226,11 @@ The collector then queries D1 to validate the project exists and get database cr
 
 `ProjectId` is the first column in every table's sorting key. This means ClickHouse skips all other projects' data at the granule level on every query. Effectively free filtering.
 
-For reads, the backend generates a short-lived JWT scoped to a specific project:
+For Tinybird reads, the website generates a **per-project JWT** with `DATASOURCES:READ` scopes filtered to `ProjectId = '<id>'` on every datasource. The JWT is cached in the `project` table (`tinybirdJwt` + `tinybirdJwtExpiresAt` columns) and regenerated when it expires (24h TTL, 5min early renewal buffer).
 
-```json
-{
-  "workspace_id": "<workspace_id>",
-  "name": "user_<user_id>",
-  "exp": 1234567890,
-  "scopes": [
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_traces",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_logs",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_metrics_gauge",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_metrics_sum",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_metrics_histogram",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_metrics_exponential_histogram",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_errors",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_analytics_pages",
-      "filter": "ProjectId = 'acme'"
-    },
-    {
-      "type": "DATASOURCES:READ",
-      "resource": "otel_analytics_sessions",
-      "filter": "ProjectId = 'acme'"
-    }
-  ],
-  "limits": { "rps": 10 }
-}
-```
+**How it works:** On the first query for a project, `getOrCreateProjectJwt()` in `website/src/db.ts` calls the Tinybird Token API (`POST /v0/tokens?name=...&expiration_time=...`) with the org's admin token to create a JWT. The JWT has one scope per datasource, each with `filter: "ProjectId = '<projectId>'"`. Tinybird enforces these filters server-side on every query. The JWT is then cached in D1 so subsequent queries skip the Token API call.
 
-Use a **unique `name` per user** (for example `user_<user_id>`) so Tinybird tracks rate limits separately. Keep `limits.rps` aligned with the user's plan/tier. Example policy:
-
-- pro tier: `limits: { "rps": 10 }`
-- enterprise tier: `limits: { "rps": 50 }`
-
-This controls query traffic fairness. Tinybird only supports **per-JWT request-rate limiting**, not per-JWT vCPU or memory quotas, so `limits.rps` is the main per-user fairness control.
-
-The `filter` is enforced server-side by Tinybird on every query to `/v0/sql`. Users can write arbitrary SQL and the filter is always appended. No way to bypass it. The JWT is signed with the workspace admin token and can't be tampered with.
+The list of datasources is defined in `TINYBIRD_DATASOURCES` in `cli/src/tinybird.ts`. When adding a new datasource, add it to this array so new JWTs include it.
 
 **All SQL queries must ignore `ProjectId` completely.** `ProjectId` exists only for auth. Tinybird's JWT filter handles it automatically on every query. Never add `WHERE ProjectId = '...'` in application SQL, UI queries, or example queries. If a query uses `SELECT *`, the column will appear in results but it carries no semantic meaning for the application. It's purely an infrastructure concern for row-level isolation.
 
@@ -325,9 +264,11 @@ A **span** is one unit of work (HTTP request, DB query, function call). Spans li
 
 **Populated by:** `otel_traces_trace_id_ts_mv` (fires automatically on every insert to `otel_traces`)
 
-Aggregates `min(Timestamp)` and `max(Timestamp)` per `ProjectId + TraceId`. Without it, answering "how long did trace X take?" requires scanning all spans. With it, it's a single row lookup.
+Aggregates `minState(Timestamp)` and `maxState(Timestamp)` per `ProjectId + TraceId` using `AggregatingMergeTree`. Without it, answering "how long did trace X take?" requires scanning all spans. With it, it's a single grouped lookup. Read with `minMerge(Start)` / `maxMerge(End)` and `GROUP BY TraceId`.
 
-**Sorting key:** `ProjectId, TraceId, toUnixTimestamp(Start)`
+**Sorting key:** `ProjectId, TraceId`
+
+**Key columns:** `Start` (`AggregateFunction(min, DateTime64(9))`), `End` (`AggregateFunction(max, DateTime64(9))`)
 
 ### Browser analytics pages — `otel_analytics_pages`
 
@@ -335,7 +276,7 @@ Aggregates `min(Timestamp)` and `max(Timestamp)` per `ProjectId + TraceId`. With
 
 Pre-aggregated pageview analytics by domain, pathname, referrer, device, browser, country, and language. Powers top pages, top browsers, countries, referrers, and pageview/visitor timeseries without scanning raw traces.
 
-**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Pathname`
+**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
 
 **Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(session.id)`), `Hits` (`countState()`).
 
@@ -878,3 +819,10 @@ WHERE Timestamp >= now() - INTERVAL 7 DAY
 ## opentelemetry docs
 
 to read docs of OTEL packages and spec you can opensrc https://github.com/open-telemetry/opentelemetry.io and grep files inside content/en/docs which contain all the docs as markdown files.
+
+
+## tinybird client
+
+put type safe tb client methods in cli/src/tinybird.ts
+
+website has a dev dependency on it.

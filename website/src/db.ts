@@ -11,6 +11,7 @@ import { betterAuth } from 'better-auth'
 import { deviceAuthorization, bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
 import { json } from 'spiceflow'
+import { TinybirdClient, TINYBIRD_DATASOURCES } from 'strada/src/tinybird'
 
 // ── Drizzle client via D1 ───────────────────────────────────────────
 
@@ -107,4 +108,62 @@ export function generateProjectToken(): { fullKey: string; prefix: string } {
   const fullKey = `str_${raw}`
   const prefix = raw.slice(0, 12)
   return { fullKey, prefix }
+}
+
+// ── Per-project Tinybird JWT ────────────────────────────────────────
+// Each project gets a JWT with DATASOURCES:READ scopes filtered to its
+// ProjectId. Tinybird enforces the filter server-side, so SQL queries
+// never need WHERE ProjectId = '...'. The JWT is cached in the project
+// table and regenerated when it expires (24h TTL, 5min early renewal buffer).
+
+// 100 years in seconds. Tinybird requires exp but has no way to skip it.
+const JWT_TTL_SEC = 100 * 365 * 24 * 60 * 60
+
+interface ProjectJwtContext {
+  projectId: string
+  tinybirdEndpoint: string
+  tinybirdAdminToken: string
+  /** Existing cached JWT, if any */
+  tinybirdJwt: string | null
+  /** Comma-joined datasource names the cached JWT was created with */
+  tinybirdJwtDatasources: string | null
+}
+
+/**
+ * Get a valid Tinybird JWT for a project, generating one if missing or stale.
+ * Regenerates when the datasource list changes (new table added to TINYBIRD_DATASOURCES).
+ */
+export async function getOrCreateProjectJwt(ctx: ProjectJwtContext): Promise<string> {
+  const currentDatasources = TINYBIRD_DATASOURCES.join(',')
+
+  // Return cached JWT if it covers the same datasources
+  if (ctx.tinybirdJwt && ctx.tinybirdJwtDatasources === currentDatasources) {
+    return ctx.tinybirdJwt
+  }
+
+  const client = new TinybirdClient({
+    baseUrl: ctx.tinybirdEndpoint,
+    token: ctx.tinybirdAdminToken,
+  })
+
+  const expirationTimeSec = Math.floor(Date.now() / 1000) + JWT_TTL_SEC
+
+  const result = await client.createJwt({
+    name: `project_${ctx.projectId}`,
+    expirationTime: expirationTimeSec,
+    scopes: TINYBIRD_DATASOURCES.map((resource) => ({
+      type: "DATASOURCES:READ" as const,
+      resource,
+      filter: `ProjectId = '${ctx.projectId}'`,
+    })),
+  })
+  if (result instanceof Error) throw result
+
+  // Cache the JWT and datasource list in D1
+  const db = getDb()
+  await db.update(schema.project)
+    .set({ tinybirdJwt: result.token, tinybirdJwtDatasources: currentDatasources, updatedAt: Date.now() })
+    .where(orm.eq(schema.project.id, ctx.projectId))
+
+  return result.token
 }

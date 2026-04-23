@@ -13,7 +13,7 @@ import { Button } from './components/ui/button.tsx'
 import { DeviceActionButtons } from './components/device-action-buttons.tsx'
 import {
   getDb, getAuth, getSession, requireSession, requireOrgMember,
-  hashToken, generateProjectToken,
+  hashToken, generateProjectToken, getOrCreateProjectJwt,
 } from './db.ts'
 
 const loginQuerySchema = z.object({ callbackURL: z.string().optional() })
@@ -640,16 +640,26 @@ export const app = new Spiceflow()
       }
 
       if (dbConfig.backend === 'tinybird') {
-        if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdReadToken) {
+        if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdAdminToken) {
           throw json({ error: 'tinybird not configured' }, { status: 400 })
         }
+        // Get or create a per-project JWT with DATASOURCES:READ scopes filtered
+        // to this project's ProjectId. Tinybird enforces the filter server-side,
+        // so SQL queries never need WHERE ProjectId = '...'.
+        const jwt = await getOrCreateProjectJwt({
+          projectId: params.projectId,
+          tinybirdEndpoint: dbConfig.tinybirdEndpoint,
+          tinybirdAdminToken: dbConfig.tinybirdAdminToken,
+          tinybirdJwt: proj.tinybirdJwt,
+          tinybirdJwtDatasources: proj.tinybirdJwtDatasources,
+        })
         const sql = body.sql.includes('FORMAT ') ? body.sql : `${body.sql} FORMAT JSON`
         const url = `${dbConfig.tinybirdEndpoint}/v0/sql`
         const res = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${dbConfig.tinybirdReadToken}`,
+            Authorization: `Bearer ${jwt}`,
           },
           body: JSON.stringify({ q: sql }),
         })

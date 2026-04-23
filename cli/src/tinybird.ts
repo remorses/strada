@@ -18,6 +18,23 @@
 import type { TinybirdWorkspace } from "@tinybirdco/sdk/api/workspaces";
 import * as errore from "errore";
 
+/**
+ * All Tinybird datasource names that user queries can read.
+ * Used to generate per-project JWTs with DATASOURCES:READ scopes.
+ */
+export const TINYBIRD_DATASOURCES = [
+  "otel_traces",
+  "otel_traces_trace_id_ts",
+  "otel_logs",
+  "otel_errors",
+  "otel_metrics_gauge",
+  "otel_metrics_sum",
+  "otel_metrics_histogram",
+  "otel_metrics_exponential_histogram",
+  "otel_analytics_pages",
+  "otel_analytics_sessions",
+] as const;
+
 export interface TinybirdResourceFile {
   name: string;
   content: string;
@@ -64,7 +81,22 @@ export interface TinybirdToken {
   token: string;
   name: string;
   description?: string;
-  scopes: Array<{ type: string; resource?: string; filter?: string }>;
+  scopes: Array<{ type: string; resource?: string; filter?: string; fixed_params?: Record<string, string | number> }>;
+}
+
+/** Scope definition for creating JWTs via POST /v0/tokens. */
+export interface TinybirdJwtScope {
+  type: "DATASOURCES:READ" | "PIPES:READ";
+  resource: string;
+  filter?: string;
+  fixed_params?: Record<string, string | number>;
+}
+
+export interface TinybirdJwtOptions {
+  name: string;
+  /** Unix timestamp in seconds when the JWT expires. */
+  expirationTime: number;
+  scopes: TinybirdJwtScope[];
 }
 
 export interface TinybirdTokensListResponse {
@@ -415,7 +447,10 @@ export class TinybirdClient {
   ) {}
 
   private get fetchFn(): typeof fetch {
-    return this.config.fetch ?? fetch;
+    // Wrap globalThis.fetch so it's called without a bound `this`.
+    // Cloudflare Workers throws "Illegal invocation" if fetch is stored
+    // in a variable and called with a different `this` reference.
+    return this.config.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   }
 
   private get baseUrl() {
@@ -508,6 +543,31 @@ export class TinybirdClient {
 
   async listTokens() {
     return this.requestJson({ path: "/v0/tokens", parser: parseTokensListResponse })
+  }
+
+  /**
+   * Create a Tinybird JWT with scoped permissions and expiration.
+   * Requires an admin token. The JWT is signed by Tinybird using the admin
+   * token as shared secret, so it can be used directly as a Bearer token
+   * against /v0/sql with server-enforced filters.
+   *
+   * Tinybird API: POST /v0/tokens?name=...&expiration_time=<unix_seconds>
+   * Body: { scopes: [...] }
+   */
+  async createJwt({ name, expirationTime, scopes }: TinybirdJwtOptions) {
+    const params = new URLSearchParams({
+      name,
+      expiration_time: String(expirationTime),
+    })
+    return this.requestJson({
+      path: `/v0/tokens?${params}`,
+      parser: parseTokenResponse,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopes }),
+      },
+    })
   }
 }
 

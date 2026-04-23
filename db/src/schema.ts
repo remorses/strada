@@ -127,6 +127,14 @@ export const project = sqliteCore.sqliteTable('project', {
   slug: sqliteCore.text('slug').notNull(),
   orgId: sqliteCore.text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
   databaseId: sqliteCore.text('database_id').notNull().references(() => database.id, { onDelete: 'cascade' }),
+  // Tinybird JWT scoped to this project's ProjectId. Generated on first query,
+  // cached here so subsequent queries reuse it. The JWT has DATASOURCES:READ
+  // scopes with filter "ProjectId = '<id>'" on every datasource, so Tinybird
+  // enforces row-level isolation server-side on every query.
+  tinybirdJwt: sqliteCore.text('tinybird_jwt'),
+  // Comma-joined datasource names the JWT was created with. If TINYBIRD_DATASOURCES
+  // changes (new table added), this won't match and the JWT gets regenerated.
+  tinybirdJwtDatasources: sqliteCore.text('tinybird_jwt_datasources'),
   createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
   updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
 }, (table) => [
