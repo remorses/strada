@@ -445,9 +445,9 @@ export function resolveUserId(options: StradaOptions | undefined): string | unde
  */
 export function resolveEndpoint(options: StradaOptions): string {
   if (options.endpoint) {
-    return options.endpoint.replace(/\/+$/, "");
+    return options.endpoint.replace(/\/+$/, "").toLowerCase();
   }
-  return `https://${options.projectId}-ingest.strada.sh`;
+  return `https://${options.projectId}-ingest.strada.sh`.toLowerCase();
 }
 
 export const BAGGAGE_SESSION_ID = "strada.session.id";

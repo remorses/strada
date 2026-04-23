@@ -93,7 +93,7 @@ projectsCli
     output.log("");
     output.log(`  ID:     ${cyan(res.id)}`);
     output.log(`  Slug:   ${res.slug}`);
-    output.log(`  Ingest: ${res.ingestEndpoint}`);
+    output.log(`  Ingest: ${res.ingestEndpoint.toLowerCase()}`);
     output.log("");
     output.log(dim("Configure your SDK with this endpoint to start sending data."));
   });
