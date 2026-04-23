@@ -15,8 +15,17 @@ import { DeviceActionButtons } from './components/device-action-buttons.tsx'
 import { deployTinybirdResources, getDeploymentManagedReadToken, TinybirdClient } from 'strada/src/tinybird'
 import { bundledTinybirdResources } from './tinybird-bundled-resources.ts'
 import {
-  getDb, getAuth, getSession, requireSession, requireOrgMember,
-  hashToken, generateProjectToken, getOrCreateProjectJwt,
+  getAccessibleOrgDatabase,
+  getAccessibleProject,
+  getAccessibleProjectToken,
+  getDb,
+  getAuth,
+  getOrCreateProjectJwt,
+  getSession,
+  hashToken,
+  generateProjectToken,
+  requireOrgMember,
+  requireSession,
 } from './db.ts'
 
 const loginQuerySchema = z.object({ callbackURL: z.string().optional() })
@@ -253,7 +262,6 @@ export const app = new Spiceflow()
     handler: async ({ request, query }) => {
       const userCode = query.user_code ?? ''
       const status = query.status
-      const auth = getAuth()
 
       if (!userCode) {
         return (
@@ -271,6 +279,7 @@ export const app = new Spiceflow()
         )
       }
 
+      const auth = getAuth()
       const device = await auth.api.deviceVerify({ query: { user_code: userCode } }).catch(() => null)
       if (!device) {
         return (
@@ -427,19 +436,25 @@ export const app = new Spiceflow()
     request: updateDatabaseRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
-      await requireOrgMember(session.userId, params.orgId)
+      const access = await getAccessibleOrgDatabase({ userId: session.userId, orgId: params.orgId })
+      if (!access) {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+      if (access.member.role !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+
       const db = getDb()
       const body = await request.json()
 
-      const existing = await db.query.database.findFirst({
-        where: { orgId: params.orgId },
-      })
+      const existing = access.database
       if (!existing) {
         throw json({ error: 'no database config for this org' }, { status: 404 })
       }
 
-      if (body.backend === 'tinybird') {
-        await db.update(schema.database)
+      const updatedAt = Date.now()
+      const updateDatabase = body.backend === 'tinybird'
+        ? db.update(schema.database)
           .set({
             backend: 'tinybird',
             tinybirdEndpoint: body.tinybirdEndpoint,
@@ -449,11 +464,10 @@ export const app = new Spiceflow()
             clickhouseDatabase: null,
             clickhouseUser: null,
             clickhousePassword: null,
-            updatedAt: Date.now(),
+            updatedAt,
           })
           .where(orm.eq(schema.database.id, existing.id))
-      } else {
-        await db.update(schema.database)
+        : db.update(schema.database)
           .set({
             backend: 'clickhouse',
             clickhouseUrl: body.clickhouseUrl,
@@ -463,17 +477,19 @@ export const app = new Spiceflow()
             tinybirdEndpoint: null,
             tinybirdAdminToken: null,
             tinybirdReadToken: null,
-            updatedAt: Date.now(),
+            updatedAt,
           })
           .where(orm.eq(schema.database.id, existing.id))
-      }
 
       // Invalidate cached project JWTs when database config changes.
       // JWTs are signed with the admin token, so changing the token,
       // endpoint, or backend makes all existing JWTs invalid.
-      await db.update(schema.project)
-        .set({ tinybirdJwt: null, tinybirdJwtDatasources: null, updatedAt: Date.now() })
-        .where(orm.eq(schema.project.orgId, params.orgId))
+      await db.batch([
+        updateDatabase,
+        db.update(schema.project)
+          .set({ tinybirdJwt: null, tinybirdJwtDatasources: null, updatedAt })
+          .where(orm.eq(schema.project.orgId, params.orgId)),
+      ])
 
       return { ok: true }
     },
@@ -482,11 +498,11 @@ export const app = new Spiceflow()
   // ── API: Get database config ──────────────────────────────────
   .get('/api/orgs/:orgId/database', async ({ request, params }) => {
     const session = await requireSession(request)
-    await requireOrgMember(session.userId, params.orgId)
-    const db = getDb()
-    const row = await db.query.database.findFirst({
-      where: { orgId: params.orgId },
-    })
+    const access = await getAccessibleOrgDatabase({ userId: session.userId, orgId: params.orgId })
+    if (!access || access.member.role !== 'admin') {
+      throw json({ error: 'forbidden' }, { status: 403 })
+    }
+    const row = access.database
     if (!row) {
       throw json({ error: 'no database config' }, { status: 404 })
     }
@@ -510,11 +526,16 @@ export const app = new Spiceflow()
     path: '/api/orgs/:orgId/database/migrate',
     async handler({ request, params }) {
       const session = await requireSession(request)
-      await requireOrgMember(session.userId, params.orgId)
+      const access = await getAccessibleOrgDatabase({ userId: session.userId, orgId: params.orgId })
+      if (!access) {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+      if (access.member.role !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+
       const db = getDb()
-      const existing = await db.query.database.findFirst({
-        where: { orgId: params.orgId },
-      })
+      const existing = access.database
       if (!existing) {
         throw json({ error: 'no database config for this org' }, { status: 404 })
       }
@@ -573,13 +594,18 @@ export const app = new Spiceflow()
     request: createProjectRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
-      await requireOrgMember(session.userId, params.orgId)
+      const access = await getAccessibleOrgDatabase({ userId: session.userId, orgId: params.orgId })
+      if (!access) {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+      if (access.member.role !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+
       const db = getDb()
       const body = await request.json()
 
-      const dbRow = await db.query.database.findFirst({
-        where: { orgId: params.orgId },
-      })
+      const dbRow = access.database
       if (!dbRow) {
         throw json({ error: 'configure database first' }, { status: 400 })
       }
@@ -623,14 +649,14 @@ export const app = new Spiceflow()
     path: '/api/projects/:id',
     async handler({ request, params }) {
       const session = await requireSession(request)
-      const db = getDb()
-      const proj = await db.query.project.findFirst({
-        where: { id: params.id },
-      })
+      const proj = await getAccessibleProject({ userId: session.userId, projectId: params.id })
       if (!proj) {
         throw json({ error: 'project not found' }, { status: 404 })
       }
-      await requireOrgMember(session.userId, proj.orgId)
+      if (proj.accessRole !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+      const db = getDb()
       await db.delete(schema.project).where(orm.eq(schema.project.id, params.id))
       return { ok: true }
     },
@@ -643,15 +669,15 @@ export const app = new Spiceflow()
     request: createProjectTokenRequestSchema,
     async handler({ request, params }) {
       const session = await requireSession(request)
-      const db = getDb()
-      const proj = await db.query.project.findFirst({
-        where: { id: params.projectId },
-      })
+      const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
       if (!proj) {
         throw json({ error: 'project not found' }, { status: 404 })
       }
-      await requireOrgMember(session.userId, proj.orgId)
+      if (proj.accessRole !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
 
+      const db = getDb()
       const body = await request.json()
       const { fullKey, prefix } = generateProjectToken()
       const hashed = await hashToken(fullKey)
@@ -673,14 +699,11 @@ export const app = new Spiceflow()
   // ── API: List project tokens ──────────────────────────────────
   .get('/api/projects/:projectId/tokens', async ({ request, params }) => {
     const session = await requireSession(request)
-    const db = getDb()
-    const proj = await db.query.project.findFirst({
-      where: { id: params.projectId },
-    })
+    const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
     if (!proj) {
       throw json({ error: 'project not found' }, { status: 404 })
     }
-    await requireOrgMember(session.userId, proj.orgId)
+    const db = getDb()
 
     const tokens = await db.query.projectToken.findMany({
       where: { projectId: params.projectId },
@@ -702,15 +725,14 @@ export const app = new Spiceflow()
     path: '/api/project-tokens/:id',
     async handler({ request, params }) {
       const session = await requireSession(request)
-      const db = getDb()
-      const token = await db.query.projectToken.findFirst({
-        where: { id: params.id },
-        with: { project: true },
-      })
+      const token = await getAccessibleProjectToken(session.userId, params.id)
       if (!token?.project) {
         throw json({ error: 'token not found' }, { status: 404 })
       }
-      await requireOrgMember(session.userId, token.project.orgId)
+      if (token.accessRole !== 'admin') {
+        throw json({ error: 'forbidden' }, { status: 403 })
+      }
+      const db = getDb()
       await db.delete(schema.projectToken).where(orm.eq(schema.projectToken.id, params.id))
       return { ok: true }
     },
@@ -791,15 +813,10 @@ export const app = new Spiceflow()
     },
     async handler({ request, params }) {
       const session = await requireSession(request)
-      const db = getDb()
-      const proj = await db.query.project.findFirst({
-        where: { id: params.projectId },
-        with: { database: true },
-      })
+      const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
       if (!proj) {
         throw json({ error: 'project not found' }, { status: 404 })
       }
-      await requireOrgMember(session.userId, proj.orgId)
 
       const dbConfig = proj.database
       if (!dbConfig) {
@@ -896,7 +913,6 @@ export const app = new Spiceflow()
           },
         })
         if (!res.ok) {
-          // Forward ClickHouse error as-is for readable messages
           const text = redact(await res.text())
           let parsed: unknown
           try { parsed = JSON.parse(text) } catch { parsed = null }

@@ -94,6 +94,111 @@ export async function requireOrgMember(userId: string, orgId: string) {
   return member
 }
 
+export async function getAccessibleOrgDatabase({
+  userId,
+  orgId,
+}: {
+  userId: string
+  orgId: string
+}) {
+  const db = getDb()
+  const member = await db.query.orgMember.findFirst({
+    where: { userId, orgId },
+    with: {
+      org: {
+        columns: {},
+        with: {
+          database: true,
+        },
+      },
+    },
+  })
+
+  if (!member) return null
+
+  return {
+    member,
+    database: member.org?.database ?? null,
+  }
+}
+
+export async function getAccessibleProject({
+  userId,
+  projectId,
+}: {
+  userId: string
+  projectId: string
+}) {
+  const db = getDb()
+  const project = await db.query.project.findFirst({
+    where: {
+      id: projectId,
+      org: {
+        members: {
+          userId,
+        },
+      },
+    },
+    with: {
+      database: true,
+      org: {
+        columns: {},
+        with: {
+          members: {
+            columns: { role: true },
+            where: { userId },
+            limit: 1,
+          },
+        },
+      },
+    },
+  })
+
+  if (!project) return null
+
+  return Object.assign(project, {
+    accessRole: project.org?.members[0]?.role ?? null,
+  })
+}
+
+export async function getAccessibleProjectToken(userId: string, tokenId: string) {
+  const db = getDb()
+  const token = await db.query.projectToken.findFirst({
+    where: {
+      id: tokenId,
+      project: {
+        org: {
+          members: {
+            userId,
+          },
+        },
+      },
+    },
+    with: {
+      project: {
+        with: {
+          org: {
+            columns: {},
+            with: {
+              members: {
+                columns: { role: true },
+                where: { userId },
+                limit: 1,
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!token) return null
+
+  return Object.assign(token, {
+    accessRole: token.project?.org?.members[0]?.role ?? null,
+  })
+}
+
 // ── Token hashing ───────────────────────────────────────────────────
 
 export async function hashToken(token: string): Promise<string> {

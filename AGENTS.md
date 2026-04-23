@@ -61,6 +61,24 @@ Four packages in a pnpm monorepo, sharing a single D1 database:
 - **sdk/** — OTel-first SDK for Node.js and browser.
 - **tinybird/** — Tinybird datasource definitions and materialized views, deployed with `tb deploy` via the CLI selfhost command.
 
+## Website multi-tenant security
+
+`website/` is **multi-tenant**. Treat every org, project, database config, token, and query result as tenant-scoped.
+
+- Never leak another org's database credentials, project tokens, Tinybird JWTs, ClickHouse config, or query results.
+- Never return tenant resource existence to users outside that org. Prefer tenant-scoped lookups that return not found.
+- Membership is not enough for dangerous mutations. Database config changes, migrations, and token/project destructive actions should require org admin access.
+- Query paths must enforce at least **org-scoped** reads at the backend layer. Use **project-scoped** enforcement when the backend supports it, like Tinybird JWT filters.
+
+### Project visibility within an org
+
+Projects are **not** tenant boundaries inside the `website/` app. The tenant boundary is the **org**.
+
+- Users in the same org can read data from other projects in that same org.
+- `ProjectId` is mainly an ingest and query-scoping primitive for storage/layout, not a website-level tenant boundary.
+- Do not treat cross-project reads within the same org as a security leak.
+- The security boundary is cross-**org**, not cross-project.
+
 ### Data flow
 
 ```
