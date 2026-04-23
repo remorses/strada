@@ -24,14 +24,29 @@ initStrada({ projectId: "01JTHG...", service: "api" })
 
 ## What Strada replaces
 
-| Tool | What Strada covers | How |
-|------|-------------------|-----|
-| **Sentry** | Error tracking, grouping, stacktraces | `captureException()` or OTel exception events. Errors are a materialized table on top of OTel logs and traces |
-| **Datadog** | Traces, logs, metrics, APM | Standard OTel signals: spans, log records, gauges, histograms, counters |
-| **Google Analytics** | Pageviews, sessions, custom events | Browser SDK sends OTel spans for pageviews and log records for custom events |
-| **Grafana** | Dashboards, queries | `strada query "SELECT ..."` from the CLI. Raw ClickHouse SQL, no DSL |
+```
+  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │  Sentry  │ │ Datadog  │ │ Google   │ │ Grafana  │
+  │          │ │          │ │Analytics │ │          │
+  │  errors  │ │  traces  │ │pageviews │ │  query   │
+  │  groups  │ │  logs    │ │ sessions │ │  graphs  │
+  │  alerts  │ │  metrics │ │  events  │ │  alerts  │
+  └──────────┘ └──────────┘ └──────────┘ └──────────┘
+       │            │             │            │
+       └────────────┴──────┬──────┴────────────┘
+                           │
+                           ▼
+                    ┌──────────────┐
+                    │    Strada    │
+                    │              │
+                    │  one CLI     │
+                    │  one database│
+                    │  one schema  │
+                    │  all signals │
+                    └──────────────┘
+```
 
-All of this data lands in the **same database**, queryable with the **same SQL**. No context switching between five different tools.
+All data lands in the **same ClickHouse database**, queryable with the **same SQL**. No context switching between tools.
 
 ## Use cases
 
