@@ -67,6 +67,8 @@ import {
   BAGGAGE_USER_ID,
   ERROR_SEVERITY,
   ERROR_SEVERITY_TEXT,
+  INFO_SEVERITY,
+  INFO_SEVERITY_TEXT,
 } from "./shared.ts";
 
 // Re-export shared types, helpers, and OTel primitives so users only need one import
@@ -389,6 +391,40 @@ export function captureException(
       "[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.",
     );
   }
+}
+
+/**
+ * Emit a custom event as an OTel log record from a Cloudflare Worker.
+ * Properties are namespaced under custom.* for consistency with browser events.
+ */
+export function track(
+  name: string,
+  properties?: Record<string, string | number | boolean>,
+): void {
+  if (!_logger) {
+    console.warn(
+      "[@strada.sh/sdk] track() called before initStrada(). Event was not sent.",
+    );
+    return;
+  }
+
+  const attributes: Record<string, string | number | boolean> = {
+    [ATTR["event.name"]]: name,
+  };
+
+  if (properties) {
+    for (const [key, value] of Object.entries(properties)) {
+      attributes[`custom.${key}`] = value;
+    }
+  }
+
+  _logger.emit({
+    eventName: name,
+    severityNumber: INFO_SEVERITY,
+    severityText: INFO_SEVERITY_TEXT,
+    body: name,
+    attributes,
+  });
 }
 
 /**

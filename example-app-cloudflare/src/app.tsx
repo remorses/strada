@@ -1,17 +1,26 @@
 /**
  * Cloudflare Worker app used to validate what Cloudflare OTLP destinations
  * actually export to Strada for healthy requests, handled errors, and uncaught
- * Worker exceptions.
+ * Worker exceptions, plus direct SDK captureException() and custom events.
  */
 
 import { Spiceflow } from 'spiceflow'
+import { captureException, initStrada, track } from '@strada.sh/sdk'
+
+const stradaProjectId = '01KPVGTT9CJW4ZNEF414VHGRFD'
+
+initStrada({
+  projectId: stradaProjectId,
+  service: 'strada-example-app-cloudflare-sdk',
+  environment: 'production',
+})
 
 export const app = new Spiceflow()
   .get('/', () => {
     return {
       ok: true,
       service: 'strada-example-app-cloudflare',
-      routes: ['/ok', '/caught', '/throw', '/throw-async', '/crash-runtime'],
+      routes: ['/ok', '/caught', '/throw', '/throw-async', '/crash-runtime', '/sdk-capture', '/sdk-event'],
     }
   })
   .get('/ok', () => {
@@ -41,6 +50,28 @@ export const app = new Spiceflow()
     console.error({ route: '/throw-async', kind: 'uncaught-async', message: 'about to throw async' })
     await Promise.resolve()
     throw new Error('uncaught async cloudflare validation error')
+  })
+  .get('/sdk-capture', () => {
+    const error = new Error('sdk capture exception from cloudflare worker')
+    error.name = 'CloudflareSdkCaptureError'
+    captureException(error, {
+      handled: true,
+      mechanism: 'generic',
+      tags: {
+        route: '/sdk-capture',
+        source: 'cloudflare-sdk',
+      },
+    })
+    return { ok: false, route: '/sdk-capture', captured: true }
+  })
+  .get('/sdk-event', () => {
+    track('cloudflare_purchase_completed', {
+      route: '/sdk-event',
+      plan: 'pro',
+      seats: 3,
+      worker: true,
+    })
+    return { ok: true, route: '/sdk-event', event: 'cloudflare_purchase_completed' }
   })
 
 export default {

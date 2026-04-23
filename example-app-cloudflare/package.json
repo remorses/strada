@@ -11,6 +11,7 @@
     "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
+    "@strada.sh/sdk": "workspace:^",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "spiceflow": "1.19.0-rsc.5"
