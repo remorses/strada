@@ -19,7 +19,16 @@ async function queryProject(projectId: string, sql: string) {
     body: { sql },
   });
   if (res instanceof Error) throw res;
-  return res as { data?: Record<string, string>[]; rows?: number };
+  // Response rows have mixed types: strings for most fields, arrays for groupUniqArray
+  return res as { data?: Record<string, unknown>[]; rows?: number };
+}
+
+/** Safely read a field as string from a query result row */
+function str(row: Record<string, unknown>, key: string): string {
+  const v = row[key];
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  return String(v);
 }
 
 // ── errors list ───────────────────────────────────────────────────
@@ -93,16 +102,16 @@ LIMIT ${limit}
     const tableRows = allRows.map((r) => {
       const count = Number(r.event_count ?? 0);
       const unhandled = Number(r.unhandled_count ?? 0);
-      const level = r.last_level ?? "error";
+      const level = str(r, "last_level") || "error";
       const levelColor = level === "fatal" ? red : level === "warning" ? yellow : red;
 
       return {
         count: formatCount(count),
         unhandled: unhandled > 0 ? formatCount(unhandled) : dim("0"),
         level: levelColor(level),
-        type: r.last_type || gray("(none)"),
-        message: r.last_message || gray("(no message)"),
-        last_seen: timeAgo(r.last_seen ?? ""),
+        type: str(r, "last_type") || gray("(none)"),
+        message: str(r, "last_message") || gray("(no message)"),
+        last_seen: timeAgo(str(r, "last_seen")),
       };
     });
 
@@ -204,12 +213,15 @@ LIMIT ${eventsLimit}
     }
 
     // ── Render summary ──
-    const type = summary.last_type || "(unknown)";
-    const message = summary.last_message || "(no message)";
-    const level = summary.last_level || "error";
+    const type = str(summary, "last_type") || "(unknown)";
+    const message = str(summary, "last_message") || "(no message)";
+    const level = str(summary, "last_level") || "error";
     const levelColor = level === "fatal" ? red : level === "warning" ? yellow : red;
-    const handled = summary.last_handled === "true" || summary.last_handled === "1";
-    const mechanism = summary.last_mechanism || "generic";
+    const handledVal = str(summary, "last_handled");
+    const handled = handledVal === "true" || handledVal === "1";
+    const mechanism = str(summary, "last_mechanism") || "generic";
+    const firstSeen = str(summary, "first_seen");
+    const lastSeen = str(summary, "last_seen");
 
     output.log("");
     output.log(bold(red(`${type}: ${message}`)));
@@ -217,11 +229,11 @@ LIMIT ${eventsLimit}
     output.log(`  ${dim("Fingerprint")}   ${cyan(fingerprint)}`);
     output.log(`  ${dim("Level")}         ${levelColor(level)}`);
     output.log(`  ${dim("Events")}        ${bold(formatCount(Number(summary.event_count)))} total${Number(summary.unhandled_count) > 0 ? ` (${red(formatCount(Number(summary.unhandled_count)))} unhandled)` : ""}`);
-    output.log(`  ${dim("First seen")}    ${summary.first_seen ?? ""} ${dim(`(${timeAgo(summary.first_seen ?? "")})`)}`);
-    output.log(`  ${dim("Last seen")}     ${summary.last_seen ?? ""} ${dim(`(${timeAgo(summary.last_seen ?? "")})`)}`);
+    output.log(`  ${dim("First seen")}    ${firstSeen} ${dim(`(${timeAgo(firstSeen)})`)}`);
+    output.log(`  ${dim("Last seen")}     ${lastSeen} ${dim(`(${timeAgo(lastSeen)})`)}`);
     output.log(`  ${dim("Mechanism")}     ${mechanism} ${handled ? green("(handled)") : red("(unhandled)")}`);
 
-    // Services, releases, environments (parse ClickHouse array format)
+    // Services, releases, environments
     const services = parseClickHouseArray(summary.services);
     const releases = parseClickHouseArray(summary.releases).filter(Boolean);
     const environments = parseClickHouseArray(summary.environments).filter(Boolean);
@@ -243,7 +255,7 @@ LIMIT ${eventsLimit}
       output.log(bold("  Stacktrace") + dim(" (latest event):"));
       output.log("");
 
-      const rendered = renderStacktrace(latestEvent.ExceptionFrames, latestEvent.ExceptionStacktrace);
+      const rendered = renderStacktrace(str(latestEvent, "ExceptionFrames"), str(latestEvent, "ExceptionStacktrace"));
       for (const line of rendered) {
         output.log(line);
       }
@@ -255,13 +267,17 @@ LIMIT ${eventsLimit}
       output.log(bold("  Recent events:"));
       output.log("");
 
-      const eventRows = events.map((e) => ({
-        timestamp: e.Timestamp?.replace("T", " ").replace(/\.\d+Z?$/, "") || "",
-        service: e.ServiceName || "",
-        release: e.Release || dim("—"),
-        env: e.Environment || dim("—"),
-        trace: e.TraceId ? e.TraceId.slice(0, 12) + "…" : dim("—"),
-      }));
+      const eventRows = events.map((e) => {
+        const ts = str(e, "Timestamp").replace("T", " ").replace(/\.\d+Z?$/, "");
+        const traceId = str(e, "TraceId");
+        return {
+          timestamp: ts,
+          service: str(e, "ServiceName"),
+          release: str(e, "Release") || dim("—"),
+          env: str(e, "Environment") || dim("—"),
+          trace: traceId ? traceId.slice(0, 12) + "…" : dim("—"),
+        };
+      });
 
       printTable(output, {
         columns: [
@@ -332,15 +348,18 @@ function renderStructuredFrames(frames: StackFrame[]): string[] {
   return lines;
 }
 
-/** Parse ClickHouse array string like "['a','b']" into JS array */
-function parseClickHouseArray(value?: string): string[] {
+/** Parse a value that may be a JS array, JSON array string, or ClickHouse array string */
+function parseClickHouseArray(value?: unknown): string[] {
   if (!value) return [];
-  // Handle both JSON arrays and ClickHouse array format
+  // Already a JS array (Tinybird JSON response)
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== "string") return [];
+  // JSON array string
   try {
     const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed)) return parsed.map(String);
   } catch {
-    // Try ClickHouse format: ['val1','val2']
+    // ClickHouse format: ['val1','val2']
     const match = value.match(/^\[(.+)\]$/);
     if (match) {
       return match[1]!.split(",").map((s) => s.trim().replace(/^'|'$/g, ""));
