@@ -17,6 +17,7 @@
     "secrets": "sigillo run --env preview --mount .env.preview --mount-format env -- wrangler secret bulk --env preview .env.preview && sigillo run --env prod --mount .env.prod --mount-format env -- wrangler secret bulk --env=\"\" .env.prod"
   },
   "dependencies": {
+    "@strada.sh/sdk": "workspace:^",
     "spiceflow": "1.19.0-rsc.5"
   },
   "devDependencies": {

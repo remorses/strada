@@ -15,6 +15,7 @@ import type { ExportLogsServiceRequest, ExportTraceServiceRequest, KeyValue } fr
 import type { OtelErrorRow } from "./otel-row-types.ts";
 import { parseStackTrace } from "./parse-stacktrace.ts";
 import { convertAttributes, getServiceName, nanosToRFC3339, anyValueToString } from "./transform-attributes.ts";
+import { ATTR } from "@strada.sh/sdk/src/attrs";
 
 // ─── Public API ───
 
@@ -24,8 +25,8 @@ export function extractErrorsFromLogs(body: ExportLogsServiceRequest, projectId:
   for (const rl of body.resourceLogs ?? []) {
     const resourceAttrs = convertAttributes(rl.resource?.attributes);
     const serviceName = getServiceName(rl.resource?.attributes);
-    const release = getResourceAttr(rl.resource?.attributes, "service.version");
-    const environment = getResourceAttr(rl.resource?.attributes, "deployment.environment.name");
+    const release = getResourceAttr(rl.resource?.attributes, ATTR["service.version"]);
+    const environment = getResourceAttr(rl.resource?.attributes, ATTR["deployment.environment.name"]);
 
     for (const sl of rl.scopeLogs ?? []) {
       const scopeAttrs = convertAttributes(sl.scope?.attributes);
@@ -33,8 +34,8 @@ export function extractErrorsFromLogs(body: ExportLogsServiceRequest, projectId:
       for (const log of sl.logRecords ?? []) {
         const attrs = convertAttributes(log.attributes);
 
-        const exceptionType = attrs["exception.type"] ?? "";
-        const exceptionMessage = attrs["exception.message"] ?? "";
+        const exceptionType = attrs[ATTR["exception.type"]] ?? "";
+        const exceptionMessage = attrs[ATTR["exception.message"]] ?? "";
 
         // Skip if no exception data
         if (!exceptionType && !exceptionMessage) continue;
@@ -73,8 +74,8 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
   for (const rs of body.resourceSpans ?? []) {
     const resourceAttrs = convertAttributes(rs.resource?.attributes);
     const serviceName = getServiceName(rs.resource?.attributes);
-    const release = getResourceAttr(rs.resource?.attributes, "service.version");
-    const environment = getResourceAttr(rs.resource?.attributes, "deployment.environment.name");
+    const release = getResourceAttr(rs.resource?.attributes, ATTR["service.version"]);
+    const environment = getResourceAttr(rs.resource?.attributes, ATTR["deployment.environment.name"]);
 
     for (const ss of rs.scopeSpans ?? []) {
       const scopeAttrs = convertAttributes(ss.scope?.attributes);
@@ -85,8 +86,8 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
           if (event.name !== "exception") continue;
 
           const attrs = convertAttributes(event.attributes);
-          const exceptionType = attrs["exception.type"] ?? "";
-          const exceptionMessage = attrs["exception.message"] ?? "";
+          const exceptionType = attrs[ATTR["exception.type"]] ?? "";
+          const exceptionMessage = attrs[ATTR["exception.message"]] ?? "";
 
           if (!exceptionType && !exceptionMessage) continue;
 
@@ -168,7 +169,11 @@ export function computeDefaultFingerprint(
       const frames: StructuredFrame[] = JSON.parse(structuredFramesJson);
       const inAppFrames = frames.filter((f) => f.in_app === true);
       if (inAppFrames.length > 0) {
-        const topFrame = inAppFrames[inAppFrames.length - 1]!;
+        // Use the first in-app frame (innermost/closest to the error).
+        // parseStackTrace with fromOtel outputs frames in original order
+        // (innermost first for JS, Go, .NET, Ruby). For reversed languages
+        // (Python), parseStackTrace reverses them so innermost is also first.
+        const topFrame = inAppFrames[0]!;
         const fn = topFrame.function || topFrame.filename || "<anonymous>";
         return exceptionType ? [exceptionType, fn] : [fn];
       }
@@ -262,21 +267,21 @@ function buildErrorRow(params: BuildErrorRowParams): OtelErrorRow {
   } = params;
 
   // Read custom error-tracking attributes
-  const stacktrace = attrs["exception.stacktrace"] ?? "";
-  let structuredFrames = attrs["exception.structured_frames"] ?? "";
+  const stacktrace = attrs[ATTR["exception.stacktrace"]] ?? "";
+  let structuredFrames = attrs[ATTR["exception.structured_frames"]] ?? "";
   if (!structuredFrames && stacktrace) {
-    const parsed = parseStackTrace(stacktrace);
+    const parsed = parseStackTrace(stacktrace, { fromOtel: true });
     if (parsed.frames.length > 0) {
       structuredFrames = JSON.stringify(parsed.frames);
     }
   }
-  const mechanismType = attrs["exception.mechanism.type"] ?? "generic";
-  const mechanismHandled = attrs["exception.mechanism.handled"] !== "false";
-  const debugId = attrs["exception.debug_id"] ?? "";
+  const mechanismType = attrs[ATTR["exception.mechanism.type"]] ?? "generic";
+  const mechanismHandled = attrs[ATTR["exception.mechanism.handled"]] !== "false";
+  const debugId = attrs[ATTR["exception.debug_id"]] ?? "";
 
   // Fingerprint: use SDK-provided or compute default
   let fingerprint: string[];
-  const fingerprintAttr = attrs["exception.fingerprint"];
+  const fingerprintAttr = attrs[ATTR["exception.fingerprint"]];
   if (fingerprintAttr) {
     try {
       fingerprint = JSON.parse(fingerprintAttr);
@@ -291,7 +296,7 @@ function buildErrorRow(params: BuildErrorRowParams): OtelErrorRow {
   const fingerprintHash = hashFingerprint([projectId, ...fingerprint]);
 
   // Level: use custom attribute or derive from severity
-  const level = attrs["exception.level"] || severityText?.toLowerCase() || "error";
+  const level = attrs[ATTR["exception.level"]] || severityText?.toLowerCase() || "error";
 
   // Tags: everything in the attrs that isn't an exception.* attribute
   const tags: Record<string, string> = {};

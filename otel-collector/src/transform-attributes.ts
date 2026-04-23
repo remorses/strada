@@ -2,6 +2,7 @@
 // The Go exporter converts all attribute values to strings.
 
 import type { AnyValue, KeyValue, Exemplar } from "./otlp-types.ts";
+import { ATTR } from "@strada.sh/sdk/src/attrs";
 
 export function anyValueToString(v: AnyValue | undefined): string {
   if (!v) return "";
@@ -30,7 +31,7 @@ export function convertAttributes(kvs: KeyValue[] | undefined): Record<string, s
 
 export function getServiceName(kvs: KeyValue[] | undefined): string {
   if (!kvs) return "";
-  const attr = kvs.find((kv) => kv.key === "service.name");
+  const attr = kvs.find((kv) => kv.key === ATTR["service.name"]);
   return attr ? anyValueToString(attr.value) : "";
 }
 
