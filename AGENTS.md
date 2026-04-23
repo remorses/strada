@@ -610,6 +610,30 @@ pnpm vitest run src/extract-errors.test.ts # single file
 
 Run from the `otel-collector/` directory.
 
+## Example app (collecting real OTel data)
+
+`example-app/` is a Spiceflow app with an integration test suite that sends real OTel telemetry (traces, logs, metrics, errors) through the full pipeline: SDK → collector → Tinybird/ClickHouse. The tests exercise different error types, custom events, and spans so the data can later be queried via the CLI (`strada errors list`, `strada errors view`, `strada query`).
+
+Run the tests with the project ID and ingest endpoint as env vars:
+
+```bash
+STRADA_PROJECT_ID=01KPVGTT9CJW4ZNEF414VHGRFD \
+STRADA_ENDPOINT=https://01KPVGTT9CJW4ZNEF414VHGRFD-ingest.strada.sh \
+pnpm vitest run
+```
+
+Run from the `example-app/` directory. Tests skip automatically when env vars are missing.
+
+Get the project ID and endpoint from `strada projects list` (the endpoint is `https://{projectId}-ingest.strada.sh`).
+
+To test new CLI features or validate the ingest pipeline, add more routes and test cases to `example-app/src/index.test.ts`. Each route should emit different OTel signals (traces, logs, errors with various exception types, custom events). After the tests run and data propagates to Tinybird, query it with the CLI:
+
+```bash
+strada errors list -p example-app --since 1h
+strada errors view <fingerprint> -p example-app
+strada query "SELECT * FROM otel_errors LIMIT 10" -p example-app
+```
+
 ## Reference schema
 
 The Tinybird OTel template (https://github.com/tinybirdco/tinybird-otel-template) is the base inspiration for our OTel schema and SQL query examples. Our `tinybird/datasources/` files are derived from it with project isolation additions. Use it as reference for column names, types, indexes, sorting keys, and example queries against OTel data in ClickHouse.
