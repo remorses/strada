@@ -40,6 +40,7 @@ export function getAuth() {
         prompt: 'select_account',
       },
     },
+    experimental: { joins: true },
     plugins: [
       deviceAuthorization({ verificationUri: '/device' }),
       bearer(),
@@ -48,12 +49,7 @@ export function getAuth() {
 }
 
 function getBaseUrl(): string {
-  // In production the URL comes from the custom domain route.
-  // In dev, BETTER_AUTH_URL can be set as a var in wrangler.jsonc [vars] or via .dev.vars.
-  const workerEnv: Cloudflare.Env = env
-  const override = workerEnv.BETTER_AUTH_URL
-  if (typeof override === 'string' && override) return override
-  return 'https://strada.sh'
+  return env.BETTER_AUTH_URL
 }
 
 // ── Session helpers ─────────────────────────────────────────────────

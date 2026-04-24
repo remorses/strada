@@ -7,9 +7,7 @@
   "observability": {
     "enabled": true,
   },
-  "vars": {
-    "BETTER_AUTH_URL": "https://strada.sh",
-  },
+  "vars": {},
   "d1_databases": [
     {
       "binding": "DB",
@@ -21,6 +19,7 @@
   "secrets": {
     "required": [
       "BETTER_AUTH_SECRET",
+      "BETTER_AUTH_URL",
       "GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_SECRET",
     ],
@@ -34,9 +33,7 @@
   "env": {
     "preview": {
       "name": "strada-website-preview",
-      "vars": {
-        "BETTER_AUTH_URL": "https://preview.strada.sh",
-      },
+      "vars": {},
       "d1_databases": [
         {
           "binding": "DB",
@@ -48,6 +45,7 @@
       "secrets": {
         "required": [
           "BETTER_AUTH_SECRET",
+          "BETTER_AUTH_URL",
           "GOOGLE_CLIENT_ID",
           "GOOGLE_CLIENT_SECRET",
         ],
