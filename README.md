@@ -25,24 +25,22 @@ initStrada({ projectId: "01JTHG...", service: "api" })
 ## What Strada replaces
 
 ```
-    Sentry              Datadog            Google Analytics        Grafana
-    errors              traces             pageviews               dashboards
-    issue grouping      logs               sessions                query
-    alerts              metrics            custom events           alerts
-      │                   │                    │                     │
-      │                   │                    │                     │
-      └───────────┬───────┴────────┬───────────┴──────────┬──────────┘
-                  │                │                      │
-                  ▼                ▼                      ▼
-          ┌──────────────────────────────────────────────────────┐
-          │                       Strada                        │
-          │                                                     │
-          │   one CLI ───► one database ───► one SQL dialect     │
-          │                                                     │
-          │   errors ──► traces ──► logs ──► metrics             │
-          │       │                             │               │
-          │       └───► analytics ───► events ──┘               │
-          └──────────────────────────────────────────────────────┘
+  Sentry                   Datadog                Google Analytics          Grafana
+  errors                   traces                 pageviews                dashboards
+  issue grouping           logs                   sessions                 query & alerts
+  alerts                   metrics                custom events            visualizations
+      │                        │                        │                       │
+      │                        │                        │                       │
+      └────────────┬───────────┴────────────┬───────────┴───────────┬───────────┘
+                   │                        │                       │
+                   ▼                        ▼                       ▼
+       ┌───────────────────────────────────────────────────────────────────────────────┐
+       │                                  Strada                                       │
+       │                                                                               │
+       │   one CLI ────────► one database ────────► one SQL dialect                    │
+       │                                                                               │
+       │   errors ───► traces ───► logs ───► metrics ───► analytics ───► events        │
+       └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 All data lands in the **same ClickHouse database**, queryable with the **same SQL**. No context switching between tools.
@@ -61,27 +59,23 @@ All data lands in the **same ClickHouse database**, queryable with the **same SQ
 ## How it works
 
 ```
-  Browser SDK            Node SDK             Workers SDK
-  (pageviews,            (traces, logs,       (captureException,
-   track, errors)         metrics, errors)     manual spans)
-       │                      │                      │
-       │                      │                      │
-       └──────────┬───────────┴──────────┬───────────┘
-                  │    OTLP HTTP/JSON    │
-                  ▼                      ▼
-          ┌─────────────────────────────────────────────┐
-          │          Strada OTLP Collector               │
-          │       (Cloudflare Worker, open source)       │
-          └──┬──────────┬──────────┬──────────┬─────────┘
-             │          │          │          │
-             ▼          ▼          ▼          ▼
-       otel_traces  otel_logs  otel_metrics  otel_errors
-             │          │                       ▲
-             │          ├──► extract exceptions ──►┘
-             │          │
-             ▼          ▼
-       otel_analytics_pages ◄──── materialized views
-       otel_analytics_sessions
+  Browser SDK                          Node SDK                         Workers SDK
+  (pageviews, track, errors)           (traces, logs, metrics)          (captureException)
+          │                                  │                                │
+          │            OTLP HTTP/JSON        │          OTLP HTTP/JSON        │
+          ▼                                  ▼                                ▼
+  ┌─────────────────────────────────────────────────────────────────────────────────────────┐
+  │                               Strada OTLP Collector                                     │
+  │                           (Cloudflare Worker, open source)                              │
+  └────────┬─────────────────────┬─────────────────────┬─────────────────────┬──────────────┘
+           │                     │                     │                     │
+           ▼                     ▼                     ▼                     ▼
+     otel_traces             otel_logs           otel_metrics          otel_errors
+           │                     │                                          ▲
+           │                     ├───────► extract exceptions ──────────────┘
+           ▼                     ▼
+     otel_analytics_pages ◄──────────── materialized views
+     otel_analytics_sessions
 ```
 
 Every feature maps to a standard **OpenTelemetry signal**:
@@ -162,28 +156,25 @@ strada analytics sessions -p my-app --since 24h
 Strada is **100% OpenTelemetry**. The SDK is a thin wrapper around the official OTel SDKs that configures providers, exporters, and a few convenience helpers. You can use your existing OTel setup to send data to Strada. It will just work.
 
 ```
-  your code
-     │
-     │  initStrada() + captureException() + track()
-     │
-     ▼
-  Strada SDK ────────► thin wrapper ────────► OpenTelemetry SDK
-                                                  │
-                                  TracerProvider   │   LoggerProvider
-                                  MeterProvider    │   BatchProcessors
-                                                   │
-                                                   │  OTLP HTTP/JSON
-                                                   ▼
-                                            Strada Collector
-                                            (Cloudflare Worker)
-                                                   │
-                        ┌──────────┬───────────────┼───────────────┐
-                        │          │               │               │
-                        ▼          ▼               ▼               ▼
-                    otel_traces  otel_logs    otel_errors    otel_metrics
-                                                                  │
-                                                     ClickHouse ◄─┘
-                                                   (your database)
+  your code ──► initStrada() + captureException() + track()
+                     │
+                     ▼
+  Strada SDK ────────────────► thin config wrapper ────────────────► OpenTelemetry SDK
+                                                                          │
+                                         TracerProvider ──► LoggerProvider │ MeterProvider
+                                                                          │
+                                                                          │ OTLP HTTP/JSON
+                                                                          ▼
+                                                                   Strada Collector
+                                                                   (Cloudflare Worker)
+                                                                          │
+                    ┌─────────────────┬───────────────────┬───────────────┤
+                    │                 │                   │               │
+                    ▼                 ▼                   ▼               ▼
+              otel_traces         otel_logs         otel_errors     otel_metrics
+                                                                          │
+                                                          ClickHouse ◄────┘
+                                                        (your database)
 ```
 
 **If you already have OTel instrumentation**, point your OTLP exporter at your Strada ingest endpoint. No SDK swap needed.
@@ -306,17 +297,15 @@ Strada does **not** host a database for you. Instead, it uses [Tinybird](https:/
 - **Or use strada.sh**: the managed service handles multi-tenancy, auth, team collaboration, and ingestion. You still own the database
 
 ```
-                              ┌──────────────────────────────────┐
-  strada.sh ──────────────────►│  Your Tinybird workspace         │
-  (managed service)            │                                  │
-  auth, teams, ingestion       │  otel_traces    otel_errors      │
-                               │  otel_logs      otel_metrics     │
-          OR                   │  otel_analytics_*                │
-                               │                                  │
-  self-hosted ────────────────►│  same schema, same tables        │
-  (fork + wrangler deploy)     │  you own everything              │
-  Cloudflare Workers           └──────────────────────────────────┘
-  zero lock-in
+                                                ┌─────────────────────────────────────────────┐
+  strada.sh (managed) ─────────────────────────►│  Your Tinybird workspace                    │
+  auth, teams, ingestion, CLI                   │                                             │
+                                                │  otel_traces ─── otel_logs ─── otel_errors  │
+                OR                              │  otel_metrics ─── otel_analytics_*          │
+                                                │                                             │
+  self-hosted (fork + wrangler deploy) ────────►│  same schema, same tables                   │
+  Cloudflare Workers, zero lock-in              │  you own everything                         │
+                                                └─────────────────────────────────────────────┘
 ```
 
 ### Why Tinybird
