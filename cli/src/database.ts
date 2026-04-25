@@ -12,11 +12,12 @@ import { loadTinybirdResources } from "./tinybird-resources.ts";
 import { deployTinybirdResources, getDeploymentManagedReadToken, TinybirdClient } from "./tinybird.ts";
 import { requireAuth } from "./config.ts";
 import { getApiClient } from "./api-client.ts";
-import { ensureDefaultOrg } from "./projects.ts";
+import { resolveCurrentOrg } from "./orgs.ts";
 
 export interface DatabaseCreateOptions {
   token?: string;
   baseUrl?: string;
+  force?: boolean;
 }
 
 function getTinybirdEnvAuth() {
@@ -50,6 +51,7 @@ databaseCli
   )
   .option("-t, --token [token]", "Tinybird workspace admin token (skips browser login)")
   .option("-u, --base-url [url]", "Tinybird API base URL (e.g. https://api.us-east.aws.tinybird.co)")
+  .option("-f, --force", "Overwrite existing database config without confirmation")
   .example("# Interactive setup (opens browser)")
   .example("strada database create")
   .example("# Non-interactive with existing token")
@@ -87,12 +89,39 @@ export async function databaseCreateAction(
 
   // Create a default personal org on first use so `strada login` -> `strada database create`
   // works end to end without a manual org bootstrap step.
-  const org = await ensureDefaultOrg().catch((error) => error as Error);
+  const org = await resolveCurrentOrg().catch((error) => error as Error);
   if (org instanceof Error) {
     clack.log.error(org.message);
     return proc.exit(1);
   }
   clack.log.info(`Using organization: ${cyan(org.name)}`);
+
+  // Check if this org already has a configured database. If so, require
+  // explicit confirmation (interactive) or --force (non-interactive) to
+  // prevent accidental overwrites of Tinybird tokens.
+  if (!options.force) {
+    const { safeFetch: checkFetch } = getApiClient();
+    const existingDb = await checkFetch("/api/v0/orgs/:orgId/database", {
+      params: { orgId: org.id },
+    });
+    if (!(existingDb instanceof Error) && (existingDb.hasAdminToken || existingDb.hasReadToken)) {
+      const endpoint = existingDb.tinybirdEndpoint || existingDb.clickhouseUrl || "unknown";
+      if (!process.stdin.isTTY) {
+        clack.log.error(
+          `This org already has a configured ${existingDb.backend} database (${endpoint}).\n` +
+          `  Pass --force to overwrite it.`,
+        );
+        return proc.exit(1);
+      }
+      const overwrite = await clack.confirm({
+        message: `This org already has a configured ${existingDb.backend} database (${endpoint}). Overwrite it?`,
+      });
+      if (clack.isCancel(overwrite) || !overwrite) {
+        clack.outro("Cancelled. Existing database config is unchanged.");
+        return proc.exit(0);
+      }
+    }
+  }
 
   // Authenticate with Tinybird
   const auth = await (async () => {
@@ -238,7 +267,7 @@ export async function databaseUpgradeAction(
     return proc.exit(1);
   }
 
-  const org = await ensureDefaultOrg().catch((error) => error as Error);
+  const org = await resolveCurrentOrg().catch((error) => error as Error);
   if (org instanceof Error) {
     clack.log.error(org.message);
     return proc.exit(1);

@@ -17,8 +17,10 @@ export interface CliConfig {
   sessionToken?: string;
   /** Website base URL */
   baseUrl?: string;
-  /** Cached project slug→id mappings, refreshed on cache miss */
-  projects?: CachedProject[];
+  /** Currently selected org ID. When unset, the CLI falls back to ensure-default. */
+  currentOrgId?: string;
+  /** Cached project slug→id mappings keyed by org ID, refreshed on cache miss */
+  projectsByOrg?: Record<string, CachedProject[]>;
 }
 
 export function loadConfig(): CliConfig {
