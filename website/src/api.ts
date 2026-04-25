@@ -603,14 +603,22 @@ export const api = new Spiceflow()
           throw json({ error: 'project not found' }, { status: 404 })
         }
         const db = getDb()
+        const url = new URL(request.url)
+        const fingerprintFilter = url.searchParams.get('fingerprintHash')
+
+        const where: Record<string, unknown> = { projectId: params.projectId }
+        if (fingerprintFilter) {
+          where.fingerprintHash = fingerprintFilter
+        }
+
         const issues = await db.query.issue.findMany({
-          where: { projectId: params.projectId },
+          where,
           with: {
             assigneeMember: { with: { user: { columns: { id: true, name: true, email: true } } } },
             resolvedByMember: { with: { user: { columns: { id: true, name: true } } } },
           },
           orderBy: { updatedAt: 'desc' },
-          limit: 500,
+          limit: fingerprintFilter ? 1 : 500,
         })
         return {
           issues: issues.map((i) => ({

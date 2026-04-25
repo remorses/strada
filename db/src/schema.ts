@@ -171,9 +171,10 @@ export const projectToken = sqliteCore.sqliteTable('project_token', {
 // The FingerprintHash is the join key to otel_errors in ClickHouse.
 //
 // assigneeMemberId references orgMember (not user directly) so that:
-// 1. Org membership is enforced structurally by the FK constraint
-// 2. Removing a member from the org auto-nullifies their assignments
-// 3. No app-layer validation needed to check org membership
+// 1. Removing a member from the org auto-nullifies their assignments (ON DELETE SET NULL)
+// 2. The FK guarantees the referenced member row exists
+// Note: the FK does NOT enforce same-org (a member from org_a could theoretically
+// be assigned to a project in org_b). The API route validates org consistency at runtime.
 
 export const issue = sqliteCore.sqliteTable('issue', {
   id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),

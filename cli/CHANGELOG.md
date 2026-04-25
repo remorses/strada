@@ -10,7 +10,7 @@
    strada issues list -p my-app -p api --service frontend --limit 50
    ```
 
-   Shows count, unhandled status, level, exception type, message, and last-seen time. Supports comma-separated project slugs to query multiple projects at once.
+   Shows count, unhandled status, level, exception type, message, and last-seen time. Supports repeatable `-p` flags to query multiple projects at once.
 
 2. **New `issues view` command** (renamed from `errors view`) — detailed view of a single error group with full stacktrace:
 

@@ -28,7 +28,7 @@ The CLI uses [goke](https://github.com/remorses/goke) as the command framework. 
 import { z } from "zod";
 
 cli
-  .command("errors list", "List error groups")
+  .command("issues list", "List issue groups")
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .action((options) => {
     // options.project is string[]
@@ -534,7 +534,9 @@ When `exception.fingerprint` is not set by the SDK, the worker computes a defaul
 2. If no structured frames → hash `[exception.type, stripped_message]` where stripped_message has numbers, hex strings, and UUIDs replaced with `<N>`, `<hex>`, `<uuid>` to group messages that differ only in dynamic values
 3. If neither type nor message → hash `["unknown"]`
 
-The hash is a SHA-256 hex string truncated to 32 characters, stored as `FingerprintHash`.
+The `projectId` is always prepended to the fingerprint array before hashing: `hashFingerprint([projectId, ...fingerprint])`. This makes `FingerprintHash` globally unique across projects. Two projects with identical errors produce different hashes, so fingerprint hashes never collide across projects.
+
+The hash is FNV-1a 128-bit, stored as a 32-character hex string in `FingerprintHash`.
 
 ### How errors flow through the system
 

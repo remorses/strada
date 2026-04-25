@@ -29,18 +29,32 @@ export async function queryProject(projectId: string, sql: string) {
   return res;
 }
 
-/** Fetch issue metadata (status, assignee) from D1 for a project. */
-async function fetchIssueMetadata(projectId: string) {
+/** Fetch issue metadata (status, assignee) from D1 for a project. Best-effort enrichment. */
+async function fetchIssueMetadata(projectId: string, output?: { log: (msg: string) => void }) {
   const { safeFetch } = getApiClient();
   const res = await safeFetch("/api/v0/projects/:projectId/issues", {
     params: { projectId },
   });
-  if (res instanceof Error) return new Map<string, IssueMetadata>();
+  if (res instanceof Error) {
+    if (output) output.log(dim("  (issue metadata unavailable, showing raw ClickHouse data)"));
+    return new Map<string, IssueMetadata>();
+  }
   const map = new Map<string, IssueMetadata>();
   for (const issue of res.issues) {
     map.set(issue.fingerprintHash, issue);
   }
   return map;
+}
+
+/** Fetch metadata for a single issue by fingerprint. Returns null if not found or on error. */
+async function fetchSingleIssueMetadata(projectId: string, fingerprintHash: string): Promise<IssueMetadata | null> {
+  const { safeFetch } = getApiClient();
+  const res = await safeFetch("/api/v0/projects/:projectId/issues", {
+    params: { projectId },
+    query: { fingerprintHash },
+  });
+  if (res instanceof Error) return null;
+  return res.issues[0] ?? null;
 }
 
 interface IssueMetadata {
@@ -111,7 +125,7 @@ LIMIT ${limit}
     // Query all projects in parallel, also fetch issue metadata from D1
     const [results, ...metadataMaps] = await Promise.all([
       Promise.all(projects.map((p) => queryProject(p.id, sql))),
-      ...projects.map((p) => fetchIssueMetadata(p.id)),
+      ...projects.map((p) => fetchIssueMetadata(p.id, output)),
     ]);
     const allRows = results.flatMap((data) => data.data ?? []);
     // Merge all project metadata maps into one
@@ -249,7 +263,7 @@ LIMIT ${eventsLimit}
     const [summaryRes, eventsRes, issueMeta] = await Promise.all([
       queryProject(project.id, summarySql),
       queryProject(project.id, eventsSql),
-      fetchIssueMetadata(project.id),
+      fetchSingleIssueMetadata(project.id, fingerprint),
     ]);
 
     const summary = summaryRes.data?.[0];
@@ -260,7 +274,7 @@ LIMIT ${eventsLimit}
       return proc.exit(1);
     }
 
-    const meta = issueMeta.get(fingerprint);
+    const meta = issueMeta;
 
     if (options.json) {
       output.log(JSON.stringify({ summary, events, issue: meta ?? null }, null, 2));
