@@ -7,7 +7,9 @@
   "observability": {
     "enabled": true,
   },
-  "vars": {},
+  "vars": {
+    "STRADA_PROJECT_ID": "01KPVGTT9CJW4ZNEF414VHGRFD"
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -33,7 +35,9 @@
   "env": {
     "preview": {
       "name": "strada-website-preview",
-      "vars": {},
+      "vars": {
+        "STRADA_PROJECT_ID": "01KPVGTT9CJW4ZNEF414VHGRFD"
+      },
       "d1_databases": [
         {
           "binding": "DB",

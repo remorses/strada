@@ -8,6 +8,8 @@ import type { ReactNode } from 'react'
 import { getActionRequest, json, parseFormData, Spiceflow, redirect } from 'spiceflow'
 import { Head, router } from 'spiceflow/react'
 import { z } from 'zod'
+import { env } from 'cloudflare:workers'
+import { initStrada, captureException } from '@strada.sh/sdk'
 import { Button } from './components/ui/button.tsx'
 import { DeviceActionButtons } from './components/device-action-buttons.tsx'
 import { api } from './api.ts'
@@ -70,7 +72,17 @@ function AuthPage({
   )
 }
 
+if (env.STRADA_PROJECT_ID) {
+  initStrada({ projectId: env.STRADA_PROJECT_ID, service: 'strada-website' })
+}
+
 export const app = new Spiceflow()
+
+  // ── Strada SDK (error capture) ────────────────────────────────
+  .onError(({ error }) => {
+    captureException(error)
+    return new Response('Internal Server Error', { status: 500 })
+  })
 
   // ── BetterAuth middleware ──────────────────────────────────────
   .use(async ({ request }, next) => {
