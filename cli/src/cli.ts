@@ -6,7 +6,7 @@ import { databaseCli } from "./database.ts";
 import { loginCli } from "./login.ts";
 import { orgsCli } from "./orgs.ts";
 import { projectsCli } from "./projects.ts";
-import { errorsCli } from "./errors.ts";
+import { issuesCli } from "./issues.ts";
 import { analyticsCli } from "./analytics.ts";
 import { queryCli } from "./query.ts";
 
@@ -15,7 +15,7 @@ export const cli = goke("strada")
   .use(loginCli)
   .use(orgsCli)
   .use(projectsCli)
-  .use(errorsCli)
+  .use(issuesCli)
   .use(analyticsCli)
   .use(queryCli);
 

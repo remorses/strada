@@ -41,7 +41,7 @@ strada projects list
 strada query "SELECT count() FROM otel_errors WHERE Timestamp >= now() - INTERVAL 24 HOUR LIMIT 1" -p my-app
 
 # List recent errors
-strada errors list -p my-app --since 24h
+strada issues list -p my-app --since 24h
 ```
 
 The `-p` flag takes a project slug. You get the slug from `strada projects list`.

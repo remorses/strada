@@ -2,6 +2,7 @@
 
 import { json, Spiceflow } from 'spiceflow'
 import { z } from 'zod'
+import { createSelectSchema } from 'drizzle-orm/zod'
 import dedent from 'string-dedent'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
@@ -48,6 +49,49 @@ const createProjectTokenRequestSchema = z.object({
 })
 
 const queryProjectRequestSchema = z.object({ sql: z.string().min(1) })
+
+const updateIssueStatusRequestSchema = z.object({
+  status: z.enum(['open', 'resolved', 'muted', 'ignored']),
+})
+
+const updateIssueAssigneeRequestSchema = z.object({
+  assigneeMemberId: z.string().nullish(),
+})
+
+// ── Issue response schemas (derived from Drizzle table) ─────────────
+
+const issueSelectSchema = createSelectSchema(schema.issue)
+
+const issueAssigneeSchema = z.object({
+  memberId: z.string(),
+  name: z.string(),
+  email: z.string(),
+}).nullable()
+
+const issueResolverSchema = z.object({
+  memberId: z.string(),
+  name: z.string(),
+}).nullable()
+
+const issueSummarySchema = issueSelectSchema
+  .pick({ id: true, fingerprintHash: true, status: true, resolvedAt: true, createdAt: true, updatedAt: true })
+  .extend({
+    assignee: issueAssigneeSchema,
+    resolvedBy: issueResolverSchema,
+  })
+
+const issueListResponseSchema = z.object({
+  issues: z.array(issueSummarySchema),
+})
+
+const issueStatusResponseSchema = z.object({
+  ok: z.literal(true),
+  status: issueSelectSchema.shape.status,
+})
+
+const issueAssigneeResponseSchema = z.object({
+  ok: z.literal(true),
+})
 
 export interface QueryResponse {
   data?: Record<string, unknown>[]
@@ -545,5 +589,139 @@ export const api = new Spiceflow()
         }
 
         throw json({ error: 'unknown backend' }, { status: 500 })
+      },
+    })
+    // ── Issue management (status + assignee) ───────────────────────────
+    .route({
+      method: 'GET',
+      path: '/api/v0/projects/:projectId/issues',
+      response: issueListResponseSchema,
+      async handler({ request, params }) {
+        const session = await requireSession(request)
+        const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
+        if (!proj) {
+          throw json({ error: 'project not found' }, { status: 404 })
+        }
+        const db = getDb()
+        const issues = await db.query.issue.findMany({
+          where: { projectId: params.projectId },
+          with: {
+            assigneeMember: { with: { user: { columns: { id: true, name: true, email: true } } } },
+            resolvedByMember: { with: { user: { columns: { id: true, name: true } } } },
+          },
+          orderBy: { updatedAt: 'desc' },
+          limit: 500,
+        })
+        return {
+          issues: issues.map((i) => ({
+            id: i.id,
+            fingerprintHash: i.fingerprintHash,
+            status: i.status,
+            assignee: i.assigneeMember?.user
+              ? { memberId: i.assigneeMember.id, name: i.assigneeMember.user.name, email: i.assigneeMember.user.email }
+              : null,
+            resolvedAt: i.resolvedAt,
+            resolvedBy: i.resolvedByMember?.user
+              ? { memberId: i.resolvedByMember.id, name: i.resolvedByMember.user.name }
+              : null,
+            createdAt: i.createdAt,
+            updatedAt: i.updatedAt,
+          })),
+        }
+      },
+    })
+    .route({
+      method: 'PUT',
+      path: '/api/v0/projects/:projectId/issues/:fingerprintHash/status',
+      request: updateIssueStatusRequestSchema,
+      response: issueStatusResponseSchema,
+      async handler({ request, params }) {
+        const session = await requireSession(request)
+        const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
+        if (!proj) {
+          throw json({ error: 'project not found' }, { status: 404 })
+        }
+
+        const db = getDb()
+        const body = await request.json()
+        const now = Date.now()
+
+        // Resolve the current user's orgMember ID for this project's org
+        let resolvedByMemberId: string | null = null
+        if (body.status === 'resolved') {
+          const member = await db.query.orgMember.findFirst({
+            where: { orgId: proj.orgId, userId: session.userId },
+          })
+          resolvedByMemberId = member?.id ?? null
+        }
+        const resolvedAt = body.status === 'resolved' ? now : null
+
+        await db.insert(schema.issue)
+          .values({
+            projectId: params.projectId,
+            fingerprintHash: params.fingerprintHash,
+            status: body.status,
+            resolvedAt,
+            resolvedByMemberId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [schema.issue.projectId, schema.issue.fingerprintHash],
+            set: {
+              status: body.status,
+              resolvedAt,
+              resolvedByMemberId,
+              updatedAt: now,
+            },
+          })
+
+        return { ok: true, status: body.status }
+      },
+    })
+    .route({
+      method: 'PUT',
+      path: '/api/v0/projects/:projectId/issues/:fingerprintHash/assignee',
+      request: updateIssueAssigneeRequestSchema,
+      response: issueAssigneeResponseSchema,
+      async handler({ request, params }) {
+        const session = await requireSession(request)
+        const proj = await getAccessibleProject({ userId: session.userId, projectId: params.projectId })
+        if (!proj) {
+          throw json({ error: 'project not found' }, { status: 404 })
+        }
+
+        const body = await request.json()
+        const db = getDb()
+        const now = Date.now()
+
+        // Validate assignee member belongs to this org (FK enforces it too,
+        // but checking here gives a clear error message)
+        if (body.assigneeMemberId) {
+          const member = await db.query.orgMember.findFirst({
+            where: { id: body.assigneeMemberId, orgId: proj.orgId },
+          })
+          if (!member) {
+            throw json({ error: 'member not found in this org' }, { status: 400 })
+          }
+        }
+
+        await db.insert(schema.issue)
+          .values({
+            projectId: params.projectId,
+            fingerprintHash: params.fingerprintHash,
+            assigneeMemberId: body.assigneeMemberId ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [schema.issue.projectId, schema.issue.fingerprintHash],
+            set: {
+              assigneeMemberId: body.assigneeMemberId ?? null,
+              updatedAt: now,
+            },
+          })
+
+        return { ok: true }
       },
     })

@@ -1,6 +1,11 @@
-// Error listing and detail CLI commands. Groups errors by fingerprint and
+// Issue listing and detail CLI commands. Groups errors by fingerprint and
 // displays a frequency-sorted table, or shows a detailed view of a single
-// error group with stacktrace and recent events.
+// issue group with stacktrace and recent events.
+//
+// Terminology:
+//   "error" = a single exception event in otel_errors (ClickHouse)
+//   "issue" = a group of errors sharing the same FingerprintHash, the
+//             user-facing concept with status, assignee, and lifecycle
 
 import { goke } from "goke";
 import { z } from "zod";
@@ -10,9 +15,9 @@ import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
 import { printTable, formatCount, timeAgo } from "./table.ts";
 import { parseDuration } from "./parse-duration.ts";
 
-export const errorsCli = goke();
+export const issuesCli = goke();
 
-/** Run a SQL query against a project. Shared by errors subcommands and the query command. */
+/** Run a SQL query against a project. Shared by issues subcommands, analytics, and the query command. */
 export async function queryProject(projectId: string, sql: string) {
   const { safeFetch } = getApiClient();
   const res = await safeFetch("/api/v0/projects/:projectId/query", {
@@ -24,6 +29,28 @@ export async function queryProject(projectId: string, sql: string) {
   return res;
 }
 
+/** Fetch issue metadata (status, assignee) from D1 for a project. */
+async function fetchIssueMetadata(projectId: string) {
+  const { safeFetch } = getApiClient();
+  const res = await safeFetch("/api/v0/projects/:projectId/issues", {
+    params: { projectId },
+  });
+  if (res instanceof Error) return new Map<string, IssueMetadata>();
+  const map = new Map<string, IssueMetadata>();
+  for (const issue of res.issues) {
+    map.set(issue.fingerprintHash, issue);
+  }
+  return map;
+}
+
+interface IssueMetadata {
+  fingerprintHash: string;
+  status: string;
+  assignee: { name: string } | null;
+  resolvedAt: unknown;
+  resolvedBy: { name: string } | null;
+}
+
 /** Safely read a field as string from a query result row */
 function str(row: Record<string, unknown>, key: string): string {
   const v = row[key];
@@ -32,14 +59,14 @@ function str(row: Record<string, unknown>, key: string): string {
   return String(v);
 }
 
-// ── errors list ───────────────────────────────────────────────────
+// ── issues list ───────────────────────────────────────────────────
 
-errorsCli
-  .command("errors list", "List error groups sorted by frequency")
+issuesCli
+  .command("issues list", "List issue groups sorted by frequency")
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .option("-s, --service [name]", "Filter by service name")
   .option("--since [duration]", "Time range, e.g. 1h, 24h, 7d (default: 24h)")
-  .option("-n, --limit [count]", "Max number of error groups (default: 20)")
+  .option("-n, --limit [count]", "Max number of issue groups (default: 20)")
   .option("--unhandled", "Show only unhandled errors")
   .action(async (options, { console: output, process: proc }) => {
     if (!options.project || options.project.length === 0) {
@@ -81,13 +108,21 @@ ORDER BY event_count DESC
 LIMIT ${limit}
 `.trim();
 
-    // Query all projects in parallel and merge results
-    const results = await Promise.all(projects.map((p) => queryProject(p.id, sql)));
+    // Query all projects in parallel, also fetch issue metadata from D1
+    const [results, ...metadataMaps] = await Promise.all([
+      Promise.all(projects.map((p) => queryProject(p.id, sql))),
+      ...projects.map((p) => fetchIssueMetadata(p.id)),
+    ]);
     const allRows = results.flatMap((data) => data.data ?? []);
+    // Merge all project metadata maps into one
+    const issueMetadata = new Map<string, IssueMetadata>();
+    for (const m of metadataMaps) {
+      if (m instanceof Map) for (const [k, v] of m) issueMetadata.set(k, v);
+    }
 
     if (allRows.length === 0) {
       const slugLabel = slugs.join(", ");
-      output.log(dim(`No errors found in ${cyan(slugLabel)} (last ${options.since || "24h"})`));
+      output.log(dim(`No issues found in ${cyan(slugLabel)} (last ${options.since || "24h"})`));
       return;
     }
 
@@ -95,34 +130,49 @@ LIMIT ${limit}
     const sinceLabel = options.since || "24h";
     const slugLabel = slugs.join(", ");
     output.log("");
-    output.log(bold(`Errors in ${cyan(slugLabel)}`) + dim(` (last ${sinceLabel})`));
+    output.log(bold(`Issues in ${cyan(slugLabel)}`) + dim(` (last ${sinceLabel})`));
     if (options.service) output.log(dim(`  service: ${options.service}`));
     output.log("");
 
     // Format rows for table
+    const statusColors: Record<string, (s: string) => string> = {
+      open: red,
+      resolved: green,
+      muted: yellow,
+      ignored: dim,
+    };
+
     const tableRows = allRows.map((r) => {
+      const fingerprint = str(r, "FingerprintHash");
+      const meta = issueMetadata.get(fingerprint);
+      const status = meta?.status || "open";
       const count = Number(r.event_count ?? 0);
       const unhandled = Number(r.unhandled_count ?? 0);
       const level = str(r, "last_level") || "error";
       const levelColor = level === "fatal" ? red : level === "warning" ? yellow : red;
+      const statusColor = statusColors[status] || dim;
 
       return {
+        status: statusColor(status),
         count: formatCount(count),
         unhandled: unhandled > 0 ? formatCount(unhandled) : dim("0"),
         level: levelColor(level),
         type: str(r, "last_type") || gray("(none)"),
         message: str(r, "last_message") || gray("(no message)"),
+        assignee: meta?.assignee?.name || dim("—"),
         last_seen: timeAgo(str(r, "last_seen")),
       };
     });
 
     printTable(output, {
       columns: [
+        { key: "status", label: "STATUS" },
         { key: "count", label: "COUNT", align: "right", color: bold },
         { key: "unhandled", label: "UNHANDLED", align: "right" },
         { key: "level", label: "LEVEL" },
         { key: "type", label: "TYPE", color: cyan },
-        { key: "message", label: "MESSAGE", maxWidth: 50 },
+        { key: "message", label: "MESSAGE", maxWidth: 40 },
+        { key: "assignee", label: "ASSIGNEE" },
         { key: "last_seen", label: "LAST SEEN", color: dim },
       ],
       rows: tableRows,
@@ -135,12 +185,12 @@ LIMIT ${limit}
     output.log("");
   });
 
-// ── errors view ───────────────────────────────────────────────────
+// ── issues view ───────────────────────────────────────────────────
 
-errorsCli
-  .command("errors view <fingerprint>", "Show details for a single error group by fingerprint hash")
+issuesCli
+  .command("issues view <fingerprint>", "Show details for a single issue by fingerprint hash")
   .option("-p, --project <slug>", "Project slug (run `strada projects list` to see slugs)")
-  .option("-n, --events [count]", "Number of recent events to show (default: 5)")
+  .option("-n, --events [count]", "Number of recent error events to show (default: 5)")
   .option("--json", "Output raw JSON")
   .action(async (fingerprint, options, { console: output, process: proc }) => {
     if (!options.project) {
@@ -173,7 +223,7 @@ WHERE FingerprintHash = '${fingerprint}'
 LIMIT 1
 `.trim();
 
-    // Query 2: Recent events with stacktrace
+    // Query 2: Recent error events with stacktrace
     const eventsSql = `
 SELECT
     Timestamp,
@@ -196,21 +246,24 @@ ORDER BY Timestamp DESC
 LIMIT ${eventsLimit}
 `.trim();
 
-    const [summaryRes, eventsRes] = await Promise.all([
+    const [summaryRes, eventsRes, issueMeta] = await Promise.all([
       queryProject(project.id, summarySql),
       queryProject(project.id, eventsSql),
+      fetchIssueMetadata(project.id),
     ]);
 
     const summary = summaryRes.data?.[0];
     const events = eventsRes.data ?? [];
 
     if (!summary || Number(summary.event_count) === 0) {
-      output.log(dim(`No error found with fingerprint ${cyan(fingerprint)}`));
+      output.log(dim(`No issue found with fingerprint ${cyan(fingerprint)}`));
       return proc.exit(1);
     }
 
+    const meta = issueMeta.get(fingerprint);
+
     if (options.json) {
-      output.log(JSON.stringify({ summary, events }, null, 2));
+      output.log(JSON.stringify({ summary, events, issue: meta ?? null }, null, 2));
       return;
     }
 
@@ -225,15 +278,35 @@ LIMIT ${eventsLimit}
     const firstSeen = str(summary, "first_seen");
     const lastSeen = str(summary, "last_seen");
 
+    const status = meta?.status || "open";
+    const statusColors: Record<string, (s: string) => string> = {
+      open: red,
+      resolved: green,
+      muted: yellow,
+      ignored: dim,
+    };
+    const statusColor = statusColors[status] || dim;
+
     output.log("");
     output.log(bold(red(`${type}: ${message}`)));
     output.log("");
     output.log(`  ${dim("Fingerprint")}   ${cyan(fingerprint)}`);
+    output.log(`  ${dim("Status")}        ${statusColor(status)}`);
     output.log(`  ${dim("Level")}         ${levelColor(level)}`);
     output.log(`  ${dim("Events")}        ${bold(formatCount(Number(summary.event_count)))} total${Number(summary.unhandled_count) > 0 ? ` (${red(formatCount(Number(summary.unhandled_count)))} unhandled)` : ""}`);
     output.log(`  ${dim("First seen")}    ${firstSeen} ${dim(`(${timeAgo(firstSeen)})`)}`);
     output.log(`  ${dim("Last seen")}     ${lastSeen} ${dim(`(${timeAgo(lastSeen)})`)}`);
     output.log(`  ${dim("Mechanism")}     ${mechanism} ${handled ? green("(handled)") : red("(unhandled)")}`);
+
+    // Assignee
+    if (meta?.assignee) {
+      output.log(`  ${dim("Assignee")}      ${cyan(meta.assignee.name)}`);
+    }
+
+    // Resolved info
+    if (meta?.resolvedBy) {
+      output.log(`  ${dim("Resolved by")}   ${meta.resolvedBy.name}`);
+    }
 
     // Services, releases, environments
     const services = parseClickHouseArray(summary.services);
@@ -296,6 +369,114 @@ LIMIT ${eventsLimit}
     output.log("");
   });
 
+// ── issues resolve ────────────────────────────────────────────────
+
+issuesCli
+  .command("issues resolve <fingerprint>", "Mark an issue as resolved")
+  .option("-p, --project <slug>", "Project slug")
+  .action(async (fingerprint, options, { console: output, process: proc }) => {
+    if (!options.project) {
+      output.log("Missing required option: --project <slug>");
+      return proc.exit(1);
+    }
+    const org = await ensureDefaultOrg();
+    const project = await resolveProjectId(org.id, options.project);
+    const { safeFetch } = getApiClient();
+    const res = await safeFetch("/api/v0/projects/:projectId/issues/:fingerprintHash/status", {
+      method: "PUT",
+      params: { projectId: project.id, fingerprintHash: fingerprint },
+      body: { status: "resolved" },
+    });
+    if (res instanceof Error) throw res;
+    output.log(green(`Issue ${cyan(fingerprint)} marked as resolved`));
+  });
+
+// ── issues mute ──────────────────────────────────────────────────
+
+issuesCli
+  .command("issues mute <fingerprint>", "Mute an issue (suppress from default listing)")
+  .option("-p, --project <slug>", "Project slug")
+  .action(async (fingerprint, options, { console: output, process: proc }) => {
+    if (!options.project) {
+      output.log("Missing required option: --project <slug>");
+      return proc.exit(1);
+    }
+    const org = await ensureDefaultOrg();
+    const project = await resolveProjectId(org.id, options.project);
+    const { safeFetch } = getApiClient();
+    const res = await safeFetch("/api/v0/projects/:projectId/issues/:fingerprintHash/status", {
+      method: "PUT",
+      params: { projectId: project.id, fingerprintHash: fingerprint },
+      body: { status: "muted" },
+    });
+    if (res instanceof Error) throw res;
+    output.log(yellow(`Issue ${cyan(fingerprint)} muted`));
+  });
+
+// ── issues unresolve ─────────────────────────────────────────────
+
+issuesCli
+  .command("issues unresolve <fingerprint>", "Reopen a resolved or muted issue")
+  .option("-p, --project <slug>", "Project slug")
+  .action(async (fingerprint, options, { console: output, process: proc }) => {
+    if (!options.project) {
+      output.log("Missing required option: --project <slug>");
+      return proc.exit(1);
+    }
+    const org = await ensureDefaultOrg();
+    const project = await resolveProjectId(org.id, options.project);
+    const { safeFetch } = getApiClient();
+    const res = await safeFetch("/api/v0/projects/:projectId/issues/:fingerprintHash/status", {
+      method: "PUT",
+      params: { projectId: project.id, fingerprintHash: fingerprint },
+      body: { status: "open" },
+    });
+    if (res instanceof Error) throw res;
+    output.log(red(`Issue ${cyan(fingerprint)} reopened`));
+  });
+
+// ── issues assign ────────────────────────────────────────────────
+
+issuesCli
+  .command("issues assign <fingerprint>", "Assign an issue to an org member")
+  .option("-p, --project <slug>", "Project slug")
+  .option("--to [member-id]", "Org member ID to assign")
+  .option("--unassign", "Remove the current assignee")
+  .action(async (fingerprint, options, { console: output, process: proc }) => {
+    if (!options.project) {
+      output.log("Missing required option: --project <slug>");
+      return proc.exit(1);
+    }
+    if (!options.to && !options.unassign) {
+      output.log("Specify --to <member-id> or --unassign");
+      return proc.exit(1);
+    }
+
+    const org = await ensureDefaultOrg();
+    const project = await resolveProjectId(org.id, options.project);
+    const { safeFetch } = getApiClient();
+
+    const body: { assigneeMemberId?: string | null } = {};
+    if (options.unassign) {
+      body.assigneeMemberId = null;
+    } else if (options.to) {
+      body.assigneeMemberId = options.to;
+    }
+
+    const res = await safeFetch("/api/v0/projects/:projectId/issues/:fingerprintHash/assignee", {
+      method: "PUT",
+      params: { projectId: project.id, fingerprintHash: fingerprint },
+      body,
+    });
+    if (res instanceof Error) throw res;
+
+    if (options.unassign) {
+      output.log(dim(`Issue ${cyan(fingerprint)} unassigned`));
+    } else {
+      output.log(green(`Issue ${cyan(fingerprint)} assigned`));
+    }
+  });
+
 // ── Stacktrace rendering ──────────────────────────────────────────
 
 interface StackFrame {
@@ -351,7 +532,7 @@ function renderStructuredFrames(frames: StackFrame[]): string[] {
 }
 
 /** Parse a value that may be a JS array, JSON array string, or ClickHouse array string */
-function parseClickHouseArray(value?: unknown): string[] {
+export function parseClickHouseArray(value?: unknown): string[] {
   if (!value) return [];
   // Already a JS array (Tinybird JSON response)
   if (Array.isArray(value)) return value.map(String);

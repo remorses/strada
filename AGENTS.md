@@ -32,7 +32,7 @@ cli
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .action((options) => {
     // options.project is string[]
-    // Usage: strada errors list -p frontend -p api -p worker
+    // Usage: strada issues list -p frontend -p api -p worker
   });
 ```
 
@@ -623,7 +623,7 @@ Run from the `otel-collector/` directory.
 
 ## Example app (collecting real OTel data)
 
-`example-app/` is a Spiceflow app with an integration test suite that sends real OTel telemetry (traces, logs, metrics, errors) through the full pipeline: SDK → collector → Tinybird/ClickHouse. The tests exercise different error types, custom events, and spans so the data can later be queried via the CLI (`strada errors list`, `strada errors view`, `strada query`).
+`example-app/` is a Spiceflow app with an integration test suite that sends real OTel telemetry (traces, logs, metrics, errors) through the full pipeline: SDK → collector → Tinybird/ClickHouse. The tests exercise different error types, custom events, and spans so the data can later be queried via the CLI (`strada issues list`, `strada issues view`, `strada query`).
 
 Run the tests with the project ID and ingest endpoint as env vars:
 
@@ -640,8 +640,8 @@ Get the project ID and endpoint from `strada projects list` (the endpoint is `ht
 To test new CLI features or validate the ingest pipeline, add more routes and test cases to `example-app/src/index.test.ts`. Each route should emit different OTel signals (traces, logs, errors with various exception types, custom events). After the tests run and data propagates to Tinybird, query it with the CLI:
 
 ```bash
-strada errors list -p example-app --since 1h
-strada errors view <fingerprint> -p example-app
+strada issues list -p example-app --since 1h
+strada issues view <fingerprint> -p example-app
 strada query "SELECT * FROM otel_errors LIMIT 10" -p example-app
 ```
 

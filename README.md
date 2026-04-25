@@ -48,7 +48,7 @@ All data lands in the **same ClickHouse database**, queryable with the **same SQ
 ## Use cases
 
 - **Run SQL queries from agents**: agents call `strada query "SELECT ..."` to answer any question about your system. Raw ClickHouse SQL, no proprietary API
-- **List and inspect errors**: agents run `strada errors list` to see error groups, read stacktraces, identify regressions, and open fix PRs
+- **List and inspect issues**: agents run `strada issues list` to see error groups, read stacktraces, identify regressions, and open fix PRs
 - **Read logs to debug issues**: agents query `otel_logs` filtered by trace ID, session, or time range to reconstruct what happened before a failure
 - **Analyze and improve performance**: agents query span durations, identify slow endpoints, compare p95 latency across releases
 - **Monitor payment funnels**: track `checkout_started` and `purchase_completed` as custom events. Query success rates with SQL to catch drops early
@@ -136,10 +136,10 @@ track("purchase_completed", { plan: "pro", amount: 49 })
 
 ```bash
 # list error groups from the last 24 hours
-strada errors list -p my-app --since 24h
+strada issues list -p my-app --since 24h
 
 # view a specific error with stacktrace
-strada errors view <fingerprint> -p my-app
+strada issues view <fingerprint> -p my-app
 
 # run any SQL query
 strada query "SELECT count() FROM otel_errors WHERE ExceptionType = 'TypeError'" -p my-app
@@ -198,8 +198,8 @@ Strada is designed for the terminal. Every operation is a CLI command. No clunky
 
 ```bash
 strada query "SELECT ..."       # any ClickHouse SQL
-strada errors list -p my-app    # error groups, sorted by frequency
-strada errors view <fp>         # stacktrace, recent events, metadata
+strada issues list -p my-app    # error groups, sorted by frequency
+strada issues view <fp>         # stacktrace, recent events, metadata
 strada analytics pages          # top pages, browsers, countries
 strada analytics events         # custom events with properties
 strada projects list            # list all projects
@@ -212,7 +212,7 @@ Agents can run `strada query` with raw SQL to answer any question about your sys
 
 Give your agents the Strada CLI and they can:
 
-- **Monitor and auto-fix**: run `strada errors list`, identify the top error, read the stacktrace, find the bug in your codebase, open a PR
+- **Monitor and auto-fix**: run `strada issues list`, identify the top error, read the stacktrace, find the bug in your codebase, open a PR
 - **Debug payment flows**: `strada query "SELECT ... FROM otel_errors WHERE ExceptionMessage LIKE '%stripe%'"` to find all errors blocking Stripe subscriptions
 - **Track ROI on bug fixes**: correlate error rates with revenue events. Did fixing that TypeError increase successful checkouts?
 - **Build status pages**: query uptime and error rates via SQL, render them however you want

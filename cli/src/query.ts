@@ -39,7 +39,7 @@ import { goke } from "goke";
 import { bold, dim } from "./colors.ts";
 import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
 import { printTable } from "./table.ts";
-import { queryProject } from "./errors.ts";
+import { queryProject } from "./issues.ts";
 
 export const queryCli = goke();
 

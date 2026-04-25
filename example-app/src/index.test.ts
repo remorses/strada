@@ -6,7 +6,7 @@
 // Run with:
 //   STRADA_PROJECT_ID=<id> STRADA_ENDPOINT=<url> pnpm vitest run
 //
-// After running, use `strada errors list -p <slug>` to verify the data landed.
+// After running, use `strada issues list -p <slug>` to verify the data landed.
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Spiceflow } from "spiceflow";

@@ -10,7 +10,7 @@ import { goke, type GokeExecutionContext } from "goke";
 import { z } from "zod";
 import { bold, cyan, dim, green, yellow, gray } from "./colors.ts";
 import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
-import { queryProject } from "./errors.ts";
+import { queryProject } from "./issues.ts";
 import { printTable, formatCount, timeAgo } from "./table.ts";
 import { parseDuration } from "./parse-duration.ts";
 

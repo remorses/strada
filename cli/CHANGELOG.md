@@ -2,21 +2,21 @@
 
 ## 0.1.0
 
-1. **New `errors list` command** — browse error groups from your project, sorted by frequency:
+1. **New `issues list` command** (renamed from `errors list`) — browse error groups from your project, sorted by frequency:
 
    ```bash
-   strada errors list -p my-app
-   strada errors list -p my-app --since 24h --unhandled
-   strada errors list -p my-app,api --service frontend --limit 50
+   strada issues list -p my-app
+   strada issues list -p my-app --since 24h --unhandled
+   strada issues list -p my-app -p api --service frontend --limit 50
    ```
 
    Shows count, unhandled status, level, exception type, message, and last-seen time. Supports comma-separated project slugs to query multiple projects at once.
 
-2. **New `errors view` command** — detailed view of a single error group with full stacktrace:
+2. **New `issues view` command** (renamed from `errors view`) — detailed view of a single error group with full stacktrace:
 
    ```bash
-   strada errors view <fingerprint> -p my-app
-   strada errors view <fingerprint> -p my-app --json
+   strada issues view <fingerprint> -p my-app
+   strada issues view <fingerprint> -p my-app --json
    ```
 
    Displays summary (type, message, event count, first/last seen, mechanism, services, releases, environments), structured stacktrace with in-app frame highlighting, and a recent events table.
@@ -51,8 +51,8 @@
 6. **`--since` duration flag** — filter by human-readable time ranges:
 
    ```bash
-   strada errors list -p my-app --since 1h
-   strada errors list -p my-app --since 7d
+   strada issues list -p my-app --since 1h
+   strada issues list -p my-app --since 7d
    ```
 
    Supports `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
