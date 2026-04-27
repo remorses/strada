@@ -1,0 +1,24 @@
+TOKEN OTEL_TINYBIRD_TOKEN APPEND
+TOKEN STRADA_READ_TOKEN READ
+
+DESCRIPTION >
+    Mutable issue triage state stored via ReplacingMergeTree.
+    Each row represents the latest status/assignee for an error group
+    (identified by ProjectId + FingerprintHash). Status changes INSERT
+    a new row with a higher Version; background merges keep only the latest.
+    Use FINAL in queries to guarantee deduplication at read time.
+
+SCHEMA >
+    `ProjectId` LowCardinality(String) `json:$.project_id` CODEC(ZSTD(1)),
+    `FingerprintHash` String `json:$.fingerprint_hash` CODEC(ZSTD(1)),
+    `Status` LowCardinality(String) `json:$.status` CODEC(ZSTD(1)),
+    `AssigneeMemberId` String `json:$.assignee_member_id` CODEC(ZSTD(1)),
+    `ResolvedAt` Nullable(DateTime64(3)) `json:$.resolved_at` CODEC(ZSTD(1)),
+    `ResolvedByMemberId` String `json:$.resolved_by_member_id` CODEC(ZSTD(1)),
+    `Version` UInt64 `json:$.version` CODEC(ZSTD(1)),
+    `UpdatedAt` DateTime64(3) `json:$.updated_at` CODEC(ZSTD(1))
+
+ENGINE "ReplacingMergeTree"
+ENGINE_VER "Version"
+ENGINE_SORTING_KEY "ProjectId, FingerprintHash"
+ENGINE_SETTINGS index_granularity=8192

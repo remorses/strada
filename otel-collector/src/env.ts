@@ -13,6 +13,7 @@ export const datasources = {
   sum: "otel_metrics_sum",
   histogram: "otel_metrics_histogram",
   exponentialHistogram: "otel_metrics_exponential_histogram",
+  issueState: "otel_issue_state",
 } as const;
 
 /** Resolved database config for a project, fetched from D1. */

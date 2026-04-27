@@ -29,40 +29,51 @@ export async function queryProject(projectId: string, sql: string) {
   return res;
 }
 
-/** Fetch issue metadata (status, assignee) from D1 for a project. Best-effort enrichment. */
-async function fetchIssueMetadata(projectId: string, output?: { log: (msg: string) => void }) {
-  const { safeFetch } = getApiClient();
-  const res = await safeFetch("/api/v0/projects/:projectId/issues", {
-    params: { projectId },
-  });
-  if (res instanceof Error) {
+/**
+ * Fetch issue metadata (status) from otel_issue_state via SQL.
+ * Only fetches state for the given fingerprints to avoid unbounded reads.
+ * Best-effort enrichment; returns empty map on failure.
+ */
+async function fetchIssueMetadata(projectId: string, fingerprints: string[], output?: { log: (msg: string) => void }) {
+  if (fingerprints.length === 0) return new Map<string, IssueMetadata>();
+  try {
+    const inList = fingerprints.map((f) => `'${f}'`).join(", ");
+    const sql = `SELECT FingerprintHash, Status, AssigneeMemberId FROM otel_issue_state FINAL WHERE FingerprintHash IN (${inList}) LIMIT ${fingerprints.length}`;
+    const res = await queryProject(projectId, sql);
+    const map = new Map<string, IssueMetadata>();
+    for (const row of res.data ?? []) {
+      const fingerprint = str(row, "FingerprintHash");
+      map.set(fingerprint, {
+        fingerprintHash: fingerprint,
+        status: str(row, "Status") || "open",
+      });
+    }
+    return map;
+  } catch {
     if (output) output.log(dim("  (issue metadata unavailable, showing raw ClickHouse data)"));
     return new Map<string, IssueMetadata>();
   }
-  const map = new Map<string, IssueMetadata>();
-  for (const issue of res.issues) {
-    map.set(issue.fingerprintHash, issue);
-  }
-  return map;
 }
 
 /** Fetch metadata for a single issue by fingerprint. Returns null if not found or on error. */
 async function fetchSingleIssueMetadata(projectId: string, fingerprintHash: string): Promise<IssueMetadata | null> {
-  const { safeFetch } = getApiClient();
-  const res = await safeFetch("/api/v0/projects/:projectId/issues", {
-    params: { projectId },
-    query: { fingerprintHash },
-  });
-  if (res instanceof Error) return null;
-  return res.issues[0] ?? null;
+  try {
+    const sql = `SELECT FingerprintHash, Status, AssigneeMemberId FROM otel_issue_state FINAL WHERE FingerprintHash = '${fingerprintHash}' LIMIT 1`;
+    const res = await queryProject(projectId, sql);
+    const row = res.data?.[0];
+    if (!row) return null;
+    return {
+      fingerprintHash: str(row, "FingerprintHash"),
+      status: str(row, "Status") || "open",
+    };
+  } catch {
+    return null;
+  }
 }
 
 interface IssueMetadata {
   fingerprintHash: string;
   status: string;
-  assignee: { name: string } | null;
-  resolvedAt: unknown;
-  resolvedBy: { name: string } | null;
 }
 
 /** Safely read a field as string from a query result row */
@@ -122,16 +133,18 @@ ORDER BY event_count DESC
 LIMIT ${limit}
 `.trim();
 
-    // Query all projects in parallel, also fetch issue metadata from D1
-    const [results, ...metadataMaps] = await Promise.all([
-      Promise.all(projects.map((p) => queryProject(p.id, sql))),
-      ...projects.map((p) => fetchIssueMetadata(p.id, output)),
-    ]);
+    // Query all projects in parallel
+    const results = await Promise.all(projects.map((p) => queryProject(p.id, sql)));
     const allRows = results.flatMap((data) => data.data ?? []);
-    // Merge all project metadata maps into one
+
+    // Extract fingerprints from results, then fetch their issue metadata
+    const fingerprints = allRows.map((r) => str(r, "FingerprintHash")).filter(Boolean);
+    const metadataMaps = await Promise.all(
+      projects.map((p) => fetchIssueMetadata(p.id, fingerprints, output)),
+    );
     const issueMetadata = new Map<string, IssueMetadata>();
     for (const m of metadataMaps) {
-      if (m instanceof Map) for (const [k, v] of m) issueMetadata.set(k, v);
+      for (const [k, v] of m) issueMetadata.set(k, v);
     }
 
     if (allRows.length === 0) {
@@ -173,7 +186,7 @@ LIMIT ${limit}
         level: levelColor(level),
         type: str(r, "last_type") || gray("(none)"),
         message: str(r, "last_message") || gray("(no message)"),
-        assignee: meta?.assignee?.name || dim("—"),
+        assignee: dim("—"),
         last_seen: timeAgo(str(r, "last_seen")),
       };
     });
@@ -312,15 +325,8 @@ LIMIT ${eventsLimit}
     output.log(`  ${dim("Last seen")}     ${lastSeen} ${dim(`(${timeAgo(lastSeen)})`)}`);
     output.log(`  ${dim("Mechanism")}     ${mechanism} ${handled ? green("(handled)") : red("(unhandled)")}`);
 
-    // Assignee
-    if (meta?.assignee) {
-      output.log(`  ${dim("Assignee")}      ${cyan(meta.assignee.name)}`);
-    }
-
-    // Resolved info
-    if (meta?.resolvedBy) {
-      output.log(`  ${dim("Resolved by")}   ${meta.resolvedBy.name}`);
-    }
+    // No assignee/resolver names in the CLI anymore; issue state is in ClickHouse.
+    // The website API resolves member names from D1 when needed for the UI.
 
     // Services, releases, environments
     const services = parseClickHouseArray(summary.services);

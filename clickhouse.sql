@@ -488,3 +488,49 @@ ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
 ORDER BY (ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
 SETTINGS index_granularity = 8192;
+
+-- ============================================================================
+-- ISSUE STATE (ReplacingMergeTree)
+-- ============================================================================
+--
+-- This table stores mutable triage metadata for error groups: status
+-- (open/resolved/muted/ignored), assignee, and resolver info.
+--
+-- WHY THIS IS IN CLICKHOUSE, NOT D1:
+-- D1 is Cloudflare's per-request SQLite. It works well for auth, org config,
+-- and other low-frequency control-plane data. But issue state is queried on
+-- every "issues list" request and joined with error aggregations. Keeping it
+-- in D1 would mean two round-trips per read (ClickHouse for error counts,
+-- D1 for status/assignee) and D1 cannot handle high-RPS analytical queries
+-- without becoming the bottleneck. By co-locating issue state next to error
+-- data in ClickHouse, the CLI and UI can join them in a single SQL query.
+--
+-- HOW IT WORKS:
+-- ReplacingMergeTree deduplicates rows with the same ORDER BY key, keeping
+-- only the row with the highest Version column. Each status or assignee
+-- change INSERTs a new row with Version = Date.now() (epoch ms). ClickHouse
+-- background merges eventually collapse old versions, but queries use FINAL
+-- to force deduplication at read time for guaranteed consistency.
+--
+-- Both mutation routes (status, assignee) do a read-before-write to preserve
+-- the field they are not changing. Tinybird writes use ?wait=true so the new
+-- row is visible before the response returns.
+--
+-- SORTING KEY: (ProjectId, FingerprintHash)
+-- This makes point lookups by fingerprint within a project fast, and ensures
+-- deduplication merges are scoped to the right granularity.
+
+CREATE TABLE IF NOT EXISTS otel_issue_state
+(
+    `ProjectId`           LowCardinality(String) CODEC(ZSTD(1)),
+    `FingerprintHash`     String                 CODEC(ZSTD(1)),
+    `Status`              LowCardinality(String) CODEC(ZSTD(1)),
+    `AssigneeMemberId`    String                 CODEC(ZSTD(1)),
+    `ResolvedAt`          Nullable(DateTime64(3)) CODEC(ZSTD(1)),
+    `ResolvedByMemberId`  String                 CODEC(ZSTD(1)),
+    `Version`             UInt64                 CODEC(ZSTD(1)),
+    `UpdatedAt`           DateTime64(3)          CODEC(ZSTD(1))
+)
+ENGINE = ReplacingMergeTree(Version)
+ORDER BY (ProjectId, FingerprintHash)
+SETTINGS index_granularity = 8192;

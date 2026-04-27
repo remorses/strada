@@ -164,34 +164,6 @@ export const projectToken = sqliteCore.sqliteTable('project_token', {
   sqliteCore.index('project_token_hashed_key_idx').on(table.hashedKey),
 ])
 
-// ── Issue metadata ──────────────────────────────────────────────────
-// Mutable triage state for error groups. Each row represents one issue
-// (a group of errors sharing the same FingerprintHash within a project).
-// Created lazily on first status change or assignment, not on ingest.
-// The FingerprintHash is the join key to otel_errors in ClickHouse.
-//
-// assigneeMemberId references orgMember (not user directly) so that:
-// 1. Removing a member from the org auto-nullifies their assignments (ON DELETE SET NULL)
-// 2. The FK guarantees the referenced member row exists
-// Note: the FK does NOT enforce same-org (a member from org_a could theoretically
-// be assigned to a project in org_b). The API route validates org consistency at runtime.
-
-export const issue = sqliteCore.sqliteTable('issue', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  projectId: sqliteCore.text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
-  fingerprintHash: sqliteCore.text('fingerprint_hash').notNull(),
-  status: sqliteCore.text('status', { enum: ['open', 'resolved', 'muted', 'ignored'] }).notNull().default('open'),
-  assigneeMemberId: sqliteCore.text('assignee_member_id').references(() => orgMember.id, { onDelete: 'set null' }),
-  resolvedAt: epochMs('resolved_at'),
-  resolvedByMemberId: sqliteCore.text('resolved_by_member_id').references(() => orgMember.id, { onDelete: 'set null' }),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.uniqueIndex('issue_project_fingerprint_unique').on(table.projectId, table.fingerprintHash),
-  sqliteCore.index('issue_project_id_idx').on(table.projectId),
-  sqliteCore.index('issue_assignee_member_id_idx').on(table.assigneeMemberId),
-])
-
 // ── Device flow (BetterAuth device authorization plugin) ────────────
 
 export const deviceCode = sqliteCore.sqliteTable('device_code', {
@@ -212,7 +184,7 @@ export const deviceCode = sqliteCore.sqliteTable('device_code', {
 // ── Relations (v2 API) ──────────────────────────────────────────────
 
 export const relations = defineRelations(
-  { user, session, account, verification, org, orgMember, database, project, projectToken, deviceCode, issue },
+  { user, session, account, verification, org, orgMember, database, project, projectToken, deviceCode },
   (r) => ({
     user: {
       sessions: r.many.session(),
@@ -241,7 +213,6 @@ export const relations = defineRelations(
     orgMember: {
       org: r.one.org({ from: r.orgMember.orgId, to: r.org.id }),
       user: r.one.user({ from: r.orgMember.userId, to: r.user.id }),
-      assignedIssues: r.many.issue({ from: r.orgMember.id, to: r.issue.assigneeMemberId }),
     },
     database: {
       org: r.one.org({ from: r.database.orgId, to: r.org.id }),
@@ -251,7 +222,6 @@ export const relations = defineRelations(
       org: r.one.org({ from: r.project.orgId, to: r.org.id }),
       database: r.one.database({ from: r.project.databaseId, to: r.database.id }),
       tokens: r.many.projectToken(),
-      issues: r.many.issue(),
     },
     projectToken: {
       project: r.one.project({ from: r.projectToken.projectId, to: r.project.id }),
@@ -259,11 +229,6 @@ export const relations = defineRelations(
     },
     deviceCode: {
       user: r.one.user({ from: r.deviceCode.userId, to: r.user.id }),
-    },
-    issue: {
-      project: r.one.project({ from: r.issue.projectId, to: r.project.id }),
-      assigneeMember: r.one.orgMember({ from: r.issue.assigneeMemberId, to: r.orgMember.id }),
-      resolvedByMember: r.one.orgMember({ from: r.issue.resolvedByMemberId, to: r.orgMember.id }),
     },
   }),
 )

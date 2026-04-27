@@ -2,7 +2,6 @@
 
 import { json, Spiceflow } from 'spiceflow'
 import { z } from 'zod'
-import { createSelectSchema } from 'drizzle-orm/zod'
 import dedent from 'string-dedent'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
@@ -58,9 +57,7 @@ const updateIssueAssigneeRequestSchema = z.object({
   assigneeMemberId: z.string().nullish(),
 })
 
-// ── Issue response schemas (derived from Drizzle table) ─────────────
-
-const issueSelectSchema = createSelectSchema(schema.issue)
+// ── Issue response schemas ──────────────────────────────────────────
 
 const issueAssigneeSchema = z.object({
   memberId: z.string(),
@@ -73,12 +70,16 @@ const issueResolverSchema = z.object({
   name: z.string(),
 }).nullable()
 
-const issueSummarySchema = issueSelectSchema
-  .pick({ id: true, fingerprintHash: true, status: true, resolvedAt: true, createdAt: true, updatedAt: true })
-  .extend({
-    assignee: issueAssigneeSchema,
-    resolvedBy: issueResolverSchema,
-  })
+const issueSummarySchema = z.object({
+  fingerprintHash: z.string(),
+  status: z.enum(['open', 'resolved', 'muted', 'ignored']),
+  assigneeMemberId: z.string().nullable(),
+  resolvedAt: z.number().nullable(),
+  resolvedByMemberId: z.string().nullable(),
+  updatedAt: z.number().nullable(),
+  assignee: issueAssigneeSchema,
+  resolvedBy: issueResolverSchema,
+})
 
 const issueListResponseSchema = z.object({
   issues: z.array(issueSummarySchema),
@@ -86,7 +87,7 @@ const issueListResponseSchema = z.object({
 
 const issueStatusResponseSchema = z.object({
   ok: z.literal(true),
-  status: issueSelectSchema.shape.status,
+  status: z.enum(['open', 'resolved', 'muted', 'ignored']),
 })
 
 const issueAssigneeResponseSchema = z.object({
@@ -110,6 +111,210 @@ function detectFormat(sql: string): string | null {
   const normalized = stripSemicolons(sql)
   const match = normalized.match(/\bFORMAT\s+(\w+)\s*$/i)
   return match ? match[1]! : null
+}
+
+// ── Issue state helpers (Tinybird/ClickHouse ReplacingMergeTree) ─────
+//
+// Issue triage state (status, assignee) lives in ClickHouse via
+// ReplacingMergeTree, not in D1. D1 is a per-request SQLite database
+// on Cloudflare; it cannot handle high-RPS analytical queries and
+// adds latency to every read. ClickHouse keeps issue state co-located
+// with error data so the CLI and UI can join them in a single SQL query
+// instead of doing two round-trips (ClickHouse + D1).
+//
+// ReplacingMergeTree deduplicates by (ProjectId, FingerprintHash),
+// keeping only the row with the highest Version. Reads use FINAL to
+// force deduplication at query time. Writes use wait=true on Tinybird
+// to guarantee read-after-write consistency (important because status
+// and assignee updates do read-before-write to preserve the other field).
+
+/** Fingerprint hashes are 32-char hex strings (FNV-1a 128-bit). */
+const FINGERPRINT_RE = /^[0-9a-f]{32}$/i
+
+function validateFingerprint(hash: string): void {
+  if (!FINGERPRINT_RE.test(hash)) {
+    throw json({ error: 'invalid fingerprint hash' }, { status: 400 })
+  }
+}
+
+interface IssueStateRow {
+  project_id: string
+  fingerprint_hash: string
+  status: string
+  assignee_member_id: string
+  resolved_at: string | null
+  resolved_by_member_id: string
+  version: number
+  updated_at: string
+}
+
+interface QueryTinybirdCtx {
+  dbConfig: { backend: string; tinybirdEndpoint: string | null; tinybirdAdminToken: string | null; clickhouseUrl: string | null; clickhouseDatabase: string | null; clickhouseUser: string | null; clickhousePassword: string | null }
+  proj: { tinybirdJwt: string | null; tinybirdJwtDatasources: string | null }
+  projectId: string
+  sql: string
+}
+
+/** Run a SQL query against Tinybird/ClickHouse using the project JWT. Throws on failure. */
+async function queryIssueState(ctx: QueryTinybirdCtx): Promise<QueryResponse> {
+  const { dbConfig, proj, projectId, sql } = ctx
+  if (dbConfig.backend === 'tinybird') {
+    if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdAdminToken) {
+      throw json({ error: 'tinybird not configured' }, { status: 400 })
+    }
+    const jwtCtx = {
+      projectId,
+      tinybirdEndpoint: dbConfig.tinybirdEndpoint,
+      tinybirdAdminToken: dbConfig.tinybirdAdminToken,
+      tinybirdJwt: proj.tinybirdJwt,
+      tinybirdJwtDatasources: proj.tinybirdJwtDatasources,
+    }
+    const jwt = await getOrCreateProjectJwt(jwtCtx)
+    const res = await fetch(`${dbConfig.tinybirdEndpoint}/v0/sql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ q: sql }),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw json({ error: `issue state query failed: ${text}` }, { status: res.status })
+    }
+    return await res.json() as QueryResponse
+  }
+  if (dbConfig.backend === 'clickhouse') {
+    if (!dbConfig.clickhouseUrl) {
+      throw json({ error: 'clickhouse not configured' }, { status: 400 })
+    }
+    const endpoint = `${dbConfig.clickhouseUrl}/?database=${encodeURIComponent(dbConfig.clickhouseDatabase || 'default')}&query=${encodeURIComponent(sql)}`
+    const res = await fetch(endpoint, {
+      headers: {
+        'X-ClickHouse-User': dbConfig.clickhouseUser || 'default',
+        'X-ClickHouse-Key': dbConfig.clickhousePassword || '',
+      },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw json({ error: `issue state query failed: ${text}` }, { status: res.status })
+    }
+    return await res.json() as QueryResponse
+  }
+  throw json({ error: 'unknown backend' }, { status: 500 })
+}
+
+/**
+ * Read current issue state for a fingerprint. Returns defaults if no row exists yet.
+ * Used by both status and assignee routes to preserve the other field on partial updates.
+ */
+async function readCurrentIssueState(ctx: Omit<QueryTinybirdCtx, 'sql'> & { fingerprintHash: string }): Promise<IssueStateRow> {
+  const { dbConfig, proj, projectId, fingerprintHash } = ctx
+  // For ClickHouse backend, add explicit ProjectId filter since there's no JWT row-level filtering
+  const projectFilter = dbConfig.backend === 'clickhouse' ? ` AND ProjectId = '${projectId}'` : ''
+  const sql = `SELECT Status, AssigneeMemberId, ResolvedAt, ResolvedByMemberId FROM otel_issue_state FINAL WHERE FingerprintHash = '${fingerprintHash}'${projectFilter} LIMIT 1 FORMAT JSON`
+  try {
+    const result = await queryIssueState({ dbConfig, proj, projectId, sql })
+    const row = result.data?.[0]
+    if (row) {
+      return {
+        project_id: projectId,
+        fingerprint_hash: fingerprintHash,
+        status: (row.Status as string) || 'open',
+        assignee_member_id: (row.AssigneeMemberId as string) || '',
+        resolved_at: (row.ResolvedAt as string) || null,
+        resolved_by_member_id: (row.ResolvedByMemberId as string) || '',
+        version: 0,
+        updated_at: '',
+      }
+    }
+  } catch {
+    // No existing state; return defaults for a new issue
+  }
+  return {
+    project_id: projectId,
+    fingerprint_hash: fingerprintHash,
+    status: 'open',
+    assignee_member_id: '',
+    resolved_at: null,
+    resolved_by_member_id: '',
+    version: 0,
+    updated_at: '',
+  }
+}
+
+/**
+ * Write a row to otel_issue_state via Tinybird Events API or ClickHouse INSERT.
+ * Tinybird writes use wait=true for read-after-write consistency.
+ */
+async function writeIssueState(ctx: { dbConfig: QueryTinybirdCtx['dbConfig']; row: IssueStateRow }): Promise<void> {
+  const { dbConfig, row } = ctx
+  const ndjson = JSON.stringify(row)
+
+  if (dbConfig.backend === 'tinybird') {
+    if (!dbConfig.tinybirdEndpoint || !dbConfig.tinybirdAdminToken) {
+      throw json({ error: 'tinybird not configured' }, { status: 400 })
+    }
+    // wait=true ensures the row is visible to subsequent reads before we return.
+    // Without it, a quick status change followed by an assignee update could
+    // read stale state and overwrite the status.
+    const res = await fetch(`${dbConfig.tinybirdEndpoint}/v0/events?name=otel_issue_state&wait=true`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        Authorization: `Bearer ${dbConfig.tinybirdAdminToken}`,
+      },
+      body: ndjson,
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.error(`Failed to write issue state to Tinybird: ${res.status} ${text}`)
+      throw json({ error: 'failed to write issue state' }, { status: 500 })
+    }
+    // Validate the row actually landed (not quarantined)
+    const resBody = await res.json().catch(() => null) as null | {
+      successful_rows?: number
+      quarantined_rows?: number
+    }
+    if (resBody && ((resBody.quarantined_rows ?? 0) > 0 || (resBody.successful_rows ?? 0) !== 1)) {
+      console.error(`Tinybird issue state write warning: ${JSON.stringify(resBody)}`)
+      throw json({ error: 'failed to write issue state' }, { status: 500 })
+    }
+    return
+  }
+
+  if (dbConfig.backend === 'clickhouse') {
+    if (!dbConfig.clickhouseUrl) {
+      throw json({ error: 'clickhouse not configured' }, { status: 400 })
+    }
+    // For ClickHouse, remap to PascalCase and INSERT
+    const chRow = {
+      ProjectId: row.project_id,
+      FingerprintHash: row.fingerprint_hash,
+      Status: row.status,
+      AssigneeMemberId: row.assignee_member_id,
+      ResolvedAt: row.resolved_at,
+      ResolvedByMemberId: row.resolved_by_member_id,
+      Version: row.version,
+      UpdatedAt: row.updated_at,
+    }
+    const insertSql = `INSERT INTO otel_issue_state FORMAT JSONEachRow`
+    const endpoint = `${dbConfig.clickhouseUrl}/?database=${encodeURIComponent(dbConfig.clickhouseDatabase || 'default')}&query=${encodeURIComponent(insertSql)}`
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ClickHouse-User': dbConfig.clickhouseUser || 'default',
+        'X-ClickHouse-Key': dbConfig.clickhousePassword || '',
+      },
+      body: JSON.stringify(chRow),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.error(`Failed to write issue state to ClickHouse: ${res.status} ${text}`)
+      throw json({ error: 'failed to write issue state' }, { status: 500 })
+    }
+    return
+  }
+
+  throw json({ error: 'unknown backend' }, { status: 500 })
 }
 
 async function createOrgForUser(userId: string, name: string) {
@@ -592,6 +797,9 @@ export const api = new Spiceflow()
       },
     })
     // ── Issue management (status + assignee) ───────────────────────────
+    // Issue state lives in ClickHouse/Tinybird via ReplacingMergeTree.
+    // Writes go to the Tinybird Events API (wait=true); reads use SQL with FINAL.
+    // Both mutation routes do read-before-write to preserve the other field.
     .route({
       method: 'GET',
       path: '/api/v0/projects/:projectId/issues',
@@ -602,39 +810,79 @@ export const api = new Spiceflow()
         if (!proj) {
           throw json({ error: 'project not found' }, { status: 404 })
         }
-        const db = getDb()
+
+        const dbConfig = proj.database
+        if (!dbConfig) {
+          throw json({ error: 'no database configured' }, { status: 400 })
+        }
+
         const url = new URL(request.url)
         const fingerprintFilter = url.searchParams.get('fingerprintHash')
 
-        const where: Record<string, unknown> = { projectId: params.projectId }
+        if (fingerprintFilter) validateFingerprint(fingerprintFilter)
+
+        // For ClickHouse backend, add explicit ProjectId filter (no JWT row-level filtering)
+        const projectFilter = dbConfig.backend === 'clickhouse' ? `ProjectId = '${params.projectId}' AND ` : ''
+
+        let sql: string
         if (fingerprintFilter) {
-          where.fingerprintHash = fingerprintFilter
+          sql = `SELECT FingerprintHash, Status, AssigneeMemberId, ResolvedAt, ResolvedByMemberId, UpdatedAt FROM otel_issue_state FINAL WHERE ${projectFilter}FingerprintHash = '${fingerprintFilter}' LIMIT 1 FORMAT JSON`
+        } else {
+          const where = projectFilter ? `WHERE ${projectFilter.replace(/ AND $/, '')}` : ''
+          sql = `SELECT FingerprintHash, Status, AssigneeMemberId, ResolvedAt, ResolvedByMemberId, UpdatedAt FROM otel_issue_state FINAL ${where} ORDER BY UpdatedAt DESC LIMIT 500 FORMAT JSON`
         }
 
-        const issues = await db.query.issue.findMany({
-          where,
-          with: {
-            assigneeMember: { with: { user: { columns: { id: true, name: true, email: true } } } },
-            resolvedByMember: { with: { user: { columns: { id: true, name: true } } } },
-          },
-          orderBy: { updatedAt: 'desc' },
-          limit: fingerprintFilter ? 1 : 500,
-        })
+        const result = await queryIssueState({ dbConfig, proj, projectId: params.projectId, sql })
+        const rows = (result.data ?? []) as Array<Record<string, unknown>>
+
+        // Batch-resolve assignee and resolver names from D1
+        const memberIds = new Set<string>()
+        for (const row of rows) {
+          if (row.AssigneeMemberId) memberIds.add(row.AssigneeMemberId as string)
+          if (row.ResolvedByMemberId) memberIds.add(row.ResolvedByMemberId as string)
+        }
+
+        const memberMap = new Map<string, { id: string; name: string; email: string }>()
+        if (memberIds.size > 0) {
+          const db = getDb()
+          const members = await db.query.orgMember.findMany({
+            where: { orgId: proj.orgId },
+            with: { user: { columns: { id: true, name: true, email: true } } },
+          })
+          for (const m of members) {
+            if (m.user && memberIds.has(m.id)) {
+              memberMap.set(m.id, { id: m.id, name: m.user.name, email: m.user.email })
+            }
+          }
+        }
+
         return {
-          issues: issues.map((i) => ({
-            id: i.id,
-            fingerprintHash: i.fingerprintHash,
-            status: i.status,
-            assignee: i.assigneeMember?.user
-              ? { memberId: i.assigneeMember.id, name: i.assigneeMember.user.name, email: i.assigneeMember.user.email }
-              : null,
-            resolvedAt: i.resolvedAt,
-            resolvedBy: i.resolvedByMember?.user
-              ? { memberId: i.resolvedByMember.id, name: i.resolvedByMember.user.name }
-              : null,
-            createdAt: i.createdAt,
-            updatedAt: i.updatedAt,
-          })),
+          issues: rows.map((row) => {
+            const assigneeId = (row.AssigneeMemberId as string) || null
+            const resolverMemberId = (row.ResolvedByMemberId as string) || null
+            const assignee = assigneeId && memberMap.has(assigneeId)
+              ? { memberId: assigneeId, name: memberMap.get(assigneeId)!.name, email: memberMap.get(assigneeId)!.email }
+              : null
+            const resolvedBy = resolverMemberId && memberMap.has(resolverMemberId)
+              ? { memberId: resolverMemberId, name: memberMap.get(resolverMemberId)!.name }
+              : null
+
+            const resolvedAtRaw = row.ResolvedAt as string | null
+            const resolvedAt = resolvedAtRaw ? new Date(resolvedAtRaw).getTime() : null
+            const updatedAtRaw = row.UpdatedAt as string | null
+            const updatedAt = updatedAtRaw ? new Date(updatedAtRaw).getTime() : null
+
+            return {
+              fingerprintHash: row.FingerprintHash as string,
+              status: (row.Status as string || 'open') as 'open' | 'resolved' | 'muted' | 'ignored',
+              assigneeMemberId: assigneeId,
+              resolvedAt,
+              resolvedByMemberId: resolverMemberId,
+              updatedAt,
+              assignee,
+              resolvedBy,
+            }
+          }),
         }
       },
     })
@@ -650,39 +898,46 @@ export const api = new Spiceflow()
           throw json({ error: 'project not found' }, { status: 404 })
         }
 
+        const dbConfig = proj.database
+        if (!dbConfig) {
+          throw json({ error: 'no database configured' }, { status: 400 })
+        }
+
+        validateFingerprint(params.fingerprintHash)
+
         const db = getDb()
         const body = await request.json()
         const now = Date.now()
 
+        // Read current state to preserve assignee when only changing status
+        const current = await readCurrentIssueState({ dbConfig, proj, projectId: params.projectId, fingerprintHash: params.fingerprintHash })
+
         // Resolve the current user's orgMember ID for this project's org
-        let resolvedByMemberId: string | null = null
+        let resolvedByMemberId = current.resolved_by_member_id
         if (body.status === 'resolved') {
           const member = await db.query.orgMember.findFirst({
             where: { orgId: proj.orgId, userId: session.userId },
           })
-          resolvedByMemberId = member?.id ?? null
+          resolvedByMemberId = member?.id ?? ''
+        } else {
+          // Clear resolved info when moving to non-resolved status
+          resolvedByMemberId = ''
         }
-        const resolvedAt = body.status === 'resolved' ? now : null
+        const resolvedAt = body.status === 'resolved' ? new Date(now).toISOString() : null
 
-        await db.insert(schema.issue)
-          .values({
-            projectId: params.projectId,
-            fingerprintHash: params.fingerprintHash,
+        await writeIssueState({
+          dbConfig,
+          row: {
+            project_id: params.projectId,
+            fingerprint_hash: params.fingerprintHash,
             status: body.status,
-            resolvedAt,
-            resolvedByMemberId,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [schema.issue.projectId, schema.issue.fingerprintHash],
-            set: {
-              status: body.status,
-              resolvedAt,
-              resolvedByMemberId,
-              updatedAt: now,
-            },
-          })
+            assignee_member_id: current.assignee_member_id,
+            resolved_at: resolvedAt,
+            resolved_by_member_id: resolvedByMemberId,
+            version: now,
+            updated_at: new Date(now).toISOString(),
+          },
+        })
 
         return { ok: true, status: body.status }
       },
@@ -699,12 +954,18 @@ export const api = new Spiceflow()
           throw json({ error: 'project not found' }, { status: 404 })
         }
 
+        const dbConfig = proj.database
+        if (!dbConfig) {
+          throw json({ error: 'no database configured' }, { status: 400 })
+        }
+
+        validateFingerprint(params.fingerprintHash)
+
         const body = await request.json()
         const db = getDb()
         const now = Date.now()
 
-        // Validate assignee member belongs to this org (FK enforces it too,
-        // but checking here gives a clear error message)
+        // Validate assignee member belongs to this org
         if (body.assigneeMemberId) {
           const member = await db.query.orgMember.findFirst({
             where: { id: body.assigneeMemberId, orgId: proj.orgId },
@@ -714,21 +975,18 @@ export const api = new Spiceflow()
           }
         }
 
-        await db.insert(schema.issue)
-          .values({
-            projectId: params.projectId,
-            fingerprintHash: params.fingerprintHash,
-            assigneeMemberId: body.assigneeMemberId ?? null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [schema.issue.projectId, schema.issue.fingerprintHash],
-            set: {
-              assigneeMemberId: body.assigneeMemberId ?? null,
-              updatedAt: now,
-            },
-          })
+        // Read current state to preserve status when only changing assignee
+        const current = await readCurrentIssueState({ dbConfig, proj, projectId: params.projectId, fingerprintHash: params.fingerprintHash })
+
+        await writeIssueState({
+          dbConfig,
+          row: {
+            ...current,
+            assignee_member_id: body.assigneeMemberId ?? '',
+            version: now,
+            updated_at: new Date(now).toISOString(),
+          },
+        })
 
         return { ok: true }
       },

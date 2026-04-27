@@ -448,6 +448,41 @@ When an exception is detected, the worker extracts it into a denormalized error 
 
 **Answers:** "what are the top errors?", "is this error handled or unhandled?", "how many times did this error happen?", "which release introduced this bug?", "show me the stacktrace for this error group"
 
+### Issue state — `otel_issue_state`
+
+**Engine:** `ReplacingMergeTree(Version)` with `ORDER BY (ProjectId, FingerprintHash)`
+
+Mutable triage state for error groups (status, assignee, resolver). This is the only table in the system that stores mutable state rather than append-only event data.
+
+**Why it lives in ClickHouse, not D1:**
+
+D1 is Cloudflare's per-request SQLite. It works for auth and org config (low-frequency control plane), but issue state is queried on every "issues list" request and must be joined with error aggregations. Keeping it in D1 would mean:
+
+1. Two round-trips per read (ClickHouse for error counts, D1 for status)
+2. D1 becomes the bottleneck for high-RPS analytical queries
+3. The CLI cannot do a single SQL query that combines error data with issue status
+
+By co-locating issue state in the same ClickHouse database as error data, a single SQL query can join `otel_errors` with `otel_issue_state FINAL` and return everything in one shot.
+
+**Pattern: ReplacingMergeTree for mutable state in an append-only database**
+
+ClickHouse is append-only by design. You cannot UPDATE a row in-place. `ReplacingMergeTree` solves this by:
+
+1. Each mutation INSERTs a new row with a higher `Version` (epoch ms)
+2. Background merges keep only the row with the highest Version per ORDER BY key
+3. Reads use `SELECT ... FROM table FINAL` to force deduplication at query time
+4. Tinybird writes use `?wait=true` on the Events API for read-after-write consistency
+
+**Read-before-write pattern:**
+
+Both status and assignee updates do a read-before-write to preserve the other field. If you change status, the assignee is preserved from the previous row. If you change assignee, the status is preserved. Without this, each write would overwrite the entire row with defaults for fields it doesn't know about.
+
+**Key columns:** `ProjectId`, `FingerprintHash`, `Status` (open/resolved/muted/ignored), `AssigneeMemberId`, `ResolvedAt`, `ResolvedByMemberId`, `Version` (UInt64, epoch ms), `UpdatedAt`.
+
+**When to use this pattern for new tables:**
+
+Use `ReplacingMergeTree` when you need mutable state in ClickHouse (entity status, configuration, user preferences). Use plain `MergeTree` for append-only event data. Never use ClickHouse `ALTER TABLE ... UPDATE` for frequent mutations; it rewrites entire data parts and is not designed for transactional updates.
+
 ## SDK custom attributes and event conventions
 
 Strada extends plain OpenTelemetry with a small set of **nonstandard but important conventions**. These are a superset of OTel, not a replacement for it. They let the SDK model error tracking, browser analytics, session context, and custom product events without inventing a separate transport or schema.
