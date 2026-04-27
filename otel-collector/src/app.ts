@@ -16,7 +16,13 @@ import type {
   ExportMetricsServiceRequest,
 } from "./otlp-types.ts";
 
-async function parseOtlpRequest<T>(request: Request): Promise<T> {
+interface OtlpRequest {
+  headers: Headers;
+  body: ReadableStream | null;
+  json(): Promise<unknown>;
+}
+
+async function parseOtlpRequest<T>(request: OtlpRequest): Promise<T> {
   const contentEncoding = request.headers.get("content-encoding");
   if (!contentEncoding || contentEncoding.toLowerCase() === "identity") {
     return (await request.json()) as T;
