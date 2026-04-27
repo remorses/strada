@@ -36,7 +36,7 @@ function TraceTimelineBarInner({
     ? { bg: isDark ? "oklch(0.40 0.12 25)" : "oklch(0.60 0.13 20)", hover: isDark ? "oklch(0.45 0.14 25)" : "oklch(0.55 0.14 20)" }
     : getServiceBarColors(bar.span.serviceName, services, isDark)
 
-  const barPx = (widthPercent / 100) * containerWidth
+  const barPx = containerWidth > 0 ? (widthPercent / 100) * containerWidth : Infinity
   const showName = barPx > 60
   const showService = barPx > 150
   const showDuration = barPx > 200
