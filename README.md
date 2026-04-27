@@ -9,6 +9,17 @@
 
 Strada replaces Sentry, Datadog, and Google Analytics with a single open-source stack built on [OpenTelemetry](https://opentelemetry.io). Your data lives in **your own ClickHouse database**. You query it with **SQL from the CLI**. Agents can monitor, debug, and fix issues end-to-end without touching a browser.
 
+The Strada Node SDK bundle is **4.8× smaller than Sentry's Node SDK** when bundled with esbuild. Smaller bundles mean **faster cold starts** in Vercel, AWS Lambda, Cloudflare Workers, and other serverless runtimes. Strada stays small because it is a thin layer on top of **standard OpenTelemetry**, not a proprietary vendor SDK you have to rip out later.
+
+```
+Bundle size, esbuild ESM, node18 target
+
+Strada SDK   400.5 kB  ██████████  281 modules
+Sentry SDK  1908.6 kB  ████████████████████████████████████████████████  653 modules
+
+Sentry is 4.8× larger.
+```
+
 ```
 npm install @strada.sh/sdk
 ```
