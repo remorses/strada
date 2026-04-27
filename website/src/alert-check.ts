@@ -21,6 +21,7 @@ interface AlertableError {
   errorCount: number
   exceptionType: string
   exceptionMessage: string
+  exceptionStacktrace: string
   firstSeen: string
   serviceName: string
 }
@@ -42,14 +43,24 @@ interface ProjectWithJwt {
   tinybirdJwtDatasources: string | null
 }
 
+interface AlertRuleWithRelations {
+  id: string
+  orgId: string
+  threshold: number
+  windowMinutes: number
+  cooldownMinutes: number
+  destinations: Array<{ channel: string; destination: string }>
+  org: { id: string; name: string } | null
+}
+
 /** Main scheduled handler. Called by the cron trigger every 5 minutes. */
 export async function checkAlerts(): Promise<void> {
   const db = getDb()
 
   // 1. Load all alert rules with destinations
-  const rules = await db.query.alertRule.findMany({
+  const rules = await db.query.alertRule!.findMany({
     with: { destinations: true, org: true },
-  })
+  }) as unknown as AlertRuleWithRelations[]
 
   if (rules.length === 0) return
 
@@ -64,27 +75,19 @@ export async function checkAlerts(): Promise<void> {
   }
 }
 
-async function checkOrgAlerts(rule: {
-  id: string
-  orgId: string
-  threshold: number
-  windowMinutes: number
-  cooldownMinutes: number
-  destinations: Array<{ channel: string; destination: string }>
-  org: { id: string; name: string } | null
-}): Promise<void> {
+async function checkOrgAlerts(rule: AlertRuleWithRelations): Promise<void> {
   const db = getDb()
 
   // Load database config for this org
-  const dbConfig = await db.query.database.findFirst({
-    where: { orgId: rule.orgId },
-  })
+  const dbConfig = await db.query.database!.findFirst({
+    where: { orgId: rule.orgId } as any,
+  }) as unknown as DbConfig | undefined
   if (!dbConfig) return
 
   // Load all projects for this org
-  const projects = await db.query.project.findMany({
-    where: { orgId: rule.orgId },
-  })
+  const projects = await db.query.project!.findMany({
+    where: { orgId: rule.orgId } as any,
+  }) as unknown as ProjectWithJwt[]
   if (projects.length === 0) return
 
   const orgName = rule.org?.name || 'Unknown'
@@ -149,6 +152,7 @@ async function checkProjectAlerts(ctx: {
       fingerprintHash: error.fingerprintHash,
       exceptionType: error.exceptionType,
       exceptionMessage: error.exceptionMessage,
+      exceptionStacktrace: error.exceptionStacktrace,
       errorCount: error.errorCount,
       windowMinutes: rule.windowMinutes,
       firstSeen: error.firstSeen,
@@ -183,6 +187,7 @@ async function queryErrorsAboveThreshold(ctx: {
     '    count() AS error_count,',
     '    anyLast(ExceptionType) AS exception_type,',
     '    anyLast(ExceptionMessage) AS exception_message,',
+    '    anyLast(ExceptionStacktrace) AS exception_stacktrace,',
     '    min(Timestamp) AS first_seen,',
     '    anyLast(ServiceName) AS service_name',
     'FROM otel_errors',
@@ -202,6 +207,7 @@ async function queryErrorsAboveThreshold(ctx: {
     errorCount: Number(row.error_count ?? 0),
     exceptionType: String(row.exception_type ?? ''),
     exceptionMessage: String(row.exception_message ?? ''),
+    exceptionStacktrace: String(row.exception_stacktrace ?? ''),
     firstSeen: String(row.first_seen ?? ''),
     serviceName: String(row.service_name ?? ''),
   }))
