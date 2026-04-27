@@ -128,15 +128,6 @@ function detectFormat(sql: string): string | null {
 // to guarantee read-after-write consistency (important because status
 // and assignee updates do read-before-write to preserve the other field).
 
-/** Fingerprint hashes are 32-char hex strings (FNV-1a 128-bit). */
-const FINGERPRINT_RE = /^[0-9a-f]{32}$/i
-
-function validateFingerprint(hash: string): void {
-  if (!FINGERPRINT_RE.test(hash)) {
-    throw json({ error: 'invalid fingerprint hash' }, { status: 400 })
-  }
-}
-
 interface IssueStateRow {
   project_id: string
   fingerprint_hash: string
@@ -819,8 +810,6 @@ export const api = new Spiceflow()
         const url = new URL(request.url)
         const fingerprintFilter = url.searchParams.get('fingerprintHash')
 
-        if (fingerprintFilter) validateFingerprint(fingerprintFilter)
-
         // For ClickHouse backend, add explicit ProjectId filter (no JWT row-level filtering)
         const projectFilter = dbConfig.backend === 'clickhouse' ? `ProjectId = '${params.projectId}' AND ` : ''
 
@@ -903,8 +892,6 @@ export const api = new Spiceflow()
           throw json({ error: 'no database configured' }, { status: 400 })
         }
 
-        validateFingerprint(params.fingerprintHash)
-
         const db = getDb()
         const body = await request.json()
         const now = Date.now()
@@ -958,8 +945,6 @@ export const api = new Spiceflow()
         if (!dbConfig) {
           throw json({ error: 'no database configured' }, { status: 400 })
         }
-
-        validateFingerprint(params.fingerprintHash)
 
         const body = await request.json()
         const db = getDb()

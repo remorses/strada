@@ -913,13 +913,13 @@ WHERE Timestamp >= now() - INTERVAL 7 DAY
 - **`SELECT *`** in application code. Always list columns explicitly.
 - **Unbounded queries** without LIMIT. Even `GROUP BY` queries need a LIMIT.
 - **`HAVING` for row-level filters.** Move them to WHERE.
-- **String interpolation for user input in internal queries.** Validate inputs (e.g. fingerprint hashes with a strict hex regex) before embedding in SQL that the server builds internally. See the `validateFingerprint()` pattern in `website/src/api.ts`.
+### SQL injection is not a concern
 
-### SQL injection is not a concern for the query endpoint
+ClickHouse queries are **read-only**. The Tinybird `/v0/sql` endpoint with a JWT and the ClickHouse HTTP interface on the query path cannot perform mutations. There is nothing destructive an injected SQL fragment can do; the worst case is a syntax error or reading data the JWT already scopes.
 
-The `/api/v0/projects/:projectId/query` endpoint accepts **arbitrary SQL from authenticated users** and forwards it to Tinybird or ClickHouse. This is by design; it is a SQL query bridge, not an ORM. The user is already authenticated, the JWT scopes their reads to their own ProjectId, and ClickHouse/Tinybird enforce read-only access on the query path. There is nothing to inject into because the user already controls the full SQL string.
+SQL injection only matters on the **ingestion layer** (Tinybird Events API, ClickHouse INSERT), where malformed data could corrupt the schema. But ingestion goes through structured NDJSON, not raw SQL, so there is no SQL string to inject into.
 
-SQL injection only matters for **server-built queries** where route params or user input are interpolated into SQL that the server constructs internally (e.g. issue state reads that interpolate `fingerprintHash`). Those must validate inputs before interpolation. The query endpoint does not interpolate anything; it passes the SQL through unchanged.
+Do not waste time parameterizing or escaping SQL in query paths. Simple string interpolation is fine.
 
 ## opentelemetry docs
 
