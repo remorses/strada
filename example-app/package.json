@@ -7,7 +7,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:browser-verify": "vitest run src/browser-verify.test.ts"

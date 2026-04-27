@@ -47,7 +47,7 @@
     "prepublishOnly": "pnpm run build",
     "link-local": "tsx scripts/install-local.ts",
     "cli": "tsx src/bin",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",

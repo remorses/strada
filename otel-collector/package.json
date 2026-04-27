@@ -12,7 +12,7 @@
     "deploy:prod": "wrangler deploy",
     "test": "vitest run",
     "test:integration": "vitest run src/collector-integration.test.ts",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc",
     "types": "wrangler types",
     "secrets": "sigillo run --env preview --mount .env.preview --mount-format env -- wrangler secret bulk --env preview .env.preview && sigillo run --env prod --mount .env.prod --mount-format env -- wrangler secret bulk --env=\"\" .env.prod"
   },

@@ -5,7 +5,7 @@
   "description": "AI SDK agent loop example that sends model and tool-call telemetry to Strada.",
   "scripts": {
     "start": "sigillo run -- tsx src/index.ts",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",

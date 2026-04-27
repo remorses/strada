@@ -75,7 +75,7 @@
     "build": "tsc",
     "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build",
     "test": "vitest run",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc",
     "bundle:browser": "esbuild src/browser.ts --bundle --format=esm --platform=browser --target=es2022 --conditions=browser --outfile=dist/bundle-browser.js --metafile=dist/bundle-browser-meta.json && node -e \"const m=JSON.parse(require('fs').readFileSync('dist/bundle-browser-meta.json','utf8')); const out=Object.values(m.outputs)[0]; console.log('Browser bundle:', (out.bytes/1024).toFixed(1)+'kB', '('+Object.keys(out.inputs).length+' modules)')\"",
     "bundle:node": "esbuild src/node.ts --bundle --format=esm --platform=node --target=node18 --main-fields=module,main --outfile=dist/bundle-node.js --metafile=dist/bundle-node-meta.json && node -e \"const m=JSON.parse(require('fs').readFileSync('dist/bundle-node-meta.json','utf8')); const out=Object.values(m.outputs)[0]; console.log('Node bundle:', (out.bytes/1024).toFixed(1)+'kB', '('+Object.keys(out.inputs).length+' modules)')\"",
     "bundle:check": "pnpm bundle:browser && pnpm bundle:node"

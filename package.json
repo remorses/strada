@@ -11,8 +11,8 @@
     "test": "NODE_ENV=test vitest",
     "build": "pnpm run --filter '*' build",
     "release": "pnpm run build && changeset",
-    "typecheck": "tsc -b",
-    "fix": "oxfmt --write && oxlint --fix && tsc -b",
+    "typecheck": "pnpm --recursive --if-present run typecheck",
+    "fix": "oxfmt --write && oxlint --fix && pnpm --recursive --if-present run typecheck",
     "secrets:sync": "pnpm --dir website secrets && pnpm --dir otel-collector secrets"
   },
   "dependencies": {
