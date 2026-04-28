@@ -1,6 +1,6 @@
 {
   "name": "@strada.sh/sdk",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "OTel-first Strada SDK. Sentry-like error capture and auto-instrumentation for Node.js and browsers, powered by OpenTelemetry.",
   "keywords": [
     "strada",
