@@ -1159,7 +1159,7 @@ export const api = new Spiceflow()
           throw json({ error: 'no alert destinations configured' }, { status: 400 })
         }
 
-        const { buildTestAlertEmailHtml } = await import('./alert-email.ts')
+        const { buildTestAlertEmailHtml } = await import('./alert-email.tsx')
         const orgName = rule.org?.name || 'Unknown'
         const results: Array<{ channel: string; destination: string; ok: boolean }> = []
 
@@ -1168,7 +1168,7 @@ export const api = new Spiceflow()
             if (dest.channel === 'email') {
               const html = buildTestAlertEmailHtml(orgName)
               await env.EMAIL.send({
-                from: { email: 'alerts@strada.sh', name: 'Strada' },
+                from: { email: 'alerts@updates.strada.sh', name: 'Strada' },
                 to: dest.destination,
                 subject: '[Strada] Test alert',
                 html,

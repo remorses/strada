@@ -14,7 +14,7 @@ import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
 import { env } from 'cloudflare:workers'
 import { getDb, getOrCreateProjectJwt } from './db.ts'
-import { buildAlertSubject, buildAlertEmailHtml } from './alert-email.ts'
+import { buildAlertSubject, buildAlertEmailHtml } from './alert-email.tsx'
 
 interface AlertableError {
   fingerprintHash: string
@@ -24,6 +24,7 @@ interface AlertableError {
   exceptionStacktrace: string
   firstSeen: string
   serviceName: string
+  usersImpacted: number
 }
 
 interface DbConfig {
@@ -52,10 +53,15 @@ export async function checkAlerts(): Promise<void> {
     with: { destinations: true, org: true },
   })
 
+  console.log(`Alert check: found ${rules.length} rules`)
+
   if (rules.length === 0) return
 
   for (const rule of rules) {
-    if (!rule.destinations || rule.destinations.length === 0) continue
+    if (!rule.destinations || rule.destinations.length === 0) {
+      console.log(`Alert check: rule ${rule.id} has no destinations, skipping`)
+      continue
+    }
 
     try {
       await checkOrgAlerts(rule)
@@ -80,13 +86,20 @@ async function checkOrgAlerts(rule: {
   const dbConfig = await db.query.database.findFirst({
     where: { orgId: rule.orgId },
   })
-  if (!dbConfig) return
+  if (!dbConfig) {
+    console.log(`Alert check: no database config for org ${rule.orgId}`)
+    return
+  }
 
   // Load all projects for this org
   const projects = await db.query.project.findMany({
     where: { orgId: rule.orgId },
   })
-  if (projects.length === 0) return
+  if (projects.length === 0) {
+    console.log(`Alert check: no projects for org ${rule.orgId}`)
+    return
+  }
+  console.log(`Alert check: org ${rule.orgId} has ${projects.length} projects, backend=${dbConfig.backend}`)
 
   const orgName = rule.org?.name || 'Unknown'
 
@@ -125,6 +138,8 @@ async function checkProjectAlerts(ctx: {
     windowMinutes: rule.windowMinutes,
   })
 
+  console.log(`Alert check: project ${project.slug} has ${errors.length} error groups above threshold`)
+
   if (errors.length === 0) return
 
   // Check cooldown for each fingerprint via otel_issue_state
@@ -155,6 +170,7 @@ async function checkProjectAlerts(ctx: {
       windowMinutes: rule.windowMinutes,
       firstSeen: error.firstSeen,
       serviceName: error.serviceName,
+      usersImpacted: error.usersImpacted,
     }
 
     await Promise.allSettled(
@@ -187,7 +203,8 @@ async function queryErrorsAboveThreshold(ctx: {
     '    anyLast(ExceptionMessage) AS exception_message,',
     '    anyLast(ExceptionStacktrace) AS exception_stacktrace,',
     '    min(Timestamp) AS first_seen,',
-    '    anyLast(ServiceName) AS service_name',
+    '    anyLast(ServiceName) AS service_name,',
+    "    uniqExact(Tags['user.id']) AS users_impacted",
     'FROM otel_errors',
     `WHERE Timestamp >= now() - INTERVAL ${windowMinutes} MINUTE`,
     'GROUP BY FingerprintHash',
@@ -208,6 +225,7 @@ async function queryErrorsAboveThreshold(ctx: {
     exceptionStacktrace: String(row.exception_stacktrace ?? ''),
     firstSeen: String(row.first_seen ?? ''),
     serviceName: String(row.service_name ?? ''),
+    usersImpacted: Number(row.users_impacted ?? 0),
   }))
 }
 
@@ -330,7 +348,7 @@ async function sendNotification(
 
     try {
       await env.EMAIL.send({
-        from: { email: 'alerts@strada.sh', name: 'Strada' },
+        from: { email: 'alerts@updates.strada.sh', name: 'Strada' },
         to: dest.destination,
         subject,
         html,

@@ -14,7 +14,7 @@
     "crons": ["*/5 * * * *"],
   },
   "send_email": [
-    { "name": "EMAIL" },
+    { "name": "EMAIL", "remote": true },
   ],
   "vars": {
     "STRADA_PROJECT_ID": "01KPVGTT9CJW4ZNEF414VHGRFD"
