@@ -42,6 +42,7 @@ import {
   normalizeError,
   shouldIgnoreError,
   errorToAttributes,
+  recordExceptionOnSpan,
   createStradaLogger,
   setTags,
   resetContext,
@@ -624,6 +625,9 @@ export function captureException(
   if (prepared === null) return;
 
   const attributes = errorToAttributes(prepared, opts);
+  if (opts?.handled === false) {
+    recordExceptionOnSpan(prepared, trace.getActiveSpan() ?? _currentPageviewSpan);
+  }
 
   if (_logger) {
     // Emit within pageview span context for trace correlation

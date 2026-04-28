@@ -50,6 +50,7 @@ import {
   normalizeError,
   shouldIgnoreError,
   errorToAttributes,
+  recordExceptionOnSpan,
   createStradaLogger,
   setTags,
   resetContext,
@@ -428,6 +429,9 @@ export function captureException(
   if (prepared === null) return;
 
   const attributes = errorToAttributes(prepared, opts);
+  if (opts?.handled === false) {
+    recordExceptionOnSpan(prepared);
+  }
 
   if (_logger) {
     _logger.emit({

@@ -60,6 +60,7 @@ import {
   normalizeError,
   shouldIgnoreError,
   errorToAttributes,
+  recordExceptionOnSpan,
   createStradaLogger,
   setTags,
   resetContext,
@@ -383,6 +384,9 @@ export function captureException(
 
   const attributes = errorToAttributes(prepared, opts);
   attributes[ATTR["cloudflare.outcome"]] = "exception";
+  if (opts?.handled === false) {
+    recordExceptionOnSpan(prepared);
+  }
 
   if (_logger) {
     _logger.emit({

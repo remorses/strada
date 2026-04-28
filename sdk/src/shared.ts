@@ -11,7 +11,7 @@
 
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import type { Logger as OtelLogger } from "@opentelemetry/api-logs";
-import type { Context } from "@opentelemetry/api";
+import type { Context, Span as OtelSpan } from "@opentelemetry/api";
 import type { BatchLogRecordProcessorBrowserConfig } from "@opentelemetry/sdk-logs";
 import type { PeriodicExportingMetricReaderOptions } from "@opentelemetry/sdk-metrics";
 import type { BatchSpanProcessorBrowserConfig } from "@opentelemetry/sdk-trace-base";
@@ -25,7 +25,11 @@ import {
 // Re-export OTel API primitives so users don't need @opentelemetry/api
 // ---------------------------------------------------------------------------
 
-import { propagation as _propagation } from "@opentelemetry/api";
+import {
+  propagation as _propagation,
+  trace as _trace,
+  SpanStatusCode as _SpanStatusCode,
+} from "@opentelemetry/api";
 export { trace, context, metrics, propagation, diag, SpanStatusCode, SpanKind } from "@opentelemetry/api";
 export type { Tracer, Span, SpanContext, SpanOptions, SpanAttributes, Baggage } from "@opentelemetry/api";
 export { SeverityNumber } from "@opentelemetry/api-logs";
@@ -263,6 +267,28 @@ export function errorToAttributes(
   }
 
   return attributes;
+}
+
+/**
+ * Record an escaping exception on a span using standard OTel trace semantics.
+ *
+ * Strada still emits exception logs as the source of truth, but marking the
+ * active span keeps trace-only views honest when an uncaught exception fails
+ * the operation. `recordException()` adds the standard `exception` span event;
+ * `setStatus(ERROR)` marks the span failed because OTel does not do that
+ * automatically when recording the exception event.
+ */
+export function recordExceptionOnSpan(
+  error: Error,
+  span: OtelSpan | undefined = _trace.getActiveSpan(),
+): void {
+  if (!span) return;
+
+  span.recordException(error);
+  span.setStatus({
+    code: _SpanStatusCode.ERROR,
+    message: error.message,
+  });
 }
 
 /**

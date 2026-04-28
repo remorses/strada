@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ROOT_CONTEXT, trace, propagation } from "@opentelemetry/api";
 import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import {
   normalizeError,
   shouldIgnoreError,
   errorToAttributes,
+  recordExceptionOnSpan,
   normalizeLogInput,
   applyBeforeSend,
   resolveMetricReaderOptions,
@@ -266,6 +272,48 @@ describe("errorToAttributes", () => {
     const attrs = errorToAttributes(err);
 
     expect(attrs[ATTR["user.id"]]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recordExceptionOnSpan
+// ---------------------------------------------------------------------------
+
+describe("recordExceptionOnSpan", () => {
+  it("records the exception event and marks the span as errored", async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const span = provider.getTracer("strada-test").startSpan("checkout");
+    const err = new TypeError("payment failed");
+
+    recordExceptionOnSpan(err, span);
+    span.end();
+    await provider.forceFlush();
+
+    const finished = exporter.getFinishedSpans()[0]!;
+    expect(finished.status).toMatchInlineSnapshot(`
+      {
+        "code": 2,
+        "message": "payment failed",
+      }
+    `);
+    expect(finished.events).toHaveLength(1);
+    const event = finished.events[0];
+    if (!event) throw new Error("missing exception event");
+    const attrs = event.attributes;
+    if (!attrs) throw new Error("missing exception attributes");
+    expect(event.name).toBe("exception");
+    expect(attrs[ATTR["exception.type"]]).toBe("TypeError");
+    expect(attrs[ATTR["exception.message"]]).toBe("payment failed");
+    expect(String(attrs[ATTR["exception.stacktrace"]])).toContain(
+      "TypeError: payment failed",
+    );
+  });
+
+  it("does nothing when there is no span", () => {
+    expect(() => recordExceptionOnSpan(new Error("boom"), undefined)).not.toThrow();
   });
 });
 
