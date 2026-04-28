@@ -13,7 +13,7 @@
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
 import { env } from 'cloudflare:workers'
-import { getLogger } from '@strada.sh/sdk'
+import { getLogger, flush } from '@strada.sh/sdk'
 import { getDb, getOrCreateProjectJwt } from './db.ts'
 import { buildAlertSubject, buildAlertEmailHtml } from './alert-email.tsx'
 
@@ -72,6 +72,11 @@ export async function checkAlerts(): Promise<void> {
       logger.error({ message: `alert check failed for org`, orgId: rule.orgId, error: String(err) })
     }
   }
+
+  // Flush SDK logs before returning. The cron handler wraps this in
+  // ctx.waitUntil, so the isolate stays alive until the flush completes.
+  // Without this, logs emitted near the end of the cron may be lost.
+  await flush()
 }
 
 async function checkOrgAlerts(rule: {

@@ -570,6 +570,31 @@ export default {
 
 No `flush()`, no `ctx.waitUntil()`, no special imports. The SDK auto-flushes via `waitUntil` from `cloudflare:workers` whenever telemetry is emitted. If nothing is emitted, zero HTTP requests.
 
+### Flushing in scheduled handlers and Durable Objects
+
+The auto-flush works well for HTTP request handlers. For **scheduled (cron) handlers**, **queue consumers**, and **Durable Object alarms**, logs emitted near the end of execution may not flush before the isolate terminates. Call `flush()` explicitly before returning:
+
+```ts
+import { initStrada, getLogger, flush } from "@strada.sh/sdk"
+
+export default {
+  async scheduled(controller, env, ctx) {
+    initStrada({ projectId: env.STRADA_PROJECT_ID, service: "cron" })
+    const logger = getLogger("alerts")
+
+    logger.info({ message: "cron started" })
+    await doWork()
+    logger.info({ message: "cron finished" })
+
+    // Flush before returning so ctx.waitUntil keeps the isolate alive
+    // until all buffered logs are exported
+    await flush()
+  },
+} satisfies ExportedHandler<Env>
+```
+
+Without the explicit `flush()`, the `BatchLogRecordProcessor` may still be buffering the last few log records when the handler returns and the isolate shuts down.
+
 ### Cloudflare built-in tracing (automatic instrumentation)
 
 For automatic instrumentation, use Cloudflare's built-in tracing. It instruments at the runtime level (KV, D1, Durable Objects, fetch, handler invocations) without any SDK overhead:

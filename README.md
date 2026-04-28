@@ -152,6 +152,14 @@ strada issues list -p my-app --since 24h
 # view a specific error with stacktrace
 strada issues view <fingerprint> -p my-app
 
+# browse recent logs
+strada logs -p my-app --since 1h
+strada logs -p my-app --min-level error --since 24h
+strada logs -p my-app --search "timeout" --service api
+
+# log volume by service and severity
+strada logs stats -p my-app --since 24h
+
 # run any SQL query
 strada query "SELECT count() FROM otel_errors WHERE ExceptionType = 'TypeError'" -p my-app
 
@@ -211,6 +219,8 @@ Strada is designed for the terminal. Every operation is a CLI command. No clunky
 strada query "SELECT ..."       # any ClickHouse SQL
 strada issues list -p my-app    # error groups, sorted by frequency
 strada issues view <fp>         # stacktrace, recent events, metadata
+strada logs -p my-app           # browse logs, colored one-line output
+strada logs stats -p my-app     # log volume by service and severity
 strada analytics pages          # top pages, browsers, countries
 strada analytics events         # custom events with properties
 strada projects list            # list all projects
@@ -224,6 +234,7 @@ Agents can run `strada query` with raw SQL to answer any question about your sys
 Give your agents the Strada CLI and they can:
 
 - **Monitor and auto-fix**: run `strada issues list`, identify the top error, read the stacktrace, find the bug in your codebase, open a PR
+- **Read logs to debug failures**: `strada logs -p my-app --min-level error --since 1h` to see recent errors, then `--trace-id` to follow a specific request across services
 - **Debug payment flows**: `strada query "SELECT ... FROM otel_errors WHERE ExceptionMessage LIKE '%stripe%'"` to find all errors blocking Stripe subscriptions
 - **Track ROI on bug fixes**: correlate error rates with revenue events. Did fixing that TypeError increase successful checkouts?
 - **Build status pages**: query uptime and error rates via SQL, render them however you want
