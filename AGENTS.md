@@ -22,6 +22,28 @@ all publishable packages in this repo should have name `strada` (the main cli, c
 
 The CLI uses [goke](https://github.com/remorses/goke) as the command framework. Load the `goke` skill before writing CLI commands.
 
+**Command descriptions are agent documentation.** Every CLI command should use a detailed multiline description with `string-dedent`, not a terse one-line string. The CLI `--help` output is where command-specific agent guidance should live, colocated with the command implementation. Include what the command is for, when to use it, what data it reads or mutates, and common follow-up commands.
+
+```ts
+import dedent from "string-dedent";
+
+cli
+  .command(
+    "services list",
+    dedent`
+      Find service names that are actively generating logs or traces.
+
+      Use this before filtering logs, issues, or SQL queries by ServiceName.
+      It helps discover the real service.name values present in a project and
+      shows which services are currently producing telemetry in the selected
+      time range.
+    `,
+  )
+  .action((options) => {
+    // ...
+  });
+```
+
 **Repeatable options instead of comma-separated values.** Never accept comma-separated strings for multi-value options. Use `z.array(z.string())` from zod so the user passes the flag multiple times:
 
 ```ts

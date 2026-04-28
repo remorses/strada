@@ -3,6 +3,7 @@
 // ServiceName filters are available for logs, issues, and query workflows.
 
 import { goke } from "goke";
+import dedent from "string-dedent";
 import { z } from "zod";
 import { bold, cyan, dim, red, yellow, gray } from "./colors.ts";
 import { ensureDefaultOrg, resolveProjectId } from "./projects.ts";
@@ -21,13 +22,15 @@ interface ServiceSummary {
   lastSeen: string;
 }
 
-function str(row: Record<string, unknown>, key: string): string {
+type QueryRow = Record<string, string | number | null | undefined>;
+
+function str(row: QueryRow, key: string): string {
   const value = row[key];
   if (value == null) return "";
   return String(value);
 }
 
-function num(row: Record<string, unknown>, key: string): number {
+function num(row: QueryRow, key: string): number {
   return Number(row[key] ?? 0) || 0;
 }
 
@@ -53,7 +56,17 @@ function mergeService(map: Map<string, ServiceSummary>, patch: Partial<ServiceSu
 }
 
 servicesCli
-  .command("services list", "List services seen in logs and traces")
+  .command(
+    "services list",
+    dedent`
+      Find service names that are actively generating logs or traces.
+
+      Use this before filtering logs, issues, or SQL queries by ServiceName.
+      It helps discover the real service.name values present in a project and
+      shows which services are currently producing telemetry in the selected
+      time range.
+    `,
+  )
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug (repeatable)"))
   .option("--since [time]", "Start time: duration (1h, 7d) or ISO date (default: 24h)")
   .option("--until [time]", "End time: duration (1h) or ISO date")
