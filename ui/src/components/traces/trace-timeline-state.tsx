@@ -6,7 +6,7 @@
 
 import * as React from "react"
 import type { ReactNode } from "react"
-import type { SpanNode } from "../../lib/utils"
+import type { SpanNode } from "../../lib/utils.ts"
 
 // ─── Types & constants ──────────────────────────────────────────
 
@@ -36,7 +36,7 @@ export const OVERSCAN = 5
 
 // ─── Context ────────────────────────────────────────────────────
 
-interface TraceViewContextValue {
+export interface TraceViewContextValue {
   rootSpans: SpanNode[]
   totalDurationMs: number
   traceStartTime: string
@@ -45,7 +45,7 @@ interface TraceViewContextValue {
   onSelectSpan?: (span: SpanNode) => void
 }
 
-const TraceViewContext = React.createContext<TraceViewContextValue | null>(null)
+export const TraceViewContext = React.createContext<TraceViewContextValue | null>(null)
 
 export function TraceViewProvider({
   children,
@@ -303,7 +303,7 @@ export function useTimelineGestures({
 
   const handleMouseDown = React.useCallback(
     (e: React.MouseEvent) => {
-      if ((e.target as HTMLElement).closest("[data-span-id]")) return
+      if (e.target instanceof HTMLElement && e.target.closest("[data-span-id]")) return
       isPanning.current = true
       panStart.current = { x: e.clientX, viewportStartMs: viewport.startMs, viewportEndMs: viewport.endMs }
       e.preventDefault()

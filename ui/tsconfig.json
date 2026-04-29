@@ -4,18 +4,19 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "skipLibCheck": true,
     "strict": true,
-    "noEmit": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
     "module": "esnext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "noImplicitAny": false,
-
-    "paths": {
-      "trace-view/src/*": ["./src/*"]
-    },
     "types": ["vite/client", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],

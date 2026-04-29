@@ -1,0 +1,66 @@
+{
+  "name": "@strada.sh/ui",
+  "version": "0.0.1",
+  "description": "Reusable Strada observability UI components and demos.",
+  "keywords": [
+    "strada",
+    "opentelemetry",
+    "observability",
+    "react",
+    "ui"
+  ],
+  "homepage": "https://github.com/remorses/strada",
+  "bugs": "https://github.com/remorses/strada/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remorses/strada",
+    "directory": "ui"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite dev --port 3456",
+    "build": "vite build && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node dist/rsc/index.js"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./src/globals.css",
+    "./src": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./src/*": {
+      "types": "./src/*",
+      "default": "./src/*"
+    }
+  },
+  "dependencies": {
+    "@strada.sh/sdk": "workspace:^",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "clsx": "^2.1.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "spiceflow": "1.20.0-rsc.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^5.7.3",
+    "vite": "^8.0.8"
+  }
+}

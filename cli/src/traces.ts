@@ -1,5 +1,5 @@
 // Traces CLI commands. Lists trace summaries and renders a single trace as a
-// span tree using a data shape intentionally close to trace-view's UI types.
+// span tree using a data shape intentionally close to @strada.sh/ui's trace types.
 
 import { goke } from "goke";
 import dedent from "string-dedent";
@@ -674,14 +674,14 @@ tracesCli
       Use a TraceId from \`strada traces list\` or from logs/errors. The SQL
       fetches all spans for that TraceId, then the CLI builds a SpanNode tree
       from SpanId and ParentSpanId. Use \`--json\` to print a shape designed to
-      match the trace-view timeline UI, making future code sharing simple.
+      match the @strada.sh/ui trace timeline, making future code sharing simple.
     `,
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("--attrs <count>", z.number().default(3).describe("Number of compact span attributes to show"))
   .option("-e, --expand-span <spanId>", z.array(z.string()).describe("SpanId or unique SpanId prefix to expand (repeatable)"))
-  .option("--json", "Print trace-view compatible JSON")
+  .option("--json", "Print @strada.sh/ui compatible JSON")
   .action(async (traceId, options, { console: output, process: proc }) => {
     const { project } = await resolveProject({ project: options.project || undefined, org: options.org || undefined });
     const sql = dedent`

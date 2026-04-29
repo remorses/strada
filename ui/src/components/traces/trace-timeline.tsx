@@ -7,14 +7,20 @@
 import * as React from "react"
 import * as ReactDOM from "react-dom"
 
-import { getServiceLegendColor, useContainerSize, useIsDark } from "../../lib/utils"
-import type { SpanNode } from "../../lib/utils"
-import { useTraceView, useTraceTimeline, useTimelineGestures, ROW_HEIGHT, ROW_GAP } from "./trace-timeline-state"
-import { TraceTimelineSearch, TraceTimelineTimeAxis, TraceTimelineRows, TraceTimelineConnectors, TraceTimelineTooltipContent } from "./trace-timeline-parts"
-import { TraceTimelineMinimap } from "./trace-timeline-minimap"
+import { getServiceLegendColor, useContainerSize, useIsDark } from "../../lib/utils.ts"
+import type { SpanNode } from "../../lib/utils.ts"
+import { TraceViewContext, useTraceTimeline, useTimelineGestures, ROW_HEIGHT, ROW_GAP } from "./trace-timeline-state.tsx"
+import type { TraceViewContextValue } from "./trace-timeline-state.tsx"
+import { TraceTimelineSearch, TraceTimelineTimeAxis, TraceTimelineRows, TraceTimelineConnectors, TraceTimelineTooltipContent } from "./trace-timeline-parts.tsx"
+import { TraceTimelineMinimap } from "./trace-timeline-minimap.tsx"
 
-export function TraceTimeline() {
-  const { rootSpans, totalDurationMs, traceStartTime, services, selectedSpanId, onSelectSpan } = useTraceView()
+export type TraceTimelineProps = TraceViewContextValue
+
+export function TraceTimeline(props?: TraceTimelineProps) {
+  const context = React.use(TraceViewContext)
+  const value = props ?? context
+  if (!value) throw new Error("TraceTimeline needs props or a TraceViewProvider")
+  const { rootSpans, totalDurationMs, traceStartTime, services, selectedSpanId, onSelectSpan } = value
   const isDark = useIsDark()
   const containerRef = React.useRef<HTMLDivElement>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -41,8 +47,8 @@ export function TraceTimeline() {
 
   const handleMouseMoveForTooltip = React.useCallback(
     (e: React.MouseEvent) => {
-      const target = e.target as HTMLElement
-      const barEl = target.closest("[data-span-id]") as HTMLElement | null
+      if (!(e.target instanceof HTMLElement)) return
+      const barEl = e.target.closest("[data-span-id]")
       if (barEl) {
         const spanId = barEl.getAttribute("data-span-id")
         const span = bars.find((b) => b.span.spanId === spanId)?.span ?? null

@@ -8,10 +8,10 @@ import * as React from "react"
 import {
   cn, formatDuration, getServiceBarColors,
   getServiceLegendColor, calculateSelfTime, getHttpInfo,
-} from "../../lib/utils"
-import type { SpanNode } from "../../lib/utils"
-import type { TimelineBar, ViewportState } from "./trace-timeline-state"
-import { ROW_HEIGHT, ROW_GAP, DEPTH_INDENT, TIME_AXIS_HEIGHT, OVERSCAN } from "./trace-timeline-state"
+} from "../../lib/utils.ts"
+import type { SpanNode } from "../../lib/utils.ts"
+import type { TimelineBar, ViewportState } from "./trace-timeline-state.tsx"
+import { ROW_HEIGHT, ROW_GAP, DEPTH_INDENT, TIME_AXIS_HEIGHT, OVERSCAN } from "./trace-timeline-state.tsx"
 
 // ─── Span bar ───────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ function TraceTimelineBarInner({
   const showDuration = barPx > 200
   const leftOffset = bar.depth * DEPTH_INDENT
 
-  const barStyle: React.CSSProperties = {
+  const barStyle = {
     position: "absolute",
     transform: `translateY(${bar.row * (ROW_HEIGHT + ROW_GAP)}px)`,
     left: `calc(${leftPercent}% + ${leftOffset}px)`,
@@ -50,7 +50,7 @@ function TraceTimelineBarInner({
     height: ROW_HEIGHT,
     backgroundColor: colors.bg,
     "--hover-bg": colors.hover,
-  } as React.CSSProperties
+  } satisfies React.CSSProperties & Record<"--hover-bg", string>
 
   // Text colors: white on vivid bars in both modes
   const textCls = "text-white"
@@ -166,13 +166,13 @@ export function TraceTimelineRows({
 
   const handleClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement
-      const collapseBtn = target.closest("[data-collapse-toggle]") as HTMLElement | null
+      if (!(e.target instanceof HTMLElement)) return
+      const collapseBtn = e.target.closest("[data-collapse-toggle]")
       if (collapseBtn) {
         const spanId = collapseBtn.getAttribute("data-collapse-toggle")
         if (spanId) { e.stopPropagation(); onCollapseToggle(spanId); return }
       }
-      const barEl = target.closest("[data-span-id]") as HTMLElement | null
+      const barEl = e.target.closest("[data-span-id]")
       if (barEl) {
         const spanId = barEl.getAttribute("data-span-id")
         if (spanId) onBarClick(spanId)
@@ -183,8 +183,8 @@ export function TraceTimelineRows({
 
   const handleDoubleClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement
-      const barEl = target.closest("[data-span-id]") as HTMLElement | null
+      if (!(e.target instanceof HTMLElement)) return
+      const barEl = e.target.closest("[data-span-id]")
       if (barEl) {
         const spanId = barEl.getAttribute("data-span-id")
         if (spanId) onBarDoubleClick(spanId)

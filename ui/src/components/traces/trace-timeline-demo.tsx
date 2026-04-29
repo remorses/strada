@@ -5,10 +5,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import type { SpanNode, OtelTraceRow } from "../../lib/utils"
-import { formatDuration, getServiceLegendColor, buildSpanTree } from "../../lib/utils"
-import { TraceViewProvider } from "./trace-timeline-state"
-import { TraceTimeline } from "./trace-timeline"
+import type { SpanNode, OtelTraceRow } from "../../lib/utils.ts"
+import { formatDuration, getServiceLegendColor, buildSpanTree } from "../../lib/utils.ts"
+import { TraceTimeline } from "./trace-timeline.tsx"
 
 // ─── Demo data in the OTel DB row format (PascalCase, Duration in nanoseconds) ──
 
@@ -55,7 +54,7 @@ const DEMO_ROWS: OtelTraceRow[] = [
   row("s15", "s01", "log_request",          "api-gateway",       "SPAN_KIND_INTERNAL", 312, 5),
 ]
 
-export function TraceViewDemo() {
+export function TraceTimelineDemo() {
   const { rootSpans, totalDurationMs, traceStartTime, services } = useMemo(
     () => buildSpanTree(DEMO_ROWS),
     []
@@ -66,18 +65,16 @@ export function TraceViewDemo() {
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      <TraceViewProvider
-        rootSpans={rootSpans}
-        totalDurationMs={totalDurationMs}
-        traceStartTime={traceStartTime}
-        services={services}
-        selectedSpanId={selectedSpanId}
-        onSelectSpan={(s) => setSelectedSpanId(s.spanId)}
-      >
-        <div className="h-[600px] w-full">
-          <TraceTimeline />
-        </div>
-      </TraceViewProvider>
+      <div className="h-[600px] w-full">
+        <TraceTimeline
+          rootSpans={rootSpans}
+          totalDurationMs={totalDurationMs}
+          traceStartTime={traceStartTime}
+          services={services}
+          selectedSpanId={selectedSpanId}
+          onSelectSpan={(s) => setSelectedSpanId(s.spanId)}
+        />
+      </div>
 
       {selectedSpan && (
         <div className="border border-border rounded-lg p-4 bg-card text-card-foreground flex flex-col gap-3">

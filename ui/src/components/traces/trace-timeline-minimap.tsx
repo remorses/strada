@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { getServiceLegendColor, type SpanNode } from "../../lib/utils"
-import type { ViewportState } from "./trace-timeline-state"
-import { MINIMAP_HEIGHT } from "./trace-timeline-state"
+import { getServiceLegendColor, type SpanNode } from "../../lib/utils.ts"
+import type { ViewportState } from "./trace-timeline-state.tsx"
+import { MINIMAP_HEIGHT } from "./trace-timeline-state.tsx"
 
 interface TraceTimelineMinimapProps {
   rootSpans: SpanNode[]

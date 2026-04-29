@@ -3,7 +3,7 @@
  */
 "use client"
 
-import { useIsDark } from "../../lib/utils"
+import { useIsDark } from "../../lib/utils.ts"
 
 export function ThemeToggle() {
   const isDark = useIsDark()
