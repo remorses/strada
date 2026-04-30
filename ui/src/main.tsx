@@ -23,6 +23,11 @@ const demos = [
     title: 'Charts',
     description: 'Reusable ECharts-powered timeseries charts for dashboards.',
   },
+  {
+    href: '/charts#tables',
+    title: 'Tables',
+    description: 'SQL result tables with observability formatters and hashed badges.',
+  },
 ]
 
 export const app = new Spiceflow({ tracer })

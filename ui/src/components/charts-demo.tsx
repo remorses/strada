@@ -19,6 +19,7 @@ import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 
 import { Chart, ChartLegend, TimeseriesChart } from './charts.tsx'
+import { DataTable } from './data-table.tsx'
 import { ThemeToggle } from './traces/theme-toggle.tsx'
 import { ChartPalette } from '../lib/chart-palette.ts'
 import type { StradaChartOption } from '../lib/echarts-options.ts'
@@ -51,7 +52,7 @@ export function ChartsDemoPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight">Charts</h1>
           <p className="text-sm text-muted-foreground">
-            All chart examples from the Kumo docs, adapted to Strada theme tokens.
+            Chart and table examples adapted to Strada theme tokens.
           </p>
         </div>
         <ThemeToggle />
@@ -146,6 +147,33 @@ export function ChartsDemoPage() {
 
       <ChartExample title="Custom tooltip with HTML" description="Uses dangerousHtmlFormatter and encodeHTML for trusted custom markup.">
         <Chart echarts={echarts} height={320} isDarkMode={isDark} options={data.customTooltip} />
+      </ChartExample>
+
+      <ChartExample id="tables" title="Recent logs table" description="Formats log severity, low-cardinality services, timestamps, and trace ids.">
+        <DataTable
+          data={logRows}
+          columns={[
+            { key: 'time', label: 'Time', format: 'relative-time' },
+            { key: 'level', label: 'Level', format: 'severity' },
+            { key: 'service', label: 'Service', format: 'badge' },
+            { key: 'message', label: 'Message', truncate: true, maxWidth: 520 },
+            { key: 'trace', label: 'Trace', format: 'trace-id' },
+          ]}
+        />
+      </ChartExample>
+
+      <ChartExample title="Slowest spans table" description="Uses status pills, duration formatting, and hashed badges for routes.">
+        <DataTable
+          data={spanRows}
+          columns={[
+            { key: 'service', label: 'Service', format: 'badge' },
+            { key: 'span', label: 'Span' },
+            { key: 'route', label: 'Route', format: 'badge' },
+            { key: 'duration', label: 'Duration', format: 'duration-ns', align: 'right' },
+            { key: 'status', label: 'Status', format: 'status' },
+            { key: 'trace', label: 'Trace', format: 'trace-id' },
+          ]}
+        />
       </ChartExample>
 
       <ChartExample title="Large legend items" description="Active and inactive states for dashboard summary legends.">
@@ -277,9 +305,60 @@ const pieData = [
   { value: 505, name: 'Series E' },
 ]
 
-function ChartExample({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+const logRows = [
+  {
+    time: new Date(Date.now() - 2 * 60_000).toISOString(),
+    level: 'ERROR',
+    service: 'api',
+    message: 'Checkout request failed while creating Stripe session',
+    trace: 'a76f8c39d982d9f223ad55f965b9a328',
+  },
+  {
+    time: new Date(Date.now() - 8 * 60_000).toISOString(),
+    level: 'WARN',
+    service: 'worker',
+    message: 'Retrying Tinybird insert after transient timeout',
+    trace: '8c04d13a95f6bc8192db41f0a14462cc',
+  },
+  {
+    time: new Date(Date.now() - 18 * 60_000).toISOString(),
+    level: 'INFO',
+    service: 'web',
+    message: 'User completed onboarding flow',
+    trace: '452b714e8f7147df8e1203d7d11dc98d',
+  },
+]
+
+const spanRows = [
+  {
+    service: 'api',
+    span: 'POST /api/checkout',
+    route: '/api/checkout',
+    duration: 824_000_000,
+    status: 'ERROR',
+    trace: 'a76f8c39d982d9f223ad55f965b9a328',
+  },
+  {
+    service: 'db',
+    span: 'SELECT project config',
+    route: 'database',
+    duration: 286_000_000,
+    status: 'OK',
+    trace: '73b8f60d5c6e4532a2e2d7ff423da192',
+  },
+  {
+    service: 'collector',
+    span: 'POST /v1/traces',
+    route: '/v1/traces',
+    duration: 142_000_000,
+    status: 'OK',
+    trace: 'dd0fd8c9e7e24bb2972f7e8adc143c2e',
+  },
+]
+
+function ChartExample({ id, title, description, children }: { id?: string; title: string; description: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-4 border-t border-border pt-6">
+    <section id={id} className="scroll-mt-8 flex flex-col gap-4 border-t border-border pt-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-semibold tracking-tight">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>
