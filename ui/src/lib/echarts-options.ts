@@ -5,6 +5,8 @@
 import type { EChartsOption, TooltipComponentOption } from 'echarts'
 import type * as echarts from 'echarts/core'
 
+import { resolveChartColor, type ChartColor } from './chart-palette.ts'
+
 export type SafeTooltipOption = Omit<TooltipComponentOption, 'formatter'> & {
   dangerousHtmlFormatter?: TooltipComponentOption['formatter']
 }
@@ -18,7 +20,7 @@ export type StradaChartOption = {
 export interface TimeseriesData {
   name: string
   data: [number, number][]
-  color: string
+  color?: ChartColor
 }
 
 export interface BuildTimeseriesChartOptionOptions {
@@ -92,7 +94,8 @@ export function buildTimeseriesChartOption({
         },
       } as const)
 
-  for (const item of data) {
+  for (const [index, item] of data.entries()) {
+    const color = resolveChartColor({ color: item.color, index, isDarkMode })
     const incompleteBeforePoints = incompleteBefore && type === 'line' ? item.data.filter((point) => point[0] <= incompleteBefore) : []
     const incompleteAfterPoints = incompleteAfter && type === 'line' ? item.data.filter((point) => point[0] >= incompleteAfter) : []
     const completePoints = incompleteBeforePoints.length > 0 || incompleteAfterPoints.length > 0
@@ -105,15 +108,15 @@ export function buildTimeseriesChartOption({
     const areaStyle = gradient && type === 'line'
       ? {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: colorWithOpacity(item.color, 0.4) },
-            { offset: 1, color: colorWithOpacity(item.color, 0) },
+            { offset: 0, color: colorWithOpacity(color, 0.4) },
+            { offset: 1, color: colorWithOpacity(color, 0) },
           ]),
         }
       : undefined
 
     series.push({
       data: completePoints,
-      color: item.color,
+      color,
       name: item.name,
       emphasis: { focus: 'series' },
       ...(areaStyle ? { areaStyle } : {}),
@@ -121,7 +124,7 @@ export function buildTimeseriesChartOption({
     })
 
     const incompleteSeriesConfig = {
-      color: item.color,
+      color,
       name: item.name,
       type: 'line' as const,
       lineStyle: {
@@ -267,6 +270,7 @@ function colorWithOpacity(color: string, alpha: number): string {
   let hex = color.replace(/^#/, '')
   if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]
   if (hex.length === 8) hex = hex.slice(0, 6)
+  if (!/^[\da-f]{6}$/i.test(hex)) return color
 
   const r = parseInt(hex.slice(0, 2), 16)
   const g = parseInt(hex.slice(2, 4), 16)

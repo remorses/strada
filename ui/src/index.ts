@@ -43,8 +43,8 @@ export type {
   StradaChartOption,
   TimeseriesData,
 } from "./lib/echarts-options.ts";
-export { ChartPalette } from "./lib/chart-palette.ts";
-export type { ChartSemanticColorName, ChartSequentialPaletteName } from "./lib/chart-palette.ts";
+export { chartColors, getChartColor, getDefaultChartColors, resolveChartColor } from "./lib/chart-palette.ts";
+export type { ChartColor, ChartColorToken } from "./lib/chart-palette.ts";
 export { getHashBadgeColor, hashString } from "./lib/color.ts";
 export type { HashBadgeColor } from "./lib/color.ts";
 export {

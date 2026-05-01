@@ -14,14 +14,14 @@ import type * as echarts from 'echarts/core'
 import type { Ref } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
 
-import { CHART_DARK_COLORS, CHART_LIGHT_COLORS } from '../lib/chart-palette.ts'
+import { getDefaultChartColors, resolveChartColor, type ChartColor } from '../lib/chart-palette.ts'
 import {
   buildTimeseriesChartOption,
   prepareChartOptions,
   type BuildTimeseriesChartOptionOptions,
   type StradaChartOption,
 } from '../lib/echarts-options.ts'
-import { cn } from '../lib/utils.ts'
+import { cn, useIsDark } from '../lib/utils.ts'
 
 type EChartsMouseEventParams = {
   componentType: string
@@ -94,6 +94,8 @@ export function Chart({
   height = 350,
   onEvents,
 }: ChartProps) {
+  const inferredIsDark = useIsDark()
+  const resolvedIsDark = isDarkMode ?? inferredIsDark
   const elRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
   const handlersRef = useRef<Partial<ChartEvents>>({})
@@ -105,7 +107,7 @@ export function Chart({
 
     const chart = echarts.init(
       elRef.current,
-      isDarkMode ? 'dark' : { color: isDarkMode ? CHART_DARK_COLORS : CHART_LIGHT_COLORS },
+      { color: getDefaultChartColors(resolvedIsDark) },
     )
     chartRef.current = chart
 
@@ -123,7 +125,7 @@ export function Chart({
       chartRef.current = null
       chart.dispose()
     }
-  }, [echarts, isDarkMode, ref])
+  }, [echarts, resolvedIsDark, ref])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -222,6 +224,8 @@ export function TimeseriesChart({
   ariaDescription,
   ariaEnabled,
 }: TimeseriesChartProps) {
+  const inferredIsDark = useIsDark()
+  const resolvedIsDark = isDarkMode ?? inferredIsDark
   const chartRef = useRef<echarts.ECharts | null>(null)
   const options = useMemo(() => buildTimeseriesChartOption({
     echarts,
@@ -239,7 +243,7 @@ export function TimeseriesChart({
     gradient,
     ariaDescription,
     ariaEnabled,
-    isDarkMode,
+    isDarkMode: resolvedIsDark,
   }), [
     ariaDescription,
     ariaEnabled,
@@ -247,7 +251,7 @@ export function TimeseriesChart({
     echarts,
     gradient,
     incomplete,
-    isDarkMode,
+    resolvedIsDark,
     tooltipValueFormat,
     type,
     xAxisName,
@@ -288,25 +292,27 @@ export function TimeseriesChart({
 
   return (
     <div className="relative w-full" style={{ height }}>
-      {loading && <ChartWaveLoader height={height} isDarkMode={isDarkMode} />}
-      {!loading && <Chart echarts={echarts} ref={chartRef} options={options} height={height} isDarkMode={isDarkMode} onEvents={events} />}
+      {loading && <ChartWaveLoader height={height} isDarkMode={resolvedIsDark} />}
+      {!loading && <Chart echarts={echarts} ref={chartRef} options={options} height={height} isDarkMode={resolvedIsDark} onEvents={events} />}
     </div>
   )
 }
 
 type LegendItemProps = {
   name: string
-  color: string
+  color?: ChartColor
   value: string
   unit?: string
   inactive?: boolean
 }
 
 const LargeItem = function LargeItem({ color, value, name, unit, inactive }: LegendItemProps) {
+  const isDark = useIsDark()
+  const resolvedColor = resolveChartColor({ color, index: 0, isDarkMode: isDark })
   return (
     <div className="inline-flex min-w-42 flex-col gap-2 py-2">
       <div className="flex items-center gap-2">
-        <span className={cn('inline-block size-2 rounded-full', inactive && 'opacity-50')} style={{ backgroundColor: color }} />
+        <span className={cn('inline-block size-2 rounded-full', inactive && 'opacity-50')} style={{ backgroundColor: resolvedColor }} />
         <span className={cn('text-xs', inactive && 'opacity-50')}>{name}</span>
       </div>
       <div className="flex items-baseline gap-0.5">
@@ -318,9 +324,11 @@ const LargeItem = function LargeItem({ color, value, name, unit, inactive }: Leg
 }
 
 const SmallItem = function SmallItem({ color, value, name, inactive }: LegendItemProps) {
+  const isDark = useIsDark()
+  const resolvedColor = resolveChartColor({ color, index: 0, isDarkMode: isDark })
   return (
     <div className="inline-flex items-center gap-2">
-      <span className={cn('inline-block size-2 rounded-full', inactive && 'opacity-50')} style={{ backgroundColor: color }} />
+      <span className={cn('inline-block size-2 rounded-full', inactive && 'opacity-50')} style={{ backgroundColor: resolvedColor }} />
       <span className={cn('text-xs', inactive && 'opacity-50')}>{name}</span>
       <span className={cn('text-xs font-medium', inactive && 'opacity-50')}>{value}</span>
     </div>

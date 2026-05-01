@@ -21,7 +21,6 @@ import { useMemo, useState } from 'react'
 import { Chart, ChartLegend, TimeseriesChart } from './charts.tsx'
 import { DataTable } from './data-table.tsx'
 import { ThemeToggle } from './traces/theme-toggle.tsx'
-import { ChartPalette } from '../lib/chart-palette.ts'
 import type { StradaChartOption } from '../lib/echarts-options.ts'
 import { useIsDark } from '../lib/utils.ts'
 
@@ -41,7 +40,7 @@ echarts.use([
 export function ChartsDemoPage() {
   const isDark = useIsDark()
   const [selectedRange, setSelectedRange] = useState<{ from?: number; to?: number }>({})
-  const data = useMemo(() => buildChartDemoData(isDark), [isDark])
+  const data = useMemo(() => buildChartDemoData(), [])
   const selectedRangeText = selectedRange.from && selectedRange.to
     ? `${new Date(selectedRange.from).toLocaleTimeString()} – ${new Date(selectedRange.to).toLocaleTimeString()}`
     : 'Drag across the chart to select a time range'
@@ -180,15 +179,15 @@ export function ChartsDemoPage() {
         <div className="flex flex-col gap-4">
           <h2 className="text-sm font-medium">Active state</h2>
           <div className="flex flex-wrap gap-4 divide-x divide-border">
-            <ChartLegend.LargeItem name="Requests" color={ChartPalette.semantic('neutral', isDark)} value="1,234" unit="req/s" />
-            <ChartLegend.LargeItem name="Storage" color={ChartPalette.semantic('attention', isDark)} value="56" unit="GB" />
-            <ChartLegend.LargeItem name="Warnings" color={ChartPalette.semantic('warning', isDark)} value="128" />
+            <ChartLegend.LargeItem name="Requests" color="blue" value="1,234" unit="req/s" />
+            <ChartLegend.LargeItem name="Storage" color="red" value="56" unit="GB" />
+            <ChartLegend.LargeItem name="Warnings" color="amber" value="128" />
           </div>
           <h2 className="text-sm font-medium">Inactive state</h2>
           <div className="flex flex-wrap gap-4 divide-x divide-border">
-            <ChartLegend.LargeItem inactive name="Requests" color={ChartPalette.semantic('neutral', isDark)} value="1,234" unit="req/s" />
-            <ChartLegend.LargeItem inactive name="Storage" color={ChartPalette.semantic('attention', isDark)} value="56" unit="GB" />
-            <ChartLegend.LargeItem inactive name="Warnings" color={ChartPalette.semantic('warning', isDark)} value="128" />
+            <ChartLegend.LargeItem inactive name="Requests" color="blue" value="1,234" unit="req/s" />
+            <ChartLegend.LargeItem inactive name="Storage" color="red" value="56" unit="GB" />
+            <ChartLegend.LargeItem inactive name="Warnings" color="amber" value="128" />
           </div>
         </div>
       </ChartExample>
@@ -197,15 +196,15 @@ export function ChartsDemoPage() {
         <div className="flex flex-col gap-4">
           <h2 className="text-sm font-medium">Active state</h2>
           <div className="flex flex-wrap gap-4">
-            <ChartLegend.SmallItem name="Requests" color={ChartPalette.semantic('neutral', isDark)} value="1,234" />
-            <ChartLegend.SmallItem name="Storage" color={ChartPalette.semantic('attention', isDark)} value="56" />
-            <ChartLegend.SmallItem name="Warnings" color={ChartPalette.semantic('warning', isDark)} value="128" />
+            <ChartLegend.SmallItem name="Requests" color="blue" value="1,234" />
+            <ChartLegend.SmallItem name="Storage" color="red" value="56" />
+            <ChartLegend.SmallItem name="Warnings" color="amber" value="128" />
           </div>
           <h2 className="text-sm font-medium">Inactive state</h2>
           <div className="flex flex-wrap gap-4">
-            <ChartLegend.SmallItem inactive name="Requests" color={ChartPalette.semantic('neutral', isDark)} value="1,234" />
-            <ChartLegend.SmallItem inactive name="Storage" color={ChartPalette.semantic('attention', isDark)} value="56" />
-            <ChartLegend.SmallItem inactive name="Warnings" color={ChartPalette.semantic('warning', isDark)} value="128" />
+            <ChartLegend.SmallItem inactive name="Requests" color="blue" value="1,234" />
+            <ChartLegend.SmallItem inactive name="Storage" color="red" value="56" />
+            <ChartLegend.SmallItem inactive name="Warnings" color="amber" value="128" />
           </div>
         </div>
       </ChartExample>
@@ -213,7 +212,7 @@ export function ChartsDemoPage() {
   )
 }
 
-function buildChartDemoData(isDark: boolean) {
+function buildChartDemoData() {
   const now = Date.UTC(2026, 0, 1, 12, 0, 0)
   const timestamps = Array.from({ length: 50 }, (_, index) => now - (49 - index) * 60_000)
   const point = (timestamp: number, value: number): [number, number] => [timestamp, value]
@@ -230,12 +229,11 @@ function buildChartDemoData(isDark: boolean) {
   const basicLine = [
     {
       name: 'Requests',
-      color: ChartPalette.semantic('neutral', isDark),
       data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1 }),
     },
     {
       name: 'Errors',
-      color: ChartPalette.semantic('attention', isDark),
+      color: 'red',
       data: buildSeriesData({ seed: 1, count: 50, stepMs: 60_000, scale: 0.3 }),
     },
   ]
@@ -243,7 +241,7 @@ function buildChartDemoData(isDark: boolean) {
   const incompleteSeries = [
     {
       name: 'Bandwidth',
-      color: ChartPalette.categorical(0, isDark),
+      color: 'blue',
       data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1 }),
     },
   ]
@@ -251,7 +249,7 @@ function buildChartDemoData(isDark: boolean) {
   return {
     basicLine,
     customAxis: [
-      { name: 'Requests', color: ChartPalette.semantic('neutral', isDark), data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1000 }) },
+      { name: 'Requests', data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1000 }) },
     ],
     gradient: basicLine,
     incomplete: {
@@ -259,18 +257,28 @@ function buildChartDemoData(isDark: boolean) {
       after: incompleteSeries[0].data.at(-5)?.[0],
     },
     rangeSelection: {
-      series: [{ name: 'CPU Usage', color: ChartPalette.categorical(0, isDark), data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1 }) }],
+      series: [{ name: 'CPU Usage', color: 'blue', data: buildSeriesData({ seed: 0, count: 50, stepMs: 60_000, scale: 1 }) }],
     },
     bar: [
       {
-        name: 'Requests where age > 10',
-        color: ChartPalette.semantic('neutral', isDark),
+        name: 'Stopper',
+        color: 'red',
         data: timestamps.slice(-20).map((timestamp, index) => point(timestamp, 60 + (index % 5) * 11)),
       },
       {
-        name: 'Errors',
-        color: ChartPalette.semantic('attention', isDark),
+        name: 'High',
+        color: 'rose',
         data: timestamps.slice(-20).map((timestamp, index) => point(timestamp, 20 + Math.cos(index / 2) * 8)),
+      },
+      {
+        name: 'Middle',
+        color: 'amber',
+        data: timestamps.slice(-20).map((timestamp, index) => point(timestamp, 10 + (index % 4) * 5)),
+      },
+      {
+        name: 'Low',
+        color: 'black',
+        data: timestamps.slice(-20).map((timestamp, index) => point(timestamp, index % 6 === 0 ? 12 : 0)),
       },
     ],
     pie: {
@@ -368,7 +376,7 @@ function ChartExample({ id, title, description, children }: { id?: string; title
   )
 }
 
-function SmallLegend({ data }: { data: Array<{ name: string; color: string; data: [number, number][] }> }) {
+function SmallLegend({ data }: { data: Array<{ name: string; color?: string; data: [number, number][] }> }) {
   return (
     <div className="flex flex-wrap items-center gap-4 border-b border-border pb-3">
       {data.map((series) => (
@@ -378,7 +386,7 @@ function SmallLegend({ data }: { data: Array<{ name: string; color: string; data
   )
 }
 
-function LargeLegend({ data, unit }: { data: Array<{ name: string; color: string; data: [number, number][] }>; unit?: string }) {
+function LargeLegend({ data, unit }: { data: Array<{ name: string; color?: string; data: [number, number][] }>; unit?: string }) {
   return (
     <div className="flex flex-wrap gap-4 border-b border-border pb-3">
       {data.map((series) => (

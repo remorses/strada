@@ -19,7 +19,7 @@ import {
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 
-import { CHART_DARK_COLORS, CHART_LIGHT_COLORS, ChartPalette } from '../src/lib/chart-palette.ts'
+import { getDefaultChartColors } from '../src/lib/chart-palette.ts'
 import { buildTimeseriesChartOption, prepareChartOptions, type TimeseriesData } from '../src/lib/echarts-options.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,7 +47,7 @@ const isDarkMode = true
 console.log(`Creating ${width}x${height} canvas`)
 const canvas = createCanvas(width, height)
 // @ts-expect-error @napi-rs/canvas implements the browser canvas methods ECharts uses in Node.
-const chart = echarts.init(canvas, { color: isDarkMode ? CHART_DARK_COLORS : CHART_LIGHT_COLORS }, {
+const chart = echarts.init(canvas, { color: getDefaultChartColors(isDarkMode) }, {
   renderer: 'canvas',
   devicePixelRatio: 2,
   width,
@@ -58,7 +58,7 @@ try {
   console.log('Building shared timeseries chart option')
   const options = buildTimeseriesChartOption({
     echarts,
-    data: buildExampleData(isDarkMode),
+    data: buildExampleData(),
     gradient: true,
     isDarkMode,
     colorMode: 'static',
@@ -103,7 +103,7 @@ function installCanvasGlobals() {
   })
 }
 
-function buildExampleData(isDark: boolean): TimeseriesData[] {
+function buildExampleData(): TimeseriesData[] {
   const start = Date.UTC(2026, 0, 1, 12, 0, 0)
   const timestamps = Array.from({ length: 36 }, (_, index) => start + index * 60_000)
   const point = (timestamp: number, value: number): [number, number] => [timestamp, value]
@@ -111,12 +111,12 @@ function buildExampleData(isDark: boolean): TimeseriesData[] {
   return [
     {
       name: 'Requests',
-      color: ChartPalette.semantic('neutral', isDark),
+      color: 'blue',
       data: timestamps.map((timestamp, index) => point(timestamp, 120 + Math.sin(index / 3) * 42 + index * 2.5)),
     },
     {
       name: 'Errors',
-      color: ChartPalette.semantic('attention', isDark),
+      color: 'red',
       data: timestamps.map((timestamp, index) => point(timestamp, 8 + Math.cos(index / 2) * 4)),
     },
   ]

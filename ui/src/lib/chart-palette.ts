@@ -1,86 +1,63 @@
 /**
- * Chart color utilities copied from Cloudflare Kumo's MIT-licensed chart palette
- * and adapted for Strada UI. Provides semantic, categorical, and sequential colors.
- * Portions Copyright (c) 2026 Cloudflare, Inc. SPDX-License-Identifier: MIT.
- * Original source: https://github.com/cloudflare/kumo/blob/main/packages/kumo/src/components/chart/Color.ts
+ * Simple chart color tokens for agent-generated charts.
+ * Agents can pass these names, omit colors for defaults, or pass any CSS color string.
  */
 
-const CHART_CATEGORICAL_LIGHT_COLORS = {
-  blue: '#4290f0',
-  yellow: '#f5b647',
-  pink: '#e8649d',
-  purple: '#8d58ee',
-  teal: '#50c3b6',
-  orange: '#d37536',
+export const chartColors = {
+  red: { light: '#e11624', dark: '#ff4d57' },
+  rose: { light: '#ff3f4c', dark: '#ff6972' },
+  amber: { light: '#f6a313', dark: '#ffbd45' },
+  orange: { light: '#d37536', dark: '#e08b4d' },
+  green: { light: '#00a63e', dark: '#31c76a' },
+  blue: { light: '#4290f0', dark: '#6aa8ff' },
+  purple: { light: '#8d58ee', dark: '#a67cff' },
+  teal: { light: '#50c3b6', dark: '#6fd6cc' },
+  gray: { light: '#7b818a', dark: '#a4a8ae' },
+  black: { light: '#17181c', dark: '#d8dadd' },
 } as const
 
-const CHART_CATEGORICAL_DARK_COLORS = {
-  blue: '#4290f0',
-  yellow: '#eeb720',
-  pink: '#e8649d',
-  purple: '#8d58ee',
-  teal: '#50c3b6',
-  orange: '#d37536',
-} as const
+export type ChartColorToken =
+  | 'red'
+  | 'rose'
+  | 'amber'
+  | 'orange'
+  | 'green'
+  | 'blue'
+  | 'purple'
+  | 'teal'
+  | 'gray'
+  | 'black'
+export type ChartColor = ChartColorToken | (string & {})
 
-const CHART_SEMANTIC_LIGHT_COLORS = {
-  attention: '#fc574a',
-  warning: '#f8a054',
-  success: '#00a63e',
-  neutral: '#b9d6ff',
-  disabled: '#cbcbcb',
-  skeleton: '#dddddd',
-} as const
+const defaultChartColorTokens = ['blue', 'amber', 'rose', 'purple', 'teal', 'orange', 'green', 'gray'] as const
 
-const CHART_SEMANTIC_DARK_COLORS = {
-  attention: '#fc574a',
-  warning: '#f8a054',
-  success: '#00a63e',
-  neutral: '#8ec5ff',
-  disabled: '#878787',
-  skeleton: '#5c5c5c',
-} as const
+export function getChartColor(color: ChartColorToken, isDarkMode = false): string {
+  return chartColors[color][isDarkMode ? 'dark' : 'light']
+}
 
-const SEQUENTIAL_LIGHT = {
-  blues: ['#e1eaf4', '#8ebcf6', '#4290f0', '#0e58b4', '#03254f'],
-} as const
+export function resolveChartColor({ color, index, isDarkMode = false }: { color?: ChartColor; index: number; isDarkMode?: boolean }): string {
+  const token = color || defaultChartColorTokens[index % defaultChartColorTokens.length]
+  const chartToken = toChartColorToken(token)
+  if (chartToken) return getChartColor(chartToken, isDarkMode)
+  return token
+}
 
-const SEQUENTIAL_DARK = {
-  blues: ['#03254f', '#0e58b4', '#4290f0', '#a6bfdd', '#e1eaf4'],
-} as const
+export function getDefaultChartColors(isDarkMode = false): string[] {
+  return defaultChartColorTokens.map((color) => getChartColor(color, isDarkMode))
+}
 
-export type ChartSemanticColorName = keyof typeof CHART_SEMANTIC_LIGHT_COLORS
-export type ChartSequentialPaletteName = keyof typeof SEQUENTIAL_LIGHT
-
-export const CHART_LIGHT_COLORS = [
-  CHART_CATEGORICAL_LIGHT_COLORS.blue,
-  CHART_CATEGORICAL_LIGHT_COLORS.yellow,
-  CHART_CATEGORICAL_LIGHT_COLORS.pink,
-  CHART_CATEGORICAL_LIGHT_COLORS.purple,
-  CHART_CATEGORICAL_LIGHT_COLORS.teal,
-  CHART_CATEGORICAL_LIGHT_COLORS.orange,
-]
-
-export const CHART_DARK_COLORS = [
-  CHART_CATEGORICAL_DARK_COLORS.blue,
-  CHART_CATEGORICAL_DARK_COLORS.yellow,
-  CHART_CATEGORICAL_DARK_COLORS.pink,
-  CHART_CATEGORICAL_DARK_COLORS.purple,
-  CHART_CATEGORICAL_DARK_COLORS.teal,
-  CHART_CATEGORICAL_DARK_COLORS.orange,
-]
-
-export const ChartPalette = {
-  semantic(name: ChartSemanticColorName, isDarkMode = false): string {
-    return isDarkMode ? CHART_SEMANTIC_DARK_COLORS[name] : CHART_SEMANTIC_LIGHT_COLORS[name]
-  },
-
-  categorical(index: number, isDarkMode = false): string {
-    const colors = isDarkMode ? CHART_DARK_COLORS : CHART_LIGHT_COLORS
-    return colors[index % colors.length]
-  },
-
-  sequential(palette: ChartSequentialPaletteName, isDarkMode = false): string[] {
-    return [...(isDarkMode ? SEQUENTIAL_DARK[palette] : SEQUENTIAL_LIGHT[palette])]
-  },
+function toChartColorToken(value: string): ChartColorToken | undefined {
+  switch (value) {
+    case 'red': return 'red'
+    case 'rose': return 'rose'
+    case 'amber': return 'amber'
+    case 'orange': return 'orange'
+    case 'green': return 'green'
+    case 'blue': return 'blue'
+    case 'purple': return 'purple'
+    case 'teal': return 'teal'
+    case 'gray': return 'gray'
+    case 'black': return 'black'
+    default: return undefined
+  }
 }
