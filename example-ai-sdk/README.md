@@ -94,11 +94,14 @@ strada projects create example-app
 ```
 
 Store the secrets in Sigillo. `STRADA_PROJECT_ID` may already exist for this repo.
+`strada projects create example-app` prints a server-side token once. If you need another token,
+run `strada tokens create example-ai-sdk`.
 
 ```bash
 sigillo setup
 sigillo secrets set OPENAI_API_KEY "sk-..." -c dev
 sigillo secrets set STRADA_PROJECT_ID "01K..." -c dev
+sigillo secrets set STRADA_TOKEN "str_..." -c dev
 ```
 
 Run the example:
@@ -131,6 +134,7 @@ import { z } from 'zod'
 
 initStrada({
   projectId: process.env.STRADA_PROJECT_ID!,
+  token: process.env.STRADA_TOKEN!,
   service: 'my-ai-agent',
 })
 
@@ -248,9 +252,10 @@ LIMIT 20
 │ Sigillo secrets │
 └───────┬─────────┘
         ├──────────▶ OPENAI_API_KEY
-        └──────────▶ STRADA_PROJECT_ID
-                    │
-                    ▼
+        ├──────────▶ STRADA_PROJECT_ID
+        └──────────▶ STRADA_TOKEN
+                   │
+                   ▼
 pnpm start ──▶ sigillo run ──▶ src/index.ts
                                    │
                                    ├──▶ initStrada()

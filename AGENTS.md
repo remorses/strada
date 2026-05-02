@@ -6,7 +6,7 @@ This repo uses **pnpm** as its package manager. Always use `pnpm` (not bun/npm/y
 
 Open-source OpenTelemetry observability platform. Reimplements the core value of Sentry (error tracking, tracing, logs, metrics) based on the OpenTelemetry standard instead of proprietary bloated SDKs. Users send OTel data via standard SDKs, Strada stores it in their ClickHouse database (Tinybird as first-class support), and they query it with SQL.
 
-Each user gets their own ClickHouse database. There are no shared tenants. Within a database, data is partitioned by **project** (`ProjectId`). A user can have multiple projects (e.g. "frontend", "api", "worker") each sending data to their own ingest endpoint. Projects get scoped tokens for security.
+Each user gets their own ClickHouse database. There are no shared tenants. Within a database, data is partitioned by **project** (`ProjectId`). A user can have multiple projects (e.g. "frontend", "api", "worker") each sending data to their own ingest endpoint. Server-side ingest uses org-wide tokens with the `ingest` scope. Browser ingest intentionally omits tokens and is rate limited.
 
 Strada is a Cloudflare-based infrastructure that wraps the user's database and handles: authentication, team invites, ingestion, a UI for browsing logs/errors/spans, email alerts, token generation, and a CLI to query the data.
 
@@ -136,7 +136,7 @@ Four packages in a pnpm monorepo, sharing a single D1 database:
 
 `website/` is **multi-tenant**. Treat every org, project, database config, token, and query result as tenant-scoped.
 
-- Never leak another org's database credentials, project tokens, Tinybird JWTs, ClickHouse config, or query results.
+- Never leak another org's database credentials, org tokens, Tinybird JWTs, ClickHouse config, or query results.
 - Never return tenant resource existence to users outside that org. Prefer tenant-scoped lookups that return not found.
 - Membership is not enough for dangerous mutations. Database config changes, migrations, and token/project destructive actions should require org admin access.
 - Query paths must enforce at least **org-scoped** reads at the backend layer. Use **project-scoped** enforcement when the backend supports it, like Tinybird JWT filters.
@@ -161,8 +161,10 @@ otel-collector
   |
   | 1. Extract projectId from hostname
   | 2. Query D1: project + database JOIN
-  | 3. Create backend (Tinybird or ClickHouse)
-  | 4. Transform OTLP → NDJSON
+  | 3. Validate org token when Authorization is present
+  | 4. Rate limit anonymous browser ingest when Authorization is absent
+  | 5. Create backend (Tinybird or ClickHouse)
+  | 6. Transform OTLP → NDJSON
   v
 Tinybird Events API  or  ClickHouse HTTP Interface
 ```
@@ -177,7 +179,9 @@ The ClickHouse schema (`clickhouse.sql`) has `ProjectId` as the first column in 
 
 ### Project isolation
 
-Project identity comes from the **hostname**: `{projectId}-ingest.strada.sh`. The project ID is a ULID from the `project` table in D1, globally unique. The collector extracts it with a regex in `get-project-id.ts`, then queries D1 for the project's database credentials. Unknown project IDs are rejected with 404.
+Project identity comes from the **hostname**: `{projectId}-ingest.strada.sh`. The project ID is a ULID from the `project` table in D1, globally unique. The collector extracts it with a regex in `get-project-id.ts`, then queries D1 for the project's database credentials and org ID. Unknown project IDs are rejected with 404.
+
+Server SDKs should send an org-wide token with `Authorization: Bearer <token>`. The SDK option is `initStrada({ token: process.env.STRADA_TOKEN })`. Tokens are shown once by `strada projects create <slug>` and can be created later with `strada tokens create <name>`. Browser SDKs should omit `token`; anonymous browser ingest is rate limited by the collector's Cloudflare Rate Limiting binding.
 
 ### D1 database (shared)
 
@@ -753,17 +757,18 @@ Run from the `otel-collector/` directory.
 
 `example-app/` is a Spiceflow app with an integration test suite that sends real OTel telemetry (traces, logs, metrics, errors) through the full pipeline: SDK → collector → Tinybird/ClickHouse. The tests exercise different error types, custom events, and spans so the data can later be queried via the CLI (`strada issues list`, `strada issues view`, `strada query`).
 
-Run the tests with the project ID and ingest endpoint as env vars:
+Run the tests with the project ID, ingest endpoint, and server-side token as env vars:
 
 ```bash
 STRADA_PROJECT_ID=01KPVGTT9CJW4ZNEF414VHGRFD \
 STRADA_ENDPOINT=https://01KPVGTT9CJW4ZNEF414VHGRFD-ingest.strada.sh \
+STRADA_TOKEN=str_... \
 pnpm vitest run
 ```
 
 Run from the `example-app/` directory. Tests skip automatically when env vars are missing.
 
-Get the project ID and endpoint from `strada projects list` (the endpoint is `https://{projectId}-ingest.strada.sh`).
+Get the project ID, endpoint, and initial token from `strada projects create <slug>`. If the token was lost, create another one with `strada tokens create <name>`. The endpoint is `https://{projectId}-ingest.strada.sh`.
 
 To test new CLI features or validate the ingest pipeline, add more routes and test cases to `example-app/src/index.test.ts`. Each route should emit different OTel signals (traces, logs, errors with various exception types, custom events). After the tests run and data propagates to Tinybird, query it with the CLI:
 
@@ -862,6 +867,7 @@ bunx tuistory -s collector-tail wait "/Connected/i" --timeout 15000
 # Generate traffic (e.g. run example-app tests)
 STRADA_PROJECT_ID=01KPVGTT9CJW4ZNEF414VHGRFD \
 STRADA_ENDPOINT=https://01KPVGTT9CJW4ZNEF414VHGRFD-ingest.strada.sh \
+STRADA_TOKEN=str_... \
 pnpm vitest run  # run from example-app/
 
 # Read captured logs

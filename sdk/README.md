@@ -12,6 +12,7 @@ import { initStrada, captureException } from "@strada.sh/sdk"
 initStrada({
   service: "api",
   projectId: "01JTHG5M7XPQR8KNCZ0W4D", // TODO: replace with your project id, get one with `strada projects create`
+  token: process.env.STRADA_TOKEN, // Server-side only. Omit this in browser apps.
   environment: "production",
   version: "1.0.0",
   enabled: !import.meta.hot,
@@ -38,6 +39,7 @@ import { initStrada, trace, logs, metrics, SeverityNumber } from "@strada.sh/sdk
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  token: process.env.STRADA_TOKEN,
   service: "worker",
 })
 
@@ -72,6 +74,7 @@ export default defineConfig({
 ```
 
 Then initialize the browser SDK normally. You do **not** need to pass release fields manually unless you want to override the detected values.
+Do not pass `token` in browser apps. Browser ingest is anonymous and rate limited because any browser token would be public.
 
 ```ts
 import { initStrada } from "@strada.sh/sdk"
@@ -595,7 +598,7 @@ import { initStrada, captureException } from "@strada.sh/sdk"
 
 export default {
   fetch(request, env) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, service: "api" })
+    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "api" })
 
     try {
       return handleRequest(request)
@@ -616,7 +619,7 @@ import { initStrada, trace, logs, SeverityNumber } from "@strada.sh/sdk"
 
 export default {
   fetch(request, env) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, service: "api" })
+    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "api" })
 
     const tracer = trace.getTracer("checkout")
     return tracer.startActiveSpan("process-order", async (span) => {
@@ -640,7 +643,7 @@ import { initStrada, getLogger, flush } from "@strada.sh/sdk"
 
 export default {
   async scheduled(controller, env, ctx) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, service: "cron" })
+    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "cron" })
     const logger = getLogger("alerts")
 
     logger.info({ message: "cron started" })

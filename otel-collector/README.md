@@ -39,10 +39,14 @@ import { Resource } from "@opentelemetry/resources";
 import { SeverityNumber, logs } from "@opentelemetry/api-logs";
 
 // ── Configuration ──────────────────────────────────────────────────────────
-// Replace with your Strada ingest URL.
+// Replace with your Strada ingest URL and server-side token.
+// Get both from `strada projects create <slug>` or create another token with
+// `strada tokens create production-server`.
 // Each project gets a subdomain: {project}-ingest.strada.sh
 // Self-hosted: use your own domain, e.g. https://ingest.mycompany.com
 const STRADA_URL = "https://acme-ingest.strada.sh";
+const STRADA_TOKEN = process.env.STRADA_TOKEN!;
+const headers = { Authorization: `Bearer ${STRADA_TOKEN}` };
 
 const resource = new Resource({
   "service.name": "my-api", // groups data under this service in the UI
@@ -53,6 +57,7 @@ const resource = new Resource({
 // ── Log exporter (used for both logs and error capture) ────────────────────
 const logExporter = new OTLPLogExporter({
   url: `${STRADA_URL}/v1/logs`,
+  headers,
 });
 
 const loggerProvider = new LoggerProvider({ resource });
@@ -68,10 +73,12 @@ const sdk = new NodeSDK({
   resource,
   traceExporter: new OTLPTraceExporter({
     url: `${STRADA_URL}/v1/traces`,
+    headers,
   }),
   metricReader: new PeriodicExportingMetricReader({
     exporter: new OTLPMetricExporter({
       url: `${STRADA_URL}/v1/metrics`,
+      headers,
     }),
     exportIntervalMillis: 10_000,
   }),
@@ -226,6 +233,9 @@ import { getWebAutoInstrumentations } from "@opentelemetry/auto-instrumentations
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 
 const STRADA_URL = "https://acme-ingest.strada.sh";
+
+// Browser instrumentation intentionally does not send Authorization headers.
+// Browser ingest is anonymous and rate limited because browser secrets are public.
 
 const resource = new Resource({
   "service.name": "my-web-app",

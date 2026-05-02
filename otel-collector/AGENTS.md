@@ -31,7 +31,9 @@ Project ID is extracted from the request hostname. See the root `AGENTS.md` for 
 
 ## Auth
 
-No auth on writes. The hostname IS the project identity (like Sentry's DSN). Security is enforced on reads via Tinybird JWT (or ClickHouse auth for self-hosted), not on writes. If spam becomes a problem, add Cloudflare rate limiting per IP.
+Server-side writes authenticate with an org-wide token: `Authorization: Bearer <token>`. The token must match the resolved project's org and have `scope = 'ingest'`. Invalid tokens return 401.
+
+Browser writes intentionally omit auth because browser secrets are public. Anonymous browser ingest is rate limited with Cloudflare's Rate Limiting binding, keyed by project ID and client IP.
 
 ## Transform pipeline
 

@@ -27,7 +27,7 @@ npm install @strada.sh/sdk
 ```ts
 import { initStrada, captureException, track } from "@strada.sh/sdk"
 
-initStrada({ projectId: "01JTHG...", service: "api" })
+initStrada({ projectId: "01JTHG...", token: process.env.STRADA_TOKEN, service: "api" })
 
 // errors, traces, logs, metrics, custom events
 // all flow through standard OpenTelemetry to your database
@@ -111,7 +111,7 @@ strada database create
 
 ```bash
 strada projects create my-app
-# Returns a project ID and ingest endpoint
+# Returns a project ID, ingest endpoint, and a server-side token
 
 strada setup --project my-app
 # Saves this folder's default org/project in ~/.strada/config.json
@@ -152,11 +152,17 @@ The mapping is stored outside your repo in `~/.strada/config.json`, not committe
 
 **3. Send telemetry**
 
+`strada projects create` prints a **token** once. Use that token in trusted server runtimes like
+Node.js, Vercel, and Cloudflare Workers. If you need another one later, run
+`strada tokens create production-server`. Browser apps should omit `token`; browser ingest is
+anonymous and rate limited because browser secrets are public.
+
 ```ts
 import { initStrada, captureException, track, trace } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  token: process.env.STRADA_TOKEN,
   service: "api",
   environment: "production",
   version: "1.2.0",
