@@ -18,8 +18,11 @@ import {
   Database,
   Zap,
   ArrowRight,
+  Send,
+  MessageSquare,
   ChevronDown,
   ChevronRight,
+  CircleDot,
   type LucideIcon,
 } from "lucide-react"
 
@@ -42,38 +45,55 @@ function getSpanIcon(span: SpanNode): LucideIcon {
   const kind = span.spanKind.toLowerCase()
   const attrs = span.spanAttributes
 
-  // Pageview / navigation spans
+  // Database spans — check attributes first regardless of kind
+  if (
+    attrs["db.system"] ||
+    name.includes("select ") ||
+    name.includes("insert ") ||
+    name.includes("update ") ||
+    name.includes("delete ") ||
+    name.includes("db.query") ||
+    name.startsWith("d1:") ||
+    name.startsWith("kv:")
+  ) {
+    return Database
+  }
+
+  // Messaging / event producers
+  if (
+    kind.includes("producer") ||
+    attrs["messaging.system"] ||
+    name.includes(" send") ||
+    name.includes(" publish")
+  ) {
+    return Send
+  }
+
+  // Messaging consumers
+  if (kind.includes("consumer")) return MessageSquare
+
+  // Pageview / navigation / server routes with http.route
   if (
     name.includes("pageview") ||
     name.includes("page_view") ||
     name.includes("navigation") ||
-    attrs["http.route"]?.startsWith("/") && kind.includes("server")
+    (attrs["http.route"]?.startsWith("/") && kind.includes("server"))
   ) {
     return Eye
   }
 
-  // Database spans
-  if (
-    kind.includes("client") && (
-      name.includes("select") ||
-      name.includes("insert") ||
-      name.includes("update") ||
-      name.includes("delete") ||
-      name.includes("db.query") ||
-      attrs["db.system"]
-    )
-  ) {
-    return Database
-  }
+  // gRPC calls
+  if (attrs["rpc.system"]) return Globe
 
   // External HTTP calls
   if (kind.includes("client")) return Globe
   // Server-side handlers
   if (kind.includes("server")) return Server
-  // Producer / consumer / messaging
-  if (kind.includes("producer") || kind.includes("consumer")) return ArrowRight
-  // Internal spans
-  return Zap
+  // Known internal spans
+  if (kind.includes("internal")) return Zap
+
+  // Fallback for UNSPECIFIED or empty kind
+  return CircleDot
 }
 
 // ─── Count all descendants ──────────────────────────────────────
@@ -91,15 +111,17 @@ function countDescendants(span: SpanNode): number {
 function SpanRow({
   span,
   isFirst,
+  defaultExpanded,
   selectedSpanId,
   onSelectSpan,
 }: {
   span: SpanNode
   isFirst: boolean
+  defaultExpanded?: boolean
   selectedSpanId?: string
   onSelectSpan?: (span: SpanNode) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
   const hasChildren = span.children.length > 0
   const Icon = getSpanIcon(span)
   const isSelected = selectedSpanId === span.spanId
@@ -204,6 +226,7 @@ export function TraceActivityLog({
           key={span.spanId}
           span={span}
           isFirst={i === 0}
+          defaultExpanded
           selectedSpanId={selectedSpanId}
           onSelectSpan={onSelectSpan}
         />
