@@ -83,14 +83,21 @@ initStrada({
 })
 ```
 
-The plugin uses existing platform variables when present, then falls back to local git for the commit and branch during local builds.
+The plugin uses existing platform variables when present, then falls back to local git for the commit and branch during local builds. If the platform does not provide a deployment id, Strada uses the commit SHA as `deployment.id` so every deployment still has a stable identifier.
 
 | Metadata | Platform env vars | Standard OTel resource attribute |
 | -------- | ----------------- | -------------------------------- |
 | Release/version | `STRADA_RELEASE_VERSION`, `STRADA_RELEASE`, `SENTRY_RELEASE`, `npm_package_version` | `service.version` |
 | Commit SHA | `VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, `CF_PAGES_COMMIT_SHA`, `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA` | `vcs.ref.head.revision` |
-| Branch/ref | `VERCEL_GIT_COMMIT_REF`, `RENDER_GIT_BRANCH`, `CF_PAGES_BRANCH`, `WORKERS_CI_BRANCH`, `GITHUB_REF_NAME` | `vcs.ref.head.name` |
-| Deployment id | `VERCEL_DEPLOYMENT_ID`, `WORKERS_CI_BUILD_UUID`, `RENDER_INSTANCE_ID`, `FLY_MACHINE_VERSION` | `deployment.id` |
+| Branch/ref | `VERCEL_GIT_COMMIT_REF`, `RENDER_GIT_BRANCH`, `CF_PAGES_BRANCH`, `WORKERS_CI_BRANCH`, `GITHUB_HEAD_REF`, `GITHUB_REF_NAME` | `vcs.ref.head.name` |
+| Deployment id | `VERCEL_DEPLOYMENT_ID`, `WORKERS_CI_BUILD_UUID`, `RENDER_INSTANCE_ID`, `FLY_MACHINE_VERSION`, `GITHUB_RUN_ID`, otherwise commit SHA | `deployment.id` |
+
+GitHub Actions sets `GITHUB_SHA`, `GITHUB_HEAD_REF`, `GITHUB_REF_NAME`, and `GITHUB_RUN_ID` automatically. For pull request workflows, `GITHUB_SHA` is usually the synthetic merge commit. If you want the PR head commit instead, pass it explicitly:
+
+```yaml
+env:
+  STRADA_RELEASE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+```
 
 You can override any value explicitly:
 

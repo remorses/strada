@@ -41,23 +41,25 @@ function git(command: string): string | undefined {
 }
 
 function resolveMetadata(options: StradaVitePluginOptions): StradaReleaseMetadata {
+  const commit =
+    options.releaseCommit ??
+    firstEnv([
+      "STRADA_RELEASE_COMMIT",
+      "VERCEL_GIT_COMMIT_SHA",
+      "RENDER_GIT_COMMIT",
+      "CF_PAGES_COMMIT_SHA",
+      "WORKERS_CI_COMMIT_SHA",
+      "GITHUB_SHA",
+      "GIT_COMMIT",
+      "CI_COMMIT_SHA",
+    ]) ??
+    git("rev-parse HEAD");
+
   return {
     version:
       options.version ??
       firstEnv(["STRADA_RELEASE_VERSION", "STRADA_RELEASE", "SENTRY_RELEASE", "npm_package_version"]),
-    commit:
-      options.releaseCommit ??
-      firstEnv([
-        "STRADA_RELEASE_COMMIT",
-        "VERCEL_GIT_COMMIT_SHA",
-        "RENDER_GIT_COMMIT",
-        "CF_PAGES_COMMIT_SHA",
-        "WORKERS_CI_COMMIT_SHA",
-        "GITHUB_SHA",
-        "GIT_COMMIT",
-        "CI_COMMIT_SHA",
-      ]) ??
-      git("rev-parse HEAD"),
+    commit,
     branch:
       options.releaseBranch ??
       firstEnv([
@@ -66,6 +68,7 @@ function resolveMetadata(options: StradaVitePluginOptions): StradaReleaseMetadat
         "RENDER_GIT_BRANCH",
         "CF_PAGES_BRANCH",
         "WORKERS_CI_BRANCH",
+        "GITHUB_HEAD_REF",
         "GITHUB_REF_NAME",
         "CI_COMMIT_BRANCH",
       ]) ??
@@ -78,7 +81,9 @@ function resolveMetadata(options: StradaVitePluginOptions): StradaReleaseMetadat
         "WORKERS_CI_BUILD_UUID",
         "RENDER_INSTANCE_ID",
         "FLY_MACHINE_VERSION",
-      ]),
+        "GITHUB_RUN_ID",
+      ]) ??
+      commit,
   };
 }
 

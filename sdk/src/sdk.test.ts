@@ -433,6 +433,50 @@ describe("resolveReleaseAttributes", () => {
       }
     `);
   });
+
+  it("uses commit as deployment id when platform deployment id is absent", () => {
+    expect(
+      resolveReleaseAttributes(
+        {
+          projectId: "test",
+          service: "frontend",
+        },
+        {
+          CF_PAGES_COMMIT_SHA: "cf-pages-commit",
+          CF_PAGES_BRANCH: "main",
+        },
+      ),
+    ).toMatchInlineSnapshot(`
+      {
+        "deployment.id": "cf-pages-commit",
+        "vcs.ref.head.name": "main",
+        "vcs.ref.head.revision": "cf-pages-commit",
+      }
+    `);
+  });
+
+  it("uses GitHub Actions pull request branch and run id", () => {
+    expect(
+      resolveReleaseAttributes(
+        {
+          projectId: "test",
+          service: "frontend",
+        },
+        {
+          GITHUB_SHA: "github-merge-commit",
+          GITHUB_HEAD_REF: "feature-branch",
+          GITHUB_REF_NAME: "123/merge",
+          GITHUB_RUN_ID: "1658821493",
+        },
+      ),
+    ).toMatchInlineSnapshot(`
+      {
+        "deployment.id": "1658821493",
+        "vcs.ref.head.name": "feature-branch",
+        "vcs.ref.head.revision": "github-merge-commit",
+      }
+    `);
+  });
 });
 
 // ---------------------------------------------------------------------------

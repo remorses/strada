@@ -175,6 +175,7 @@ export function resolveReleaseAttributes(
       "RENDER_GIT_BRANCH",
       "CF_PAGES_BRANCH",
       "WORKERS_CI_BRANCH",
+      "GITHUB_HEAD_REF",
       "GITHUB_REF_NAME",
       "CI_COMMIT_BRANCH",
     ]) ??
@@ -187,8 +188,10 @@ export function resolveReleaseAttributes(
       "WORKERS_CI_BUILD_UUID",
       "RENDER_INSTANCE_ID",
       "FLY_MACHINE_VERSION",
+      "GITHUB_RUN_ID",
     ]) ??
-    injected?.deploymentId;
+    injected?.deploymentId ??
+    commit;
 
   return {
     ...(version ? { [ATTR["service.version"]]: version } : {}),
