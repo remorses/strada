@@ -8,6 +8,7 @@ import { Spiceflow } from 'spiceflow'
 import { Head, Link } from 'spiceflow/react'
 import { ChartsDemoPage } from './components/charts-demo.tsx'
 import { TraceTimelineDemo } from './components/traces/trace-timeline-demo.tsx'
+import { TraceActivityLogDemo } from './components/traces/trace-activity-log-demo.tsx'
 import { ThemeToggle } from './components/traces/theme-toggle.tsx'
 
 const tracer = trace.getTracer('strada-ui')
@@ -17,6 +18,11 @@ const demos = [
     href: '/traces',
     title: 'Trace Timeline',
     description: 'Interactive waterfall view of a distributed trace across microservices.',
+  },
+  {
+    href: '/activity-log',
+    title: 'Activity Log',
+    description: 'Vertical expandable trace view with icons, durations, and nested spans.',
   },
   {
     href: '/charts',
@@ -91,6 +97,24 @@ export const app = new Spiceflow({ tracer })
           <ThemeToggle />
         </div>
         <TraceTimelineDemo />
+      </div>
+    )
+  })
+  .page('/activity-log', async function ActivityLogDemo() {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-6xl">
+        <div className="flex items-center justify-between w-full">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">
+              Activity Log
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Vertical expandable trace view with icons, durations, and nested spans.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
+        <TraceActivityLogDemo />
       </div>
     )
   })

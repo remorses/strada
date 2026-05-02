@@ -14,6 +14,9 @@ export type { BarSearchState } from "./components/traces/trace-timeline-parts.ts
 export { TraceViewProvider } from "./components/traces/trace-timeline-state.tsx";
 export type { TraceViewContextValue, TimelineBar, ViewportState } from "./components/traces/trace-timeline-state.tsx";
 export { TraceTimelineMinimap } from "./components/traces/trace-timeline-minimap.tsx";
+export { TraceActivityLog } from "./components/traces/trace-activity-log.tsx";
+export type { TraceActivityLogProps } from "./components/traces/trace-activity-log.tsx";
+export { TraceActivityLogDemo } from "./components/traces/trace-activity-log-demo.tsx";
 export { ThemeToggle } from "./components/traces/theme-toggle.tsx";
 export { Chart, ChartLegend, TimeseriesChart } from "./components/charts.tsx";
 export type { ChartEvents, ChartProps, TimeseriesChartProps } from "./components/charts.tsx";
