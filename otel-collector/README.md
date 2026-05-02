@@ -41,7 +41,7 @@ import { SeverityNumber, logs } from "@opentelemetry/api-logs";
 // ── Configuration ──────────────────────────────────────────────────────────
 // Replace with your Strada ingest URL and server-side token.
 // Get both from `strada projects create <slug>` or create another token with
-// `strada tokens create production-server --scope ingest`.
+// `strada tokens create --scope ingest production-server`.
 // Each project gets a subdomain: {project}-ingest.strada.sh
 // Self-hosted: use your own domain, e.g. https://ingest.mycompany.com
 const STRADA_URL = "https://acme-ingest.strada.sh";

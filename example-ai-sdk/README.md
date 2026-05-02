@@ -95,7 +95,7 @@ strada projects create example-app
 
 Store the secrets in Sigillo. `STRADA_PROJECT_ID` may already exist for this repo.
 `strada projects create example-app` prints a server-side token once. If you need another token,
-run `strada tokens create example-ai-sdk --scope ingest`.
+run `strada tokens create --scope ingest example-ai-sdk`.
 
 ```bash
 sigillo setup
