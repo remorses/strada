@@ -46,7 +46,7 @@ const createProjectRequestSchema = z.object({
 
 const createOrgTokenRequestSchema = z.object({
   name: z.string().min(1),
-  scope: z.enum(['ingest']).default('ingest'),
+  scope: z.enum(['ingest']),
 })
 
 const queryProjectRequestSchema = z.object({ sql: z.string().min(1) })

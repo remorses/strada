@@ -35,7 +35,7 @@ strada --help # NEVER pipe to head/tail, read the full output
 strada projects create my-app
 
 # Create another org-wide token for server-side ingest
-strada tokens create production-server
+strada tokens create production-server ingest
 
 # List all projects (shows slug and project ID)
 strada projects list
@@ -72,7 +72,7 @@ initStrada({
 ```
 
 Get the project ID and first server-side token from `strada projects create <slug>`. Create more
-org-wide ingest tokens later with `strada tokens create <name>`. Omit `token` in browser apps;
+org-wide ingest tokens later with `strada tokens create <name> ingest`. Omit `token` in browser apps;
 browser ingest is anonymous and rate limited.
 
 ## Common mistakes

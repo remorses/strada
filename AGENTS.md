@@ -181,7 +181,7 @@ The ClickHouse schema (`clickhouse.sql`) has `ProjectId` as the first column in 
 
 Project identity comes from the **hostname**: `{projectId}-ingest.strada.sh`. The project ID is a ULID from the `project` table in D1, globally unique. The collector extracts it with a regex in `get-project-id.ts`, then queries D1 for the project's database credentials and org ID. Unknown project IDs are rejected with 404.
 
-Server SDKs should send an org-wide token with `Authorization: Bearer <token>`. The SDK option is `initStrada({ token: process.env.STRADA_TOKEN })`. Tokens are shown once by `strada projects create <slug>` and can be created later with `strada tokens create <name>`. Browser SDKs should omit `token`; anonymous browser ingest is rate limited by the collector's Cloudflare Rate Limiting binding.
+Server SDKs should send an org-wide token with `Authorization: Bearer <token>`. The SDK option is `initStrada({ token: process.env.STRADA_TOKEN })`. Tokens are shown once by `strada projects create <slug>` and can be created later with `strada tokens create <name> ingest`. Browser SDKs should omit `token`; anonymous browser ingest is rate limited by the collector's Cloudflare Rate Limiting binding.
 
 ### D1 database (shared)
 
@@ -768,7 +768,7 @@ pnpm vitest run
 
 Run from the `example-app/` directory. Tests skip automatically when env vars are missing.
 
-Get the project ID, endpoint, and initial token from `strada projects create <slug>`. If the token was lost, create another one with `strada tokens create <name>`. The endpoint is `https://{projectId}-ingest.strada.sh`.
+Get the project ID, endpoint, and initial token from `strada projects create <slug>`. If the token was lost, create another one with `strada tokens create <name> ingest`. The endpoint is `https://{projectId}-ingest.strada.sh`.
 
 To test new CLI features or validate the ingest pipeline, add more routes and test cases to `example-app/src/index.test.ts`. Each route should emit different OTel signals (traces, logs, errors with various exception types, custom events). After the tests run and data propagates to Tinybird, query it with the CLI:
 

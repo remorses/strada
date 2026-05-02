@@ -12,28 +12,35 @@ export const tokensCli = goke();
 
 tokensCli
   .command(
-    "tokens create <name>",
+    "tokens create <name> <scope>",
     dedent`
-      Create an org-wide token with the ingest scope for server-side SDKs.
+      Create an org-wide token with an explicit scope.
 
       Tokens with the ingest scope authenticate writes to the OTLP collector only. They do
       not grant query access, project management access, or access to the
       Strada website API. Use them in Node.js, Cloudflare Workers, Vercel, and
       other trusted server runtimes.
 
+      The only supported scope today is "ingest". The scope is still required
+      so command usage will stay stable when more token scopes are added later.
+
       Browser SDKs should not use tokens. Browser ingest stays
       anonymous and is protected by the collector's anonymous rate limit.
     `,
   )
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .action(async (name, options, { console: output }) => {
+  .action(async (name, scope, options, { console: output }) => {
+    if (scope !== "ingest") {
+      throw new Error(`Unsupported token scope "${scope}". The only supported scope is "ingest".`);
+    }
+
     const { safeFetch } = getApiClient();
     const org = await resolveCurrentOrg({ org: options.org || undefined });
 
     const res = await safeFetch("/api/v0/orgs/:orgId/tokens", {
       method: "POST",
       params: { orgId: org.id },
-      body: { name, scope: "ingest" },
+      body: { name, scope },
     });
     if (res instanceof Error) throw res;
 
@@ -70,7 +77,7 @@ tokensCli
     if (res instanceof Error) throw res;
 
     if (res.tokens.length === 0) {
-      output.log("No tokens yet. Create one with `strada tokens create <name>`");
+      output.log("No tokens yet. Create one with `strada tokens create <name> ingest`");
       return;
     }
 

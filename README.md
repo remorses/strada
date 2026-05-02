@@ -154,7 +154,7 @@ The mapping is stored outside your repo in `~/.strada/config.json`, not committe
 
 `strada projects create` prints a **token** once. Use that token in trusted server runtimes like
 Node.js, Vercel, and Cloudflare Workers. If you need another one later, run
-`strada tokens create production-server`. Browser apps should omit `token`; browser ingest is
+`strada tokens create production-server ingest`. Browser apps should omit `token`; browser ingest is
 anonymous and rate limited because browser secrets are public.
 
 ```ts
