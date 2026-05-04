@@ -7,6 +7,7 @@ import { trace } from '@strada.sh/sdk'
 import { Spiceflow } from 'spiceflow'
 import { Head, Link } from 'spiceflow/react'
 import { ChartsDemoPage } from './components/charts-demo.tsx'
+import { GridDemoPage } from './components/grid-demo.tsx'
 import { TraceTimelineDemo } from './components/traces-graph/trace-timeline-demo.tsx'
 import { TraceActivityLogDemo } from './components/traces/trace-activity-log-demo.tsx'
 import { ThemeToggle } from './components/traces-graph/theme-toggle.tsx'
@@ -28,6 +29,11 @@ const demos = [
     href: '/charts',
     title: 'Charts',
     description: 'Reusable ECharts-powered timeseries charts for dashboards.',
+  },
+  {
+    href: '/grid',
+    title: 'Grid',
+    description: 'Compound bento grid with lattice lines and vertex dots.',
   },
   {
     href: '/charts#tables',
@@ -120,6 +126,9 @@ export const app = new Spiceflow({ tracer })
   })
   .page('/charts', async function ChartsDemo() {
     return <ChartsDemoPage />
+  })
+  .page('/grid', async function GridDemo() {
+    return <GridDemoPage />
   })
 
 void app.listen(Number(process.env.PORT || 3456))
