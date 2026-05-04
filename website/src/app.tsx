@@ -130,7 +130,7 @@ export const app = new Spiceflow({ tracer })
 
   // ── Root ──────────────────────────────────────────────────────
   .get('/', () => {
-    return { name: 'strada', version: '0.0.1' }
+    throw redirect('https://github.com/remorses/strada')
   })
 
   // ── Login page (minimal, for device flow approval) ────────────
