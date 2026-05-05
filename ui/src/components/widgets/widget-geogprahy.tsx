@@ -7,7 +7,7 @@ import * as Button from '@/components/alignui/button';
 import { WidgetCard } from '@/components/widget-card';
 
 if (typeof window !== 'undefined') {
-  import('leaflet/dist/leaflet.css');
+  void import('leaflet/dist/leaflet.css');
 }
 
 const GeographyMap = dynamic(() => import('./widget-geography-map'), {
