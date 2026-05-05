@@ -13,6 +13,8 @@ import { DashedDividerVertical } from '../dashed-divider';
 export type SplitColumnsPanelDataItem = {
   label: string;
   value: string;
+  /** Numeric value used to scale the bar height proportionally across items. */
+  numericValue: number;
   change: string;
   direction: 'up' | 'down';
   colorClassName: string;
@@ -34,6 +36,8 @@ export function SplitColumnsPanel({
   action,
   data,
 }: SplitColumnsPanelProps) {
+  const maxValue = Math.max(...data.map((d) => d.numericValue), 1);
+
   return (
     <>
       <WidgetHeader
@@ -50,19 +54,25 @@ export function SplitColumnsPanel({
       <div className='flex gap-4'>
         {data.map((item, index) => {
           const TrendIcon = item.direction === 'up' ? RiArrowRightUpLine : RiArrowLeftDownLine;
+          const barPercent = (item.numericValue / maxValue) * 100;
           return (
             <React.Fragment key={item.label}>
               {index > 0 ? <DashedDividerVertical /> : null}
               <div className='flex h-60 flex-1 flex-col gap-4'>
-                <div className='w-full flex-1'>
+                <div className='w-full'>
                   <div className='text-sm font-medium text-foreground/40'>{item.label}</div>
                   <div className='mt-1 text-xl font-medium text-foreground'>{item.value}</div>
+                </div>
+                <div className='flex flex-1 flex-col justify-end'>
+                  <div
+                    className={`w-full rounded-t-sm ${item.colorClassName}`}
+                    style={{ height: `${barPercent}%`, minHeight: 4 }}
+                  />
                 </div>
                 <div className='flex items-center gap-0.5'>
                   <div className='text-sm font-medium text-muted-foreground'>{item.change}</div>
                   <TrendIcon className={item.direction === 'up' ? 'size-5 text-success' : 'size-5 text-destructive'} />
                 </div>
-                <div className={`h-2 w-full rounded-xs ${item.colorClassName}`} />
               </div>
             </React.Fragment>
           );

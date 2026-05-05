@@ -40,9 +40,9 @@ const sparklineMetrics = [
 ];
 
 const splitColumnsData = [
-  { label: 'Desktop', value: '27%', change: '-3.2%', direction: 'down' as const, colorClassName: 'bg-yellow-500' },
-  { label: 'Tablet', value: '12%', change: '-6.4%', direction: 'down' as const, colorClassName: 'bg-sky-500' },
-  { label: 'Mobile', value: '61%', change: '+0.8%', direction: 'up' as const, colorClassName: 'bg-purple-500' },
+  { label: 'Desktop', value: '27%', numericValue: 27, change: '-3.2%', direction: 'down' as const, colorClassName: 'bg-yellow-500' },
+  { label: 'Tablet', value: '12%', numericValue: 12, change: '-6.4%', direction: 'down' as const, colorClassName: 'bg-sky-500' },
+  { label: 'Mobile', value: '61%', numericValue: 61, change: '+0.8%', direction: 'up' as const, colorClassName: 'bg-purple-500' },
 ];
 
 const metricRowsData = [
