@@ -31,13 +31,13 @@ export function DeviceActionButtons({
       <div className="flex flex-col gap-3 sm:flex-row">
         <form action={approveAction} className="flex-1">
           <input name="userCode" type="hidden" value={userCode} />
-          <Button className="w-full" loadingText="Approving..." type="submit">
+          <Button className="w-full" type="submit">
             Approve CLI
           </Button>
         </form>
         <form action={denyAction} className="flex-1">
           <input name="userCode" type="hidden" value={userCode} />
-          <Button className="w-full" loadingText="Denying..." type="submit" variant="outline">
+          <Button className="w-full" type="submit" variant="outline">
             Deny
           </Button>
         </form>
