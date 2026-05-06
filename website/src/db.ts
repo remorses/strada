@@ -42,7 +42,7 @@ export function getAuth() {
     },
     experimental: { joins: true },
     plugins: [
-      deviceAuthorization({ verificationUri: '/device' }),
+      deviceAuthorization({ verificationUri: '/device', schema: {} }),
       bearer(),
     ],
   })
