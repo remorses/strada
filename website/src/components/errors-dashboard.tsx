@@ -578,7 +578,7 @@ export function ErrorsDashboard() {
                 title="Service Details"
                 actionLabel="Details"
                 tooltip={<>Error share per service as percentage of total.</>}
-                data={serviceProgressData}
+                item={serviceProgressData[0]!}
               />
             </WidgetPanel>
           </Grid.Item>
@@ -589,7 +589,7 @@ export function ErrorsDashboard() {
                 title="Top Error Types"
                 actionLabel="View all"
                 tooltip={<>Most frequent ExceptionType values across all services.</>}
-                data={topErrorTypesData}
+                item={topErrorTypesData[0]!}
               />
             </WidgetPanel>
           </Grid.Item>
@@ -601,7 +601,7 @@ export function ErrorsDashboard() {
                 title="By Release"
                 actionLabel="Details"
                 tooltip={<>Error count by Release (service.version). Shows which releases produce the most errors.</>}
-                data={errorsByReleaseData}
+                item={errorsByReleaseData[0]!}
               />
             </WidgetPanel>
           </Grid.Item>
@@ -612,7 +612,7 @@ export function ErrorsDashboard() {
                 title="Most Common Errors"
                 actionLabel="View all"
                 tooltip={<>Top error groups by FingerprintHash, showing the most frequent issues across all services.</>}
-                data={mostCommonErrorsData}
+                item={mostCommonErrorsData[0]!}
               />
             </WidgetPanel>
           </Grid.Item>
