@@ -15,7 +15,8 @@
     "allowImportingTsExtensions": true,
     "types": ["node"],
     "paths": {
-      "strada-website/src/*": ["./src/*"]
+      "strada-website/src/*": ["./src/*"],
+      "@ui/*": ["./src/ui/*"]
     }
   },
   "include": ["src", "worker-configuration.d.ts"]
