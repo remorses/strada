@@ -194,6 +194,8 @@ export function buildTimeseriesChartOption({
       nameGap: 30,
       nameTextStyle: { color: theme.mutedForeground },
       type: 'time' as const,
+      min: 'dataMin',
+      max: 'dataMax',
       splitLine: { show: false },
       axisLine: { show: false },
       splitNumber: xAxisTickCount ?? 5,
