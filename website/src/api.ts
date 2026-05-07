@@ -923,7 +923,7 @@ export const api = new Spiceflow({ tracer })
     // ── Alert management ──────────────────────────────────────────────
     // Alert rules and destinations are org-scoped. Rules define what to
     // watch (error_threshold, health_check). Destinations define where to
-    // send (email, webhook, slack, agent). They are linked many-to-many
+    // send (email, webhook, slack). They are linked many-to-many
     // via alert_rule_destination. The cron handler in alert-check.ts reads
     // these rules to decide when and where to send notifications.
     //
@@ -972,7 +972,7 @@ export const api = new Spiceflow({ tracer })
       method: 'POST',
       path: '/api/v0/orgs/:orgId/alerts/destinations',
       request: z.object({
-        channel: z.enum(['email', 'webhook', 'slack', 'agent']),
+        channel: z.enum(['email', 'webhook', 'slack']),
         destination: z.string().min(1),
         errorThreshold: z.number().int().min(1).optional(),
         errorWindowMinutes: z.number().int().min(1).optional(),
@@ -1033,7 +1033,9 @@ export const api = new Spiceflow({ tracer })
         })
 
         if (destination) {
-          // Link destination to this rule (ignore if already linked)
+          // Link destination to this rule (ignore if already linked).
+          // Same-org is guaranteed because both rule and destination were
+          // created/looked up with orgId = params.orgId above.
           await db.insert(schema.alertRuleDestination)
             .values({ ruleId: rule.id, destinationId: destination.id })
             .onConflictDoNothing()
@@ -1085,19 +1087,27 @@ export const api = new Spiceflow({ tracer })
 
         const db = getDb()
 
-        // Delete the destination itself (cascade removes junction rows)
-        const [deleted] = await db.delete(schema.alertDestination)
-          .where(
-            orm.and(
-              orm.eq(schema.alertDestination.id, params.destinationId),
-              orm.eq(schema.alertDestination.orgId, params.orgId),
-            ),
-          )
-          .returning()
-
-        if (!deleted) {
+        // Verify the destination belongs to this org
+        const dest = await db.query.alertDestination.findFirst({
+          where: {
+            id: params.destinationId,
+            orgId: params.orgId,
+          },
+        })
+        if (!dest) {
           throw json({ error: 'destination not found' }, { status: 404 })
         }
+
+        // Remove all junction links first, then delete the destination itself.
+        // Destinations are org-scoped and reusable across rules, so deleting
+        // one removes it from every rule it was attached to. The CLI currently
+        // only creates one rule per org so this is fine. If we later need
+        // "unlink from one rule" without destroying the destination, add a
+        // separate DELETE /alerts/rules/:ruleId/destinations/:destinationId.
+        await db.delete(schema.alertRuleDestination)
+          .where(orm.eq(schema.alertRuleDestination.destinationId, params.destinationId))
+        await db.delete(schema.alertDestination)
+          .where(orm.eq(schema.alertDestination.id, params.destinationId))
 
         return { ok: true }
       },

@@ -1,5 +1,5 @@
 // Alert management CLI commands. Configure error alert rules and
-// notification destinations (email, webhook, slack, agent) for an org.
+// notification destinations (email, webhook, slack) for an org.
 //
 // Multiple rules per org, each typed (error_threshold, health_check).
 // Destinations are org-scoped and linked to rules many-to-many.
@@ -70,14 +70,14 @@ alertsCli
 
 alertsCli
   .command("alerts add", "Add an alert destination (creates error_threshold rule if needed)")
-  .option("--channel <type>", z.enum(["email", "webhook", "slack", "agent"]).describe("Notification channel"))
-  .option("--to <destination>", "Email address, webhook URL, slack webhook URL, or agent endpoint")
+  .option("--channel <type>", z.enum(["email", "webhook", "slack"]).describe("Notification channel"))
+  .option("--to <destination>", "Email address, webhook URL, or Slack webhook URL")
   .option("--threshold [count]", "Min errors to trigger (default: 1)")
   .option("--window [minutes]", "Time window in minutes (default: 5)")
   .option("--cooldown [minutes]", "Re-alert cooldown in minutes (default: 60)")
   .action(async (options, { console: output, process: proc }) => {
     if (!options.channel || !options.to) {
-      output.log("Missing required options: --channel <email|webhook|slack|agent> --to <destination>");
+      output.log("Missing required options: --channel <email|webhook|slack> --to <destination>");
       output.log(dim("Example: strada alerts add --channel email --to you@example.com"));
       return proc.exit(1);
     }

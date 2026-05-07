@@ -317,19 +317,10 @@ export const orgToken = s.sqliteTable(
 // across many rules. Supported channels:
 //   - email: sends an HTML email via Cloudflare Email Workers.
 //   - webhook: POSTs JSON to a URL.
-//   - slack (future): posts to a Slack incoming webhook. Uses
-//     slack_channel and slack_mention for routing and @-mentions.
-//   - agent (future): triggers an AI agent to investigate and fix the
-//     issue. The agent_prompt field is a template with {{variables}}
-//     that get filled with alert context (exception type, URL, status
-//     code, etc.). Example: "Debug {{exception_type}} in {{project}}.
-//     Use strada CLI to investigate and open a PR to fix it."
-//     The destination URL points to the agent endpoint (Slack bot,
-//     webhook that spawns a CI job, Kimaki session, etc.).
+//   - slack (future): posts to a Slack incoming webhook.
 //
 // Type-specific fields are prefixed with their type so they're easy to
-// distinguish: error_threshold, error_window_minutes on rules;
-// agent_prompt, slack_channel, slack_mention on destinations.
+// distinguish: error_threshold, error_window_minutes on rules.
 // Shared fields like cooldown_minutes are unprefixed.
 
 export const alertRule = s.sqliteTable(
@@ -395,21 +386,10 @@ export const alertDestination = s.sqliteTable(
       .notNull()
       .references(() => org.id, { onDelete: "cascade" }),
     channel: s
-      .text("channel", { enum: ["email", "webhook", "slack", "agent"] })
+      .text("channel", { enum: ["email", "webhook", "slack"] })
       .notNull(),
-    // Email address, webhook URL, Slack webhook URL, or agent endpoint URL
+    // Email address, webhook URL, or Slack webhook URL
     destination: s.text("destination").notNull(),
-
-    // ── agent channel fields ──
-    // Template with {{variables}} filled at alert time. Variables depend on
-    // the rule type. Error alerts: {{exception_type}}, {{exception_message}},
-    // {{fingerprint}}, {{project}}, {{service}}, {{stacktrace}}, {{error_count}}.
-    // Health check alerts: {{url}}, {{status_code}}, {{latency_ms}}, {{region}}.
-    agentPrompt: s.text("agent_prompt"),
-
-    // ── slack channel fields ──
-    slackChannel: s.text("slack_channel"),
-    slackMention: s.text("slack_mention"),
 
     createdAt: epochMs("created_at")
       .notNull()

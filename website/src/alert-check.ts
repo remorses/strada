@@ -224,11 +224,22 @@ async function checkProjectAlerts(ctx: {
     const results = await Promise.allSettled(
       rule.destinations.map((dest) => sendNotification(dest, alertData)),
     )
+    let anyDelivered = false
     for (const result of results) {
       if (result.status === 'rejected') {
         console.error('[alert-check] sendNotification rejected:', result.reason)
         logger.error({ message: 'sendNotification rejected', error: String(result.reason) })
+      } else if (result.value) {
+        anyDelivered = true
       }
+    }
+
+    // Only update LastAlertedAt if at least one destination delivered.
+    // Without this, unsupported channels (e.g. slack before it's implemented)
+    // would silently mark the alert as sent and suppress future retries.
+    if (!anyDelivered) {
+      logger.error({ message: 'no destinations delivered, skipping cooldown update', fingerprintHash: error.fingerprintHash })
+      continue
     }
 
     // Update LastAlertedAt in otel_issue_state
@@ -369,10 +380,11 @@ async function writeLastAlertedAt(ctx: {
   })
 }
 
+/** Returns true if the notification was delivered, false on failure or unsupported channel. */
 async function sendNotification(
   dest: { channel: string; destination: string },
   data: Parameters<typeof buildAlertEmailHtml>[0],
-): Promise<void> {
+): Promise<boolean> {
   if (dest.channel === 'email') {
     const subject = buildAlertSubject(data)
     const html = await buildAlertEmailHtml(data)
@@ -388,9 +400,11 @@ async function sendNotification(
       })
       console.log(`[alert-check] email sent to ${dest.destination}`)
       logger.info({ message: `alert email sent`, to: dest.destination })
+      return true
     } catch (err) {
       console.error(`[alert-check] email send failed:`, err)
       logger.error({ message: `failed to send alert email`, to: dest.destination, error: String(err) })
+      return false
     }
   } else if (dest.channel === 'webhook') {
     try {
@@ -411,12 +425,15 @@ async function sendNotification(
           serviceName: data.serviceName,
         }),
       })
+      return true
     } catch (err) {
       console.error(`[alert-check] webhook send failed:`, err)
       logger.error({ message: `failed to send webhook`, destination: dest.destination, error: String(err) })
+      return false
     }
   } else {
-    console.warn(`[alert-check] unknown channel: ${dest.channel}`)
+    logger.warn({ message: `unsupported alert channel, skipping`, channel: dest.channel, destination: dest.destination })
+    return false
   }
 }
 

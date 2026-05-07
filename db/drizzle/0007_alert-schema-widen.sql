@@ -1,6 +1,6 @@
 -- Widen alert schema for multi-type rules (error_threshold, health_check),
 -- org-scoped destinations with many-to-many junction, and new channel types
--- (slack, agent). No backwards compat: drops and recreates tables.
+-- (slack). No backwards compat: drops and recreates tables.
 
 DROP TABLE IF EXISTS `alert_destination`;
 --> statement-breakpoint
@@ -30,9 +30,6 @@ CREATE TABLE `alert_destination` (
 	`org_id` text NOT NULL,
 	`channel` text NOT NULL,
 	`destination` text NOT NULL,
-	`agent_prompt` text,
-	`slack_channel` text,
-	`slack_mention` text,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`org_id`) REFERENCES `org`(`id`) ON UPDATE no action ON DELETE cascade
 );
