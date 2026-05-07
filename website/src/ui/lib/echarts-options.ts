@@ -220,7 +220,7 @@ export function buildTimeseriesChartOption({
       splitLine: { show: true, lineStyle: { type: 'dashed' as const, width: 1, color: theme.gridLine } },
       splitNumber: yAxisTickCount,
     },
-    grid: { left: yAxisName ? 30 : 24, right: 24, top: 24, bottom: xAxisName ? 30 : 24 },
+    grid: { left: yAxisName ? 30 : 24, right: 0, top: 24, bottom: xAxisName ? 30 : 24 },
     series,
   }
 }
