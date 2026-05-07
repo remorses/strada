@@ -1,9 +1,10 @@
 // Alert management CLI commands. Configure error alert rules and
-// notification destinations (email, webhook) for an org.
+// notification destinations (email, webhook, slack, agent) for an org.
 //
-// One alert rule per org with configurable threshold, window, and cooldown.
-// Multiple destinations per rule. The website cron checks errors every
-// 5 minutes and sends notifications when thresholds are exceeded.
+// Multiple rules per org, each typed (error_threshold, health_check).
+// Destinations are org-scoped and linked to rules many-to-many.
+// The website cron checks errors every 5 minutes and sends notifications
+// when thresholds are exceeded.
 
 import { goke } from "goke";
 import { z } from "zod";
@@ -38,8 +39,10 @@ alertsCli
 
     output.log("");
     output.log(bold(`Alert rule for ${cyan(org.name)}`));
+    output.log(`  ${dim("Name")}         ${res.rule.name}`);
+    output.log(`  ${dim("Type")}         ${res.rule.type}`);
     output.log("");
-    output.log(`  ${dim("Threshold")}    ${bold(String(res.rule.threshold))} errors in ${bold(String(res.rule.windowMinutes))} minutes`);
+    output.log(`  ${dim("Threshold")}    ${bold(String(res.rule.errorThreshold ?? 1))} errors in ${bold(String(res.rule.errorWindowMinutes ?? 5))} minutes`);
     output.log(`  ${dim("Cooldown")}     ${bold(String(res.rule.cooldownMinutes))} minutes`);
     output.log("");
 
@@ -66,15 +69,15 @@ alertsCli
 // ── alerts add ───────────────────────────────────────────────────
 
 alertsCli
-  .command("alerts add", "Add an alert destination (creates rule if needed)")
-  .option("--channel <type>", z.enum(["email", "webhook"]).describe("Notification channel"))
-  .option("--to <destination>", "Email address or webhook URL")
+  .command("alerts add", "Add an alert destination (creates error_threshold rule if needed)")
+  .option("--channel <type>", z.enum(["email", "webhook", "slack", "agent"]).describe("Notification channel"))
+  .option("--to <destination>", "Email address, webhook URL, slack webhook URL, or agent endpoint")
   .option("--threshold [count]", "Min errors to trigger (default: 1)")
   .option("--window [minutes]", "Time window in minutes (default: 5)")
   .option("--cooldown [minutes]", "Re-alert cooldown in minutes (default: 60)")
   .action(async (options, { console: output, process: proc }) => {
     if (!options.channel || !options.to) {
-      output.log("Missing required options: --channel <email|webhook> --to <destination>");
+      output.log("Missing required options: --channel <email|webhook|slack|agent> --to <destination>");
       output.log(dim("Example: strada alerts add --channel email --to you@example.com"));
       return proc.exit(1);
     }
@@ -85,8 +88,8 @@ alertsCli
     const body = {
       channel: options.channel,
       destination: options.to,
-      ...(options.threshold ? { threshold: Number(options.threshold) } : {}),
-      ...(options.window ? { windowMinutes: Number(options.window) } : {}),
+      ...(options.threshold ? { errorThreshold: Number(options.threshold) } : {}),
+      ...(options.window ? { errorWindowMinutes: Number(options.window) } : {}),
       ...(options.cooldown ? { cooldownMinutes: Number(options.cooldown) } : {}),
     };
 
@@ -103,7 +106,7 @@ alertsCli
 // ── alerts set ───────────────────────────────────────────────────
 
 alertsCli
-  .command("alerts set", "Update alert rule thresholds")
+  .command("alerts set", "Update error alert rule thresholds")
   .option("--threshold [count]", "Min errors to trigger")
   .option("--window [minutes]", "Time window in minutes")
   .option("--cooldown [minutes]", "Re-alert cooldown in minutes")
@@ -117,8 +120,8 @@ alertsCli
     const { safeFetch } = getApiClient();
 
     const body: Record<string, unknown> = {};
-    if (options.threshold) body.threshold = Number(options.threshold);
-    if (options.window) body.windowMinutes = Number(options.window);
+    if (options.threshold) body.errorThreshold = Number(options.threshold);
+    if (options.window) body.errorWindowMinutes = Number(options.window);
     if (options.cooldown) body.cooldownMinutes = Number(options.cooldown);
 
     const res = await safeFetch("/api/v0/orgs/:orgId/alerts", {

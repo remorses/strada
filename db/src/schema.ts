@@ -2,146 +2,256 @@
 // Contains BetterAuth core tables, org/project hierarchy, database config,
 // and org-wide ingest tokens for collector authentication.
 
-import { defineRelations } from 'drizzle-orm'
-import * as sqliteCore from 'drizzle-orm/sqlite-core'
-import { ulid } from 'ulid'
+import { defineRelations } from "drizzle-orm";
+import * as s from "drizzle-orm/sqlite-core";
+import { ulid } from "ulid";
 
 // Integer column that stores epoch milliseconds as a plain number.
 // Accepts Date objects in toDriver so BetterAuth's internal Date params
 // don't crash D1's .bind() which only accepts string | number | null | ArrayBuffer.
-export const epochMs = sqliteCore.customType<{ data: number; driverParam: number }>({
-  dataType() { return 'integer' },
-  toDriver(value: unknown): number {
-    if (value instanceof Date) return value.getTime()
-    return value as number
+export const epochMs = s.customType<{ data: number; driverParam: number }>({
+  dataType() {
+    return "integer";
   },
-  fromDriver(value: unknown): number { return value as number },
-})
+  toDriver(value: unknown): number {
+    if (value instanceof Date) return value.getTime();
+    return value as number;
+  },
+  fromDriver(value: unknown): number {
+    return value as number;
+  },
+});
 
 // ── BetterAuth core tables ──────────────────────────────────────────
 
-export const user = sqliteCore.sqliteTable('user', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  name: sqliteCore.text('name').notNull(),
-  email: sqliteCore.text('email').notNull().unique(),
-  emailVerified: sqliteCore.integer('email_verified', { mode: 'boolean' }).notNull().default(false),
-  image: sqliteCore.text('image'),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-})
+export const user = s.sqliteTable("user", {
+  id: s
+    .text("id")
+    .primaryKey()
+    .notNull()
+    .$defaultFn(() => ulid()),
+  name: s.text("name").notNull(),
+  email: s.text("email").notNull().unique(),
+  emailVerified: s
+    .integer("email_verified", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  image: s.text("image"),
+  createdAt: epochMs("created_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+  updatedAt: epochMs("updated_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+});
 
-export const session = sqliteCore.sqliteTable('session', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  userId: sqliteCore.text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  token: sqliteCore.text('token').notNull().unique(),
-  expiresAt: epochMs('expires_at').notNull(),
-  ipAddress: sqliteCore.text('ip_address'),
-  userAgent: sqliteCore.text('user_agent'),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('session_user_id_idx').on(table.userId),
-])
+export const session = s.sqliteTable(
+  "session",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    userId: s
+      .text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    token: s.text("token").notNull().unique(),
+    expiresAt: epochMs("expires_at").notNull(),
+    ipAddress: s.text("ip_address"),
+    userAgent: s.text("user_agent"),
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: epochMs("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [s.index("session_user_id_idx").on(table.userId)],
+);
 
-export const account = sqliteCore.sqliteTable('account', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  userId: sqliteCore.text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  accountId: sqliteCore.text('account_id').notNull(),
-  providerId: sqliteCore.text('provider_id').notNull(),
-  accessToken: sqliteCore.text('access_token'),
-  refreshToken: sqliteCore.text('refresh_token'),
-  accessTokenExpiresAt: epochMs('access_token_expires_at'),
-  refreshTokenExpiresAt: epochMs('refresh_token_expires_at'),
-  scope: sqliteCore.text('scope'),
-  idToken: sqliteCore.text('id_token'),
-  password: sqliteCore.text('password'),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('account_user_id_idx').on(table.userId),
-])
+export const account = s.sqliteTable(
+  "account",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    userId: s
+      .text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accountId: s.text("account_id").notNull(),
+    providerId: s.text("provider_id").notNull(),
+    accessToken: s.text("access_token"),
+    refreshToken: s.text("refresh_token"),
+    accessTokenExpiresAt: epochMs("access_token_expires_at"),
+    refreshTokenExpiresAt: epochMs("refresh_token_expires_at"),
+    scope: s.text("scope"),
+    idToken: s.text("id_token"),
+    password: s.text("password"),
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: epochMs("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [s.index("account_user_id_idx").on(table.userId)],
+);
 
-export const verification = sqliteCore.sqliteTable('verification', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  identifier: sqliteCore.text('identifier').notNull(),
-  value: sqliteCore.text('value').notNull(),
-  expiresAt: epochMs('expires_at').notNull(),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-})
+export const verification = s.sqliteTable("verification", {
+  id: s
+    .text("id")
+    .primaryKey()
+    .notNull()
+    .$defaultFn(() => ulid()),
+  identifier: s.text("identifier").notNull(),
+  value: s.text("value").notNull(),
+  expiresAt: epochMs("expires_at").notNull(),
+  createdAt: epochMs("created_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+  updatedAt: epochMs("updated_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+});
 
 // ── Org tables ──────────────────────────────────────────────────────
 
-export const org = sqliteCore.sqliteTable('org', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  name: sqliteCore.text('name').notNull(),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-})
+export const org = s.sqliteTable("org", {
+  id: s
+    .text("id")
+    .primaryKey()
+    .notNull()
+    .$defaultFn(() => ulid()),
+  name: s.text("name").notNull(),
+  createdAt: epochMs("created_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+  updatedAt: epochMs("updated_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+});
 
-export const orgMember = sqliteCore.sqliteTable('org_member', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  orgId: sqliteCore.text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
-  userId: sqliteCore.text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  role: sqliteCore.text('role', { enum: ['admin', 'member'] }).notNull().default('member'),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('org_member_org_id_idx').on(table.orgId),
-  sqliteCore.index('org_member_user_id_idx').on(table.userId),
-  sqliteCore.uniqueIndex('org_member_org_id_user_id_unique').on(table.orgId, table.userId),
-])
+export const orgMember = s.sqliteTable(
+  "org_member",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    userId: s
+      .text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: s
+      .text("role", { enum: ["admin", "member"] })
+      .notNull()
+      .default("member"),
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    s.index("org_member_org_id_idx").on(table.orgId),
+    s.index("org_member_user_id_idx").on(table.userId),
+    s
+      .uniqueIndex("org_member_org_id_user_id_unique")
+      .on(table.orgId, table.userId),
+  ],
+);
 
 // ── Database config ─────────────────────────────────────────────────
 // One database config per org. Stores either Tinybird or ClickHouse credentials.
 // The collector reads this at ingest time to know where to forward data.
 
-export const database = sqliteCore.sqliteTable('database', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  orgId: sqliteCore.text('org_id').notNull().unique().references(() => org.id, { onDelete: 'cascade' }),
-  backend: sqliteCore.text('backend', { enum: ['tinybird', 'clickhouse'] }).notNull(),
+export const database = s.sqliteTable(
+  "database",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .unique()
+      .references(() => org.id, { onDelete: "cascade" }),
+    backend: s.text("backend", { enum: ["tinybird", "clickhouse"] }).notNull(),
 
-  // Tinybird fields (null when backend = clickhouse)
-  tinybirdEndpoint: sqliteCore.text('tinybird_endpoint'),
-  tinybirdAdminToken: sqliteCore.text('tinybird_admin_token'),
-  tinybirdReadToken: sqliteCore.text('tinybird_read_token'),
+    // Tinybird fields (null when backend = clickhouse)
+    tinybirdEndpoint: s.text("tinybird_endpoint"),
+    tinybirdAdminToken: s.text("tinybird_admin_token"),
+    tinybirdReadToken: s.text("tinybird_read_token"),
 
-  // ClickHouse fields (null when backend = tinybird)
-  clickhouseUrl: sqliteCore.text('clickhouse_url'),
-  clickhouseDatabase: sqliteCore.text('clickhouse_database'),
-  clickhouseUser: sqliteCore.text('clickhouse_user'),
-  clickhousePassword: sqliteCore.text('clickhouse_password'),
+    // ClickHouse fields (null when backend = tinybird)
+    clickhouseUrl: s.text("clickhouse_url"),
+    clickhouseDatabase: s.text("clickhouse_database"),
+    clickhouseUser: s.text("clickhouse_user"),
+    clickhousePassword: s.text("clickhouse_password"),
 
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('database_org_id_idx').on(table.orgId),
-])
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: epochMs("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [s.index("database_org_id_idx").on(table.orgId)],
+);
 
 // ── Projects ────────────────────────────────────────────────────────
 // Each project maps to a ProjectId in the OTel tables. The project.id (ULID)
 // IS the ProjectId used in ClickHouse/Tinybird. Globally unique.
 // The ingest hostname is {projectId}-ingest.strada.sh.
 
-export const project = sqliteCore.sqliteTable('project', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  slug: sqliteCore.text('slug').notNull(),
-  orgId: sqliteCore.text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
-  databaseId: sqliteCore.text('database_id').notNull().references(() => database.id, { onDelete: 'cascade' }),
-  // Tinybird JWT scoped to this project's ProjectId. Generated on first query,
-  // cached here so subsequent queries reuse it. The JWT has DATASOURCES:READ
-  // scopes with filter "ProjectId = '<id>'" on every datasource, so Tinybird
-  // enforces row-level isolation server-side on every query.
-  tinybirdJwt: sqliteCore.text('tinybird_jwt'),
-  // Comma-joined datasource names the JWT was created with. If TINYBIRD_DATASOURCES
-  // changes (new table added), this won't match and the JWT gets regenerated.
-  tinybirdJwtDatasources: sqliteCore.text('tinybird_jwt_datasources'),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-  updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('project_org_id_idx').on(table.orgId),
-  sqliteCore.index('project_database_id_idx').on(table.databaseId),
-  sqliteCore.uniqueIndex('project_org_id_slug_unique').on(table.orgId, table.slug),
-])
+export const project = s.sqliteTable(
+  "project",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    slug: s.text("slug").notNull(),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    databaseId: s
+      .text("database_id")
+      .notNull()
+      .references(() => database.id, { onDelete: "cascade" }),
+    // Tinybird JWT scoped to this project's ProjectId. Generated on first query,
+    // cached here so subsequent queries reuse it. The JWT has DATASOURCES:READ
+    // scopes with filter "ProjectId = '<id>'" on every datasource, so Tinybird
+    // enforces row-level isolation server-side on every query.
+    tinybirdJwt: s.text("tinybird_jwt"),
+    // Comma-joined datasource names the JWT was created with. If TINYBIRD_DATASOURCES
+    // changes (new table added), this won't match and the JWT gets regenerated.
+    tinybirdJwtDatasources: s.text("tinybird_jwt_datasources"),
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: epochMs("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    s.index("project_org_id_idx").on(table.orgId),
+    s.index("project_database_id_idx").on(table.databaseId),
+    s.uniqueIndex("project_org_id_slug_unique").on(table.orgId, table.slug),
+  ],
+);
 
 // ── Org ingest tokens ────────────────────────────────────────────────
 // Bearer tokens for server-side ingest. The collector validates the token
@@ -149,71 +259,241 @@ export const project = sqliteCore.sqliteTable('project', {
 // only the SHA-256 hash is stored. Browser ingest intentionally omits this
 // token and is rate limited at the Cloudflare Worker layer instead.
 
-export const orgToken = sqliteCore.sqliteTable('org_token', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  orgId: sqliteCore.text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
-  name: sqliteCore.text('name').notNull(),
-  // First 12 chars after "str_" prefix, for display
-  prefix: sqliteCore.text('prefix').notNull(),
-  // SHA-256 hex digest of the full key
-  hashedKey: sqliteCore.text('hashed_key').notNull().unique(),
-  scope: sqliteCore.text('scope', { enum: ['ingest'] }).notNull().default('ingest'),
-  createdBy: sqliteCore.text('created_by').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('org_token_org_id_idx').on(table.orgId),
-  sqliteCore.index('org_token_hashed_key_idx').on(table.hashedKey),
-])
+export const orgToken = s.sqliteTable(
+  "org_token",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    name: s.text("name").notNull(),
+    // First 12 chars after "str_" prefix, for display
+    prefix: s.text("prefix").notNull(),
+    // SHA-256 hex digest of the full key
+    hashedKey: s.text("hashed_key").notNull().unique(),
+    scope: s
+      .text("scope", { enum: ["ingest"] })
+      .notNull()
+      .default("ingest"),
+    createdBy: s
+      .text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    s.index("org_token_org_id_idx").on(table.orgId),
+    s.index("org_token_hashed_key_idx").on(table.hashedKey),
+  ],
+);
 
-// ── Alert rules ─────────────────────────────────────────────────────
-// One alert rule per org. Defines the detection threshold: "alert when
-// >= threshold errors of the same fingerprint occur within windowMinutes."
-// Cooldown prevents re-alerting the same fingerprint too quickly.
-// Destinations are stored in alert_destination (1:N).
+// ── Alerts ──────────────────────────────────────────────────────────
+//
+// Three tables form the alerting system: rules, destinations, and a
+// junction table linking them many-to-many.
+//
+//   alert_rule  ◄──  alert_rule_destination  ──►  alert_destination
+//   (what to watch)        (N:M link)           (where to send)
+//
+// RULES define what triggers an alert. Each rule has a `type`:
+//   - error_threshold: fires when >= N errors of the same fingerprint
+//     occur within a time window. The cron in alert-check.ts queries
+//     ClickHouse otel_errors every 5 minutes.
+//   - health_check (future): fires when a URL fails consecutive checks.
+//     check_* fields will be added to this table later. Check results
+//     go to a ClickHouse otel_health_checks table (not D1). Consecutive
+//     failure detection is derived at query time from that table. See
+//     plans/health-checks-status-pages.md for the full plan.
+//
+// DESTINATIONS define where alerts are sent. They are org-scoped so
+// one destination (e.g. a Slack webhook for #incidents) can be reused
+// across many rules. Supported channels:
+//   - email: sends an HTML email via Cloudflare Email Workers.
+//   - webhook: POSTs JSON to a URL.
+//   - slack (future): posts to a Slack incoming webhook. Uses
+//     slack_channel and slack_mention for routing and @-mentions.
+//   - agent (future): triggers an AI agent to investigate and fix the
+//     issue. The agent_prompt field is a template with {{variables}}
+//     that get filled with alert context (exception type, URL, status
+//     code, etc.). Example: "Debug {{exception_type}} in {{project}}.
+//     Use strada CLI to investigate and open a PR to fix it."
+//     The destination URL points to the agent endpoint (Slack bot,
+//     webhook that spawns a CI job, Kimaki session, etc.).
+//
+// Type-specific fields are prefixed with their type so they're easy to
+// distinguish: error_threshold, error_window_minutes on rules;
+// agent_prompt, slack_channel, slack_mention on destinations.
+// Shared fields like cooldown_minutes are unprefixed.
 
-export const alertRule = sqliteCore.sqliteTable('alert_rule', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  orgId: sqliteCore.text('org_id').notNull().unique()
-    .references(() => org.id, { onDelete: 'cascade' }),
-  threshold: sqliteCore.integer('threshold').notNull().default(1),
-  windowMinutes: sqliteCore.integer('window_minutes').notNull().default(5),
-  cooldownMinutes: sqliteCore.integer('cooldown_minutes').notNull().default(60),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-})
+export const alertRule = s.sqliteTable(
+  "alert_rule",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    type: s
+      .text("type", { enum: ["error_threshold", "health_check"] })
+      .notNull()
+      .default("error_threshold"),
+    name: s.text("name").notNull(),
+    enabled: s.integer("enabled", { mode: "boolean" }).notNull().default(true),
+    // Minutes to wait before re-alerting the same rule. Shared across all types.
+    cooldownMinutes: s.integer("cooldown_minutes").notNull().default(60),
+    // Last time this rule fired an alert. Used by health_check rules for dedup
+    // (error_threshold rules track cooldown per-fingerprint in otel_issue_state).
+    lastAlertedAt: epochMs("last_alerted_at"),
 
-export const alertDestination = sqliteCore.sqliteTable('alert_destination', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  ruleId: sqliteCore.text('rule_id').notNull()
-    .references(() => alertRule.id, { onDelete: 'cascade' }),
-  channel: sqliteCore.text('channel', { enum: ['email', 'webhook'] }).notNull(),
-  destination: sqliteCore.text('destination').notNull(),
-  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
-}, (table) => [
-  sqliteCore.index('alert_destination_rule_id_idx').on(table.ruleId),
-  sqliteCore.uniqueIndex('alert_destination_unique').on(table.ruleId, table.channel, table.destination),
-])
+    // ── error_threshold fields (null when type != 'error_threshold') ──
+    // Alert when >= errorThreshold errors of the same fingerprint occur
+    // within errorWindowMinutes. Checked by the cron every 5 minutes.
+    errorThreshold: s.integer("error_threshold"),
+    errorWindowMinutes: s.integer("error_window_minutes"),
+
+    // ── health_check fields (future, not yet added) ──
+    // check_url, check_interval_minutes, check_expected_status_min,
+    // check_expected_status_max, check_max_latency_ms,
+    // check_failure_threshold, check_regions
+
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+    updatedAt: epochMs("updated_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    s.index("alert_rule_org_id_idx").on(table.orgId),
+    s
+      .uniqueIndex("alert_rule_org_id_type_name_unique")
+      .on(table.orgId, table.type, table.name),
+  ],
+);
+
+export const alertDestination = s.sqliteTable(
+  "alert_destination",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    orgId: s
+      .text("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    channel: s
+      .text("channel", { enum: ["email", "webhook", "slack", "agent"] })
+      .notNull(),
+    // Email address, webhook URL, Slack webhook URL, or agent endpoint URL
+    destination: s.text("destination").notNull(),
+
+    // ── agent channel fields ──
+    // Template with {{variables}} filled at alert time. Variables depend on
+    // the rule type. Error alerts: {{exception_type}}, {{exception_message}},
+    // {{fingerprint}}, {{project}}, {{service}}, {{stacktrace}}, {{error_count}}.
+    // Health check alerts: {{url}}, {{status_code}}, {{latency_ms}}, {{region}}.
+    agentPrompt: s.text("agent_prompt"),
+
+    // ── slack channel fields ──
+    slackChannel: s.text("slack_channel"),
+    slackMention: s.text("slack_mention"),
+
+    createdAt: epochMs("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    s.index("alert_destination_org_id_idx").on(table.orgId),
+    s
+      .uniqueIndex("alert_destination_unique")
+      .on(table.orgId, table.channel, table.destination),
+  ],
+);
+
+// Junction table. One rule can fire to many destinations, and one destination
+// (e.g. ops@company.com) can be attached to many rules.
+export const alertRuleDestination = s.sqliteTable(
+  "alert_rule_destination",
+  {
+    ruleId: s
+      .text("rule_id")
+      .notNull()
+      .references(() => alertRule.id, { onDelete: "cascade" }),
+    destinationId: s
+      .text("destination_id")
+      .notNull()
+      .references(() => alertDestination.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    s
+      .uniqueIndex("alert_rule_destination_unique")
+      .on(table.ruleId, table.destinationId),
+    s.index("alert_rule_destination_rule_id_idx").on(table.ruleId),
+    s
+      .index("alert_rule_destination_destination_id_idx")
+      .on(table.destinationId),
+  ],
+);
 
 // ── Device flow (BetterAuth device authorization plugin) ────────────
 
-export const deviceCode = sqliteCore.sqliteTable('device_code', {
-  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
-  deviceCode: sqliteCore.text('device_code').notNull().unique(),
-  userCode: sqliteCore.text('user_code').notNull().unique(),
-  userId: sqliteCore.text('user_id').references(() => user.id, { onDelete: 'cascade' }),
-  expiresAt: epochMs('expires_at').notNull(),
-  status: sqliteCore.text('status', { enum: ['pending', 'approved', 'denied', 'expired'] }).notNull().default('pending'),
-  lastPolledAt: epochMs('last_polled_at'),
-  pollingInterval: sqliteCore.integer('polling_interval', { mode: 'number' }),
-  clientId: sqliteCore.text('client_id'),
-  scope: sqliteCore.text('scope'),
-}, (table) => [
-  sqliteCore.index('device_code_user_id_idx').on(table.userId),
-])
+export const deviceCode = s.sqliteTable(
+  "device_code",
+  {
+    id: s
+      .text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => ulid()),
+    deviceCode: s.text("device_code").notNull().unique(),
+    userCode: s.text("user_code").notNull().unique(),
+    userId: s
+      .text("user_id")
+      .references(() => user.id, { onDelete: "cascade" }),
+    expiresAt: epochMs("expires_at").notNull(),
+    status: s
+      .text("status", { enum: ["pending", "approved", "denied", "expired"] })
+      .notNull()
+      .default("pending"),
+    lastPolledAt: epochMs("last_polled_at"),
+    pollingInterval: s.integer("polling_interval", { mode: "number" }),
+    clientId: s.text("client_id"),
+    scope: s.text("scope"),
+  },
+  (table) => [s.index("device_code_user_id_idx").on(table.userId)],
+);
 
 // ── Relations (v2 API) ──────────────────────────────────────────────
 
 export const relations = defineRelations(
-  { user, session, account, verification, org, orgMember, database, project, orgToken, deviceCode, alertRule, alertDestination },
+  {
+    user,
+    session,
+    account,
+    verification,
+    org,
+    orgMember,
+    database,
+    project,
+    orgToken,
+    deviceCode,
+    alertRule,
+    alertDestination,
+    alertRuleDestination,
+  },
   (r) => ({
     user: {
       sessions: r.many.session(),
@@ -235,7 +515,8 @@ export const relations = defineRelations(
       database: r.one.database(),
       projects: r.many.project(),
       tokens: r.many.orgToken(),
-      alertRule: r.one.alertRule(),
+      alertRules: r.many.alertRule(),
+      alertDestinations: r.many.alertDestination(),
       users: r.many.user({
         from: r.org.id.through(r.orgMember.orgId),
         to: r.user.id.through(r.orgMember.userId),
@@ -251,7 +532,10 @@ export const relations = defineRelations(
     },
     project: {
       org: r.one.org({ from: r.project.orgId, to: r.org.id }),
-      database: r.one.database({ from: r.project.databaseId, to: r.database.id }),
+      database: r.one.database({
+        from: r.project.databaseId,
+        to: r.database.id,
+      }),
     },
     orgToken: {
       org: r.one.org({ from: r.orgToken.orgId, to: r.org.id }),
@@ -262,10 +546,29 @@ export const relations = defineRelations(
     },
     alertRule: {
       org: r.one.org({ from: r.alertRule.orgId, to: r.org.id }),
-      destinations: r.many.alertDestination(),
+      destinations: r.many.alertDestination({
+        from: r.alertRule.id.through(r.alertRuleDestination.ruleId),
+        to: r.alertDestination.id.through(r.alertRuleDestination.destinationId),
+      }),
     },
     alertDestination: {
-      rule: r.one.alertRule({ from: r.alertDestination.ruleId, to: r.alertRule.id }),
+      org: r.one.org({ from: r.alertDestination.orgId, to: r.org.id }),
+      rules: r.many.alertRule({
+        from: r.alertDestination.id.through(
+          r.alertRuleDestination.destinationId,
+        ),
+        to: r.alertRule.id.through(r.alertRuleDestination.ruleId),
+      }),
+    },
+    alertRuleDestination: {
+      rule: r.one.alertRule({
+        from: r.alertRuleDestination.ruleId,
+        to: r.alertRule.id,
+      }),
+      destination: r.one.alertDestination({
+        from: r.alertRuleDestination.destinationId,
+        to: r.alertDestination.id,
+      }),
     },
   }),
-)
+);

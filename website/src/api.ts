@@ -921,9 +921,16 @@ export const api = new Spiceflow({ tracer })
       },
     })
     // ── Alert management ──────────────────────────────────────────────
-    // Alert rules live in D1 (control plane). One rule per org with
-    // multiple destinations. The cron handler in alert-check.ts reads
+    // Alert rules and destinations are org-scoped. Rules define what to
+    // watch (error_threshold, health_check). Destinations define where to
+    // send (email, webhook, slack, agent). They are linked many-to-many
+    // via alert_rule_destination. The cron handler in alert-check.ts reads
     // these rules to decide when and where to send notifications.
+    //
+    // These routes currently operate on error_threshold rules only. The
+    // CLI's "alerts add" creates an error_threshold rule with a default
+    // name, auto-linking the destination. Future routes will handle
+    // health_check rules separately.
     .route({
       method: 'GET',
       path: '/api/v0/orgs/:orgId/alerts',
@@ -932,8 +939,10 @@ export const api = new Spiceflow({ tracer })
         await requireOrgMember(session.userId, params.orgId)
 
         const db = getDb()
+
+        // Find the first error_threshold rule for this org (legacy: one per org)
         const rule = await db.query.alertRule.findFirst({
-          where: { orgId: params.orgId },
+          where: { orgId: params.orgId, type: 'error_threshold' },
           with: { destinations: true },
         })
 
@@ -944,8 +953,11 @@ export const api = new Spiceflow({ tracer })
         return {
           rule: {
             id: rule.id,
-            threshold: rule.threshold,
-            windowMinutes: rule.windowMinutes,
+            name: rule.name,
+            type: rule.type,
+            enabled: rule.enabled,
+            errorThreshold: rule.errorThreshold,
+            errorWindowMinutes: rule.errorWindowMinutes,
             cooldownMinutes: rule.cooldownMinutes,
           },
           destinations: rule.destinations.map((d) => ({
@@ -960,10 +972,10 @@ export const api = new Spiceflow({ tracer })
       method: 'POST',
       path: '/api/v0/orgs/:orgId/alerts/destinations',
       request: z.object({
-        channel: z.enum(['email', 'webhook']),
+        channel: z.enum(['email', 'webhook', 'slack', 'agent']),
         destination: z.string().min(1),
-        threshold: z.number().int().min(1).optional(),
-        windowMinutes: z.number().int().min(1).optional(),
+        errorThreshold: z.number().int().min(1).optional(),
+        errorWindowMinutes: z.number().int().min(1).optional(),
         cooldownMinutes: z.number().int().min(1).optional(),
       }),
       async handler({ request, params }) {
@@ -973,39 +985,59 @@ export const api = new Spiceflow({ tracer })
         const db = getDb()
         const body = await request.json()
 
-        // Upsert the alert rule for this org
+        // Upsert the error_threshold rule for this org (default name)
         let rule = await db.query.alertRule.findFirst({
-          where: { orgId: params.orgId },
+          where: { orgId: params.orgId, type: 'error_threshold' },
         })
 
         if (!rule) {
           const [created] = await db.insert(schema.alertRule)
             .values({
               orgId: params.orgId,
-              threshold: body.threshold ?? 1,
-              windowMinutes: body.windowMinutes ?? 5,
+              type: 'error_threshold',
+              name: 'Error alerts',
+              errorThreshold: body.errorThreshold ?? 1,
+              errorWindowMinutes: body.errorWindowMinutes ?? 5,
               cooldownMinutes: body.cooldownMinutes ?? 60,
             })
             .returning()
           rule = created!
-        } else if (body.threshold || body.windowMinutes || body.cooldownMinutes) {
+        } else if (body.errorThreshold || body.errorWindowMinutes || body.cooldownMinutes) {
           await db.update(schema.alertRule)
             .set({
-              ...(body.threshold != null ? { threshold: body.threshold } : {}),
-              ...(body.windowMinutes != null ? { windowMinutes: body.windowMinutes } : {}),
+              ...(body.errorThreshold != null ? { errorThreshold: body.errorThreshold } : {}),
+              ...(body.errorWindowMinutes != null ? { errorWindowMinutes: body.errorWindowMinutes } : {}),
               ...(body.cooldownMinutes != null ? { cooldownMinutes: body.cooldownMinutes } : {}),
+              updatedAt: Date.now(),
             })
             .where(orm.eq(schema.alertRule.id, rule.id))
         }
 
-        // Upsert destination (unique constraint handles dedup)
-        await db.insert(schema.alertDestination)
+        // Upsert destination (org-scoped, unique on org+channel+destination)
+        const [dest] = await db.insert(schema.alertDestination)
           .values({
-            ruleId: rule.id,
+            orgId: params.orgId,
             channel: body.channel,
             destination: body.destination,
           })
           .onConflictDoNothing()
+          .returning()
+
+        // If destination already existed, look it up
+        const destination = dest ?? await db.query.alertDestination.findFirst({
+          where: {
+            orgId: params.orgId,
+            channel: body.channel,
+            destination: body.destination,
+          },
+        })
+
+        if (destination) {
+          // Link destination to this rule (ignore if already linked)
+          await db.insert(schema.alertRuleDestination)
+            .values({ ruleId: rule.id, destinationId: destination.id })
+            .onConflictDoNothing()
+        }
 
         return { ok: true }
       },
@@ -1014,8 +1046,8 @@ export const api = new Spiceflow({ tracer })
       method: 'PUT',
       path: '/api/v0/orgs/:orgId/alerts',
       request: z.object({
-        threshold: z.number().int().min(1).optional(),
-        windowMinutes: z.number().int().min(1).optional(),
+        errorThreshold: z.number().int().min(1).optional(),
+        errorWindowMinutes: z.number().int().min(1).optional(),
         cooldownMinutes: z.number().int().min(1).optional(),
       }),
       async handler({ request, params }) {
@@ -1026,7 +1058,7 @@ export const api = new Spiceflow({ tracer })
         const body = await request.json()
 
         const rule = await db.query.alertRule.findFirst({
-          where: { orgId: params.orgId },
+          where: { orgId: params.orgId, type: 'error_threshold' },
         })
         if (!rule) {
           throw json({ error: 'no alert rule configured, add a destination first' }, { status: 404 })
@@ -1034,9 +1066,10 @@ export const api = new Spiceflow({ tracer })
 
         await db.update(schema.alertRule)
           .set({
-            ...(body.threshold != null ? { threshold: body.threshold } : {}),
-            ...(body.windowMinutes != null ? { windowMinutes: body.windowMinutes } : {}),
+            ...(body.errorThreshold != null ? { errorThreshold: body.errorThreshold } : {}),
+            ...(body.errorWindowMinutes != null ? { errorWindowMinutes: body.errorWindowMinutes } : {}),
             ...(body.cooldownMinutes != null ? { cooldownMinutes: body.cooldownMinutes } : {}),
+            updatedAt: Date.now(),
           })
           .where(orm.eq(schema.alertRule.id, rule.id))
 
@@ -1052,18 +1085,12 @@ export const api = new Spiceflow({ tracer })
 
         const db = getDb()
 
-        const rule = await db.query.alertRule.findFirst({
-          where: { orgId: params.orgId },
-        })
-        if (!rule) {
-          throw json({ error: 'no alert rule found' }, { status: 404 })
-        }
-
+        // Delete the destination itself (cascade removes junction rows)
         const [deleted] = await db.delete(schema.alertDestination)
           .where(
             orm.and(
               orm.eq(schema.alertDestination.id, params.destinationId),
-              orm.eq(schema.alertDestination.ruleId, rule.id),
+              orm.eq(schema.alertDestination.orgId, params.orgId),
             ),
           )
           .returning()
@@ -1083,20 +1110,23 @@ export const api = new Spiceflow({ tracer })
         await requireOrgMember(session.userId, params.orgId)
 
         const db = getDb()
-        const rule = await db.query.alertRule.findFirst({
+
+        // Load all destinations for this org (test all, not just one rule's)
+        const destinations = await db.query.alertDestination.findMany({
           where: { orgId: params.orgId },
-          with: { destinations: true, org: true },
         })
 
-        if (!rule || !rule.destinations || rule.destinations.length === 0) {
+        if (destinations.length === 0) {
           throw json({ error: 'no alert destinations configured' }, { status: 400 })
         }
 
+        const orgRow = await db.query.org.findFirst({ where: { id: params.orgId } })
+        const orgName = orgRow?.name || 'Unknown'
+
         const { buildTestAlertEmailHtml } = await import('./alert-email.tsx')
-        const orgName = rule.org?.name || 'Unknown'
         const results: Array<{ channel: string; destination: string; ok: boolean }> = []
 
-        for (const dest of rule.destinations) {
+        for (const dest of destinations) {
           try {
             if (dest.channel === 'email') {
               const html = await buildTestAlertEmailHtml(orgName)

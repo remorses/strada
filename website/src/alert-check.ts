@@ -1,11 +1,10 @@
 // Scheduled alert check handler. Runs every 5 minutes via cron trigger.
-// Queries each org's projects for errors exceeding the configured threshold,
-// cross-references with otel_issue_state to check cooldown, then sends
-// notifications to all configured destinations (email/webhook).
+// Only processes error_threshold rules. Health check rules will be handled
+// by a separate handler in the future.
 //
 // Flow:
-//   1. Load orgs with alert rules + destinations from D1
-//   2. For each org, load database config + projects
+//   1. Load error_threshold rules with destinations (via junction table) from D1
+//   2. For each rule's org, load database config + projects
 //   3. For each project, query otel_errors for fingerprints exceeding threshold
 //   4. Cross-reference otel_issue_state for cooldown (LastAlertedAt)
 //   5. For new/cooled-down alerts, send notifications + update LastAlertedAt
@@ -44,12 +43,13 @@ interface ProjectWithJwt extends ProjectJwtInfo {
 export async function checkAlerts(): Promise<void> {
   const db = getDb()
 
-  // 1. Load all alert rules with destinations and org name
+  // 1. Load only error_threshold rules with destinations (via junction) and org name
   const rules = await db.query.alertRule.findMany({
+    where: { type: 'error_threshold', enabled: true },
     with: { destinations: true, org: true },
   })
 
-  logger.info({ message: `found ${rules.length} rules`, rulesCount: rules.length })
+  logger.info({ message: `found ${rules.length} error_threshold rules`, rulesCount: rules.length })
 
   if (rules.length === 0) return
 
@@ -75,8 +75,8 @@ export async function checkAlerts(): Promise<void> {
 async function checkOrgAlerts(rule: {
   id: string
   orgId: string
-  threshold: number
-  windowMinutes: number
+  errorThreshold: number | null
+  errorWindowMinutes: number | null
   cooldownMinutes: number
   destinations: Array<{ channel: string; destination: string }>
   org: { id: string; name: string } | null
@@ -103,13 +103,15 @@ async function checkOrgAlerts(rule: {
   logger.info({ message: `checking org`, orgId: rule.orgId, projectCount: projects.length, backend: dbConfig.backend })
 
   const orgName = rule.org?.name || 'Unknown'
+  const threshold = rule.errorThreshold ?? 1
+  const windowMinutes = rule.errorWindowMinutes ?? 5
 
   for (const project of projects) {
     try {
       await checkProjectAlerts({
         project,
         dbConfig,
-        rule,
+        rule: { threshold, windowMinutes, cooldownMinutes: rule.cooldownMinutes, destinations: rule.destinations },
         orgName,
       })
     } catch (err) {
