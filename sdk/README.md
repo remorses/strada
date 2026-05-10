@@ -185,6 +185,8 @@ await startSpan({ name: "checkout.request" }, async () => {
 
 Spans from **different tracer instances** also nest correctly. Parent-child is determined by the active OTel Context, not by which tracer created the span. So spans from `startSpan()`, `trace.getTracer('my-app')`, and auto-instrumentation libraries all end up in the same trace tree as long as they share the same context.
 
+**Browser limitation:** async nesting (across `await` boundaries) only works on **Node.js and Cloudflare Workers**, where `AsyncLocalStorage` preserves context across async operations. In browsers, the OTel `StackContextManager` loses context after `await`. Synchronous nesting works correctly everywhere. This is a known limitation of the OTel browser SDK, not specific to Strada.
+
 ### `startSpan` vs `startInactiveSpan`
 
 **Use `startSpan` by default.** It creates a span, sets it as active in context, auto-ends it, and auto-records errors. Any spans created inside the callback are automatically parented.
@@ -274,6 +276,8 @@ import { startInactiveSpan } from "@strada.sh/sdk"
 This works for both normal exits and throws. If an error is thrown inside the block, the span is still ended.
 
 ```ts
+import { startInactiveSpan, SpanStatusCode } from "@strada.sh/sdk"
+
 {
   using span = startInactiveSpan({ name: "risky-operation" })
   try {

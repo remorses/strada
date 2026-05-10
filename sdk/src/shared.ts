@@ -688,14 +688,13 @@ export const BAGGAGE_USER_ID = "user.id";
 // Auto-ends the span and auto-records errors. Handles both sync and async
 // callbacks by detecting thenables (same approach as OTel's SugaredTracer).
 
-export interface StartSpanOptions {
+import type { SpanOptions as OtelSpanOptions } from "@opentelemetry/api";
+
+export type StartSpanOptions = OtelSpanOptions & {
   /** Span name. Required. */
   name: string;
-  /** Span attributes set at creation time. */
-  attributes?: Record<string, string | number | boolean>;
-  /** Span kind (SERVER, CLIENT, PRODUCER, CONSUMER, INTERNAL). */
-  kind?: import("@opentelemetry/api").SpanKind;
-}
+};
+
 
 /**
  * Start a span, execute the callback, and auto-end the span.
@@ -721,12 +720,9 @@ export function startSpan<T>(
   callback: (span: OtelSpan) => T,
 ): T {
   const tracer = _trace.getTracer("strada");
-  const spanOptions: import("@opentelemetry/api").SpanOptions = {
-    attributes: options.attributes,
-    kind: options.kind,
-  };
+  const { name, ...spanOptions } = options;
 
-  return tracer.startActiveSpan(options.name, spanOptions, (span) => {
+  return tracer.startActiveSpan(name, spanOptions, (span) => {
     return _handleCallbackErrors(
       () => callback(span),
       (e) => {
@@ -778,10 +774,8 @@ export type DisposableSpan = OtelSpan & Disposable;
  */
 export function startInactiveSpan(options: StartSpanOptions): DisposableSpan {
   const tracer = _trace.getTracer("strada");
-  const span = tracer.startSpan(options.name, {
-    attributes: options.attributes,
-    kind: options.kind,
-  });
+  const { name, ...spanOptions } = options;
+  const span = tracer.startSpan(name, spanOptions);
   (span as DisposableSpan)[Symbol.dispose] = () => span.end();
   return span as DisposableSpan;
 }
@@ -809,23 +803,32 @@ function _handleCallbackErrors<T>(
     throw e;
   }
 
-  if (
-    result != null &&
-    typeof result === "object" &&
-    "then" in result &&
-    typeof (result as any).then === "function"
-  ) {
-    return (result as any).then(
-      (val: unknown) => {
-        onFinally();
-        return val;
-      },
-      (err: unknown) => {
-        onError(err);
-        onFinally();
-        throw err;
-      },
-    ) as T;
+  // Detect thenables (Promises) robustly. Access .then inside a try
+  // so a throwing getter doesn't leak the span (onFinally not called).
+  if (result != null && (typeof result === "object" || typeof result === "function")) {
+    let thenFn: unknown;
+    try {
+      thenFn = (result as unknown as PromiseLike<unknown>).then;
+    } catch (e) {
+      onError(e);
+      onFinally();
+      throw e;
+    }
+
+    if (typeof thenFn === "function") {
+      return (thenFn as Function).call(
+        result,
+        (val: unknown) => {
+          onFinally();
+          return val;
+        },
+        (err: unknown) => {
+          onError(err);
+          onFinally();
+          throw err;
+        },
+      ) as T;
+    }
   }
 
   onFinally();
