@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0
+
+1. **`startSpan` convenience helper** -- Sentry-style ergonomic span creation without tracer ceremony. Auto-ends the span, auto-records exceptions with ERROR status, and auto-parents child spans via context propagation:
+
+   ```ts
+   const result = await startSpan({ name: 'checkout' }, async (span) => {
+     span.setAttribute('order.id', 'ord_123')
+     return await processOrder()
+   })
+   ```
+
+   Handles both sync and async callbacks. Errors are recorded on the span and re-thrown. All standard OTel `SpanOptions` (links, startTime, root, kind, attributes) are passed through.
+
+2. **`startInactiveSpan` for background work** -- creates a span without setting it active in context, so it does not parent subsequent child spans. Returns a `DisposableSpan` that supports the `using` keyword for automatic cleanup:
+
+   ```ts
+   {
+     using span = startInactiveSpan({ name: 'bg-task' })
+     span.setAttribute('queue', 'jobs')
+   } // span.end() called automatically via Symbol.dispose
+   ```
+
+   Also works with manual `span.end()` calls. Calling `end()` twice is silently ignored.
+
+3. **Dev mode auto-detection for faster flush** -- when `import.meta.hot` is truthy (Vite, Webpack HMR, RSC dev servers), batch processors use 500ms flush intervals for traces and logs (down from 5s default) and 2s for metrics (down from 10s). Logs, errors, and spans appear almost instantly during development. No config change needed; production behavior is unchanged.
+
 ## 0.2.0
 
 1. **Vite release metadata plugin** -- new `@strada.sh/sdk/vite` export injects commit, branch, and deployment info into browser builds automatically. No manual `initStrada({ release })` needed:
