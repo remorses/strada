@@ -681,6 +681,130 @@ export function shouldExportTelemetry(options: StradaOptions): boolean {
 export const BAGGAGE_SESSION_ID = "strada.session.id";
 export const BAGGAGE_USER_ID = "user.id";
 
+// ---------------------------------------------------------------------------
+// startSpan — ergonomic span creation (Sentry-style)
+// ---------------------------------------------------------------------------
+// Uses a hidden global tracer so users never need to call trace.getTracer().
+// Auto-ends the span and auto-records errors. Handles both sync and async
+// callbacks by detecting thenables (same approach as OTel's SugaredTracer).
+
+export interface StartSpanOptions {
+  /** Span name. Required. */
+  name: string;
+  /** Span attributes set at creation time. */
+  attributes?: Record<string, string | number | boolean>;
+  /** Span kind (SERVER, CLIENT, PRODUCER, CONSUMER, INTERNAL). */
+  kind?: import("@opentelemetry/api").SpanKind;
+}
+
+/**
+ * Start a span, execute the callback, and auto-end the span.
+ *
+ * The span is set as active in the current context (via AsyncLocalStorage on
+ * Node, WorkerContextManager on Cloudflare, StackContextManager on browser).
+ * Child spans created inside the callback are automatically parented to it.
+ *
+ * If the callback throws (sync or async), the span status is set to ERROR,
+ * the exception is recorded on the span, and the error is re-thrown.
+ * If the callback succeeds, the span ends normally.
+ *
+ * @example
+ * ```ts
+ * const result = await startSpan({ name: 'checkout' }, async (span) => {
+ *   span.setAttribute('order.id', 'ord_123')
+ *   return await processOrder()
+ * })
+ * ```
+ */
+export function startSpan<T>(
+  options: StartSpanOptions,
+  callback: (span: OtelSpan) => T,
+): T {
+  const tracer = _trace.getTracer("strada");
+  const spanOptions: import("@opentelemetry/api").SpanOptions = {
+    attributes: options.attributes,
+    kind: options.kind,
+  };
+
+  return tracer.startActiveSpan(options.name, spanOptions, (span) => {
+    return _handleCallbackErrors(
+      () => callback(span),
+      (e) => {
+        span.recordException(e instanceof Error ? e : new Error(String(e)));
+        span.setStatus({ code: _SpanStatusCode.ERROR });
+      },
+      () => span.end(),
+    );
+  });
+}
+
+/**
+ * Create a span without setting it as active in context.
+ *
+ * The span is NOT auto-ended. You must call `span.end()` yourself.
+ * Use this for background or parallel work that should not parent
+ * child spans created in the current context.
+ *
+ * @example
+ * ```ts
+ * const span = startInactiveSpan({ name: 'bg-task' })
+ * doWork().finally(() => span.end())
+ * ```
+ */
+export function startInactiveSpan(options: StartSpanOptions): OtelSpan {
+  const tracer = _trace.getTracer("strada");
+  return tracer.startSpan(options.name, {
+    attributes: options.attributes,
+    kind: options.kind,
+  });
+}
+
+/**
+ * Execute a callback with error and cleanup hooks.
+ * Handles both synchronous returns and thenables (Promises).
+ *
+ * - If fn() throws synchronously: onError(e), onFinally(), re-throw
+ * - If fn() returns a thenable that rejects: onError(e), onFinally(), re-throw
+ * - If fn() returns a thenable that resolves: onFinally(), return value
+ * - If fn() returns a non-thenable: onFinally(), return value
+ */
+function _handleCallbackErrors<T>(
+  fn: () => T,
+  onError: (error: unknown) => void,
+  onFinally: () => void,
+): T {
+  let result: T;
+  try {
+    result = fn();
+  } catch (e) {
+    onError(e);
+    onFinally();
+    throw e;
+  }
+
+  if (
+    result != null &&
+    typeof result === "object" &&
+    "then" in result &&
+    typeof (result as any).then === "function"
+  ) {
+    return (result as any).then(
+      (val: unknown) => {
+        onFinally();
+        return val;
+      },
+      (err: unknown) => {
+        onError(err);
+        onFinally();
+        throw err;
+      },
+    ) as T;
+  }
+
+  onFinally();
+  return result;
+}
+
 /**
  * Build a Baggage object with session.id and optionally user.id.
  * Used by the browser SDK to inject context into outgoing requests,

@@ -35,7 +35,7 @@ try {
 After `initStrada()`, the global OTel providers are configured. Use the standard OTel APIs re-exported by `@strada.sh/sdk`.
 
 ```ts
-import { initStrada, trace, logs, metrics, SeverityNumber } from "@strada.sh/sdk"
+import { initStrada, startSpan, logs, metrics, SeverityNumber } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
@@ -43,20 +43,19 @@ initStrada({
   service: "worker",
 })
 
-const tracer = trace.getTracer("jobs")
 const logger = logs.getLogger("jobs")
 const meter = metrics.getMeter("jobs")
-
 const counter = meter.createCounter("emails.sent")
 
-const span = tracer.startSpan("send-email")
-logger.emit({
-  body: "sending email",
-  severityText: "INFO",
-  severityNumber: SeverityNumber.INFO,
+await startSpan({ name: "send-email" }, async (span) => {
+  logger.emit({
+    body: "sending email",
+    severityText: "INFO",
+    severityNumber: SeverityNumber.INFO,
+  })
+  await sendEmail()
+  counter.add(1)
 })
-counter.add(1)
-span.end()
 ```
 
 ## Vite release metadata
@@ -127,7 +126,7 @@ The SDK does **not** install the OTel auto-instrumentation packages by default. 
 | **Node** | No spans are created automatically | `uncaughtException` and `unhandledRejection` are sent as exception logs |
 | **Cloudflare Workers** | No spans are created automatically | No process/global error handlers. Only explicit SDK calls send logs |
 
-Everything else is **explicit**. Use `trace.getTracer().startSpan()` for spans, `logs.getLogger().emit()` for logs, `track()` for custom event logs, and `captureException()` for handled error logs.
+Everything else is **explicit**. Use `startSpan()` for spans, `logs.getLogger().emit()` for logs, `track()` for custom event logs, and `captureException()` for handled error logs.
 
 ```text
 initStrada()
@@ -140,67 +139,95 @@ Install optional OTel auto-instrumentation separately if you want automatic HTTP
 
 ## Create traces and spans
 
-Use the standard OTel tracing API after `initStrada()`.
+Use `startSpan` after `initStrada()`. It creates a span, sets it as active in the current context, and auto-ends it when the callback finishes. If the callback throws, the span is marked as ERROR and the exception is recorded automatically.
 
 ```ts
-import { initStrada, trace, SpanStatusCode } from "@strada.sh/sdk"
+import { initStrada, startSpan } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
   service: "api",
 })
 
-const tracer = trace.getTracer("checkout")
+await startSpan({ name: "checkout.request" }, async (span) => {
+  span.setAttribute("checkout.id", "chk_123")
+  span.setAttribute("user.id", "user_123")
 
-const span = tracer.startSpan("checkout.request", {
-  attributes: {
-    "checkout.id": "chk_123",
-    "user.id": "user_123",
-  },
-})
-
-try {
   span.addEvent("payment.started")
   span.setAttribute("checkout.step", "payment")
-  span.setStatus({ code: SpanStatusCode.OK })
-} catch (error) {
-  if (error instanceof Error) {
-    span.recordException(error)
-  }
-  span.setStatus({ code: SpanStatusCode.ERROR })
-  throw error
-} finally {
-  span.end()
-}
+  await processPayment()
+  // span auto-ends here. If processPayment() throws, the span gets
+  // ERROR status and the exception is recorded automatically.
+})
 ```
 
 ### Parent and child spans
 
+Nesting `startSpan` calls automatically creates parent-child relationships. The outer span becomes the parent. No manual context wiring needed.
+
 ```ts
-import { initStrada, trace, context } from "@strada.sh/sdk"
+import { initStrada, startSpan } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
   service: "api",
 })
 
-const tracer = trace.getTracer("checkout")
+await startSpan({ name: "checkout.request" }, async () => {
+  // This span is automatically a child of checkout.request
+  await startSpan({ name: "db.insert-order" }, async (span) => {
+    span.setAttribute("db.system", "postgresql")
+    span.setAttribute("db.operation", "INSERT")
+    await insertOrder()
+  })
+})
+```
 
-const parentSpan = tracer.startSpan("checkout.request")
+Spans from **different tracer instances** also nest correctly. Parent-child is determined by the active OTel Context, not by which tracer created the span. So spans from `startSpan()`, `trace.getTracer('my-app')`, and auto-instrumentation libraries all end up in the same trace tree as long as they share the same context.
 
-await context.with(trace.setSpan(context.active(), parentSpan), async () => {
-  const childSpan = tracer.startSpan("db.insert-order")
+### `startSpan` vs `startInactiveSpan`
 
-  try {
-    childSpan.setAttribute("db.system", "postgresql")
-    childSpan.setAttribute("db.operation", "INSERT")
-    // run database work here
-  } finally {
-    childSpan.end()
-  }
+**Use `startSpan` by default.** It creates a span, sets it as active in context, auto-ends it, and auto-records errors. Any spans created inside the callback are automatically parented.
+
+`startInactiveSpan` only creates a span. It does **not** set it as active and does **not** auto-end. You must call `span.end()` yourself. Use this for **background or fire-and-forget work** that should not parent child spans.
+
+```ts
+import { startSpan, startInactiveSpan } from "@strada.sh/sdk"
+
+// startSpan: active span, auto-end, auto-error recording
+await startSpan({ name: "process-order" }, async () => {
+  // This child span is automatically linked to "process-order"
+  await startSpan({ name: "validate-inventory" }, async () => {
+    // ...
+  })
 })
 
-parentSpan.end()
+// startInactiveSpan: detached span for background work
+const bgSpan = startInactiveSpan({ name: "background-cleanup" })
+scheduleCleanup().finally(() => bgSpan.end())
+```
+
+### Raw OTel tracing API
+
+If you need full control, the standard OTel `trace.getTracer().startActiveSpan()` API is still available. `startSpan` is sugar on top of it.
+
+```ts
+import { trace, SpanStatusCode } from "@strada.sh/sdk"
+
+const tracer = trace.getTracer("checkout")
+
+await tracer.startActiveSpan("process-order", async (span) => {
+  try {
+    await processOrder()
+    span.setStatus({ code: SpanStatusCode.OK })
+  } catch (error) {
+    span.recordException(error instanceof Error ? error : new Error(String(error)))
+    span.setStatus({ code: SpanStatusCode.ERROR })
+    throw error
+  } finally {
+    span.end()
+  }
+})
 ```
 
 ## Logging
@@ -615,17 +642,15 @@ Same API as Node. `initStrada()` is safe to call on every request (no-op after t
 Manual spans and logs work the same way:
 
 ```ts
-import { initStrada, trace, logs, SeverityNumber } from "@strada.sh/sdk"
+import { initStrada, startSpan } from "@strada.sh/sdk"
 
 export default {
   fetch(request, env) {
     initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "api" })
 
-    const tracer = trace.getTracer("checkout")
-    return tracer.startActiveSpan("process-order", async (span) => {
+    return startSpan({ name: "process-order" }, async (span) => {
       span.setAttribute("order.id", "ord_123")
       // ...
-      span.end()
       return new Response("ok")
     })
   },
@@ -1019,6 +1044,8 @@ That excludes ordinary logs that do not have `event.name`.
 ### Main helpers
 
 - `initStrada(options)`
+- `startSpan({ name }, callback)` — creates a span, auto-ends, auto-records errors
+- `startInactiveSpan({ name })` — creates a detached span (manual end)
 - `captureException(error, opts?)`
 - `setTags(tags)`
 - `flush()`
@@ -1036,7 +1063,8 @@ That excludes ordinary logs that do not have `event.name`.
 
 ## When to use raw OTel vs Strada helpers
 
-- use **raw OTel APIs** for normal spans, logs, and metrics
+- use **`startSpan()`** for spans (auto-end, auto-error recording)
+- use **raw OTel APIs** (`trace.getTracer()`) when you need full span control
 - use **`captureException()`** when you want Strada error conventions
 - use **`track()`** in the browser when you want analytics events in `otel_logs`
 

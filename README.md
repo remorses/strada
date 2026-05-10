@@ -153,7 +153,7 @@ Node.js, Vercel, and Cloudflare Workers. If you need another one later, run
 anonymous and rate limited because browser secrets are public.
 
 ```ts
-import { initStrada, captureException, track, trace } from "@strada.sh/sdk"
+import { initStrada, captureException, track, startSpan } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
@@ -174,11 +174,11 @@ try {
   captureException(err)
 }
 
-// create traces
-const tracer = trace.getTracer("checkout")
-const span = tracer.startSpan("process-order")
-span.setAttribute("order.id", "ord_123")
-span.end()
+// create traces (auto-ends span, auto-records errors)
+await startSpan({ name: "process-order" }, async (span) => {
+  span.setAttribute("order.id", "ord_123")
+  await processOrder(order)
+})
 
 // track custom events
 track("purchase_completed", { plan: "pro", amount: 49 })
@@ -408,6 +408,7 @@ After `initStrada()`, all standard OTel APIs work: `trace.getTracer()`, `logs.ge
 
 **Convenience helpers** (optional, thin wrappers over OTel):
 
+- `startSpan({ name }, callback)` creates a span, auto-ends it, and auto-records errors. No tracer instance needed
 - `captureException(error)` normalizes errors, computes fingerprints, emits structured OTel log records
 - `track(name, props)` emits custom events as OTel log records with `event.name` and `custom.*` attributes
 - `setTags(tags)` sets tags merged into subsequent error attributes

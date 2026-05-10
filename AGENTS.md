@@ -242,6 +242,8 @@ These are thin wrappers over OTel APIs with Strada conventions baked in:
 
 | Helper | What it does under the hood |
 |--------|----------------------------|
+| `startSpan({ name }, callback)` | Creates a span via `trace.getTracer('strada').startActiveSpan()`, auto-ends it, and auto-records exceptions with ERROR status. Handles both sync and async callbacks. No tracer instance needed |
+| `startInactiveSpan({ name })` | Creates a span via `trace.getTracer('strada').startSpan()` without setting it active. Returns the span for manual control. Use for background/parallel work |
 | `captureException(error, opts?)` | Normalizes the error, applies filtering (ignoreErrors/denyUrls/beforeSend), builds `exception.*` attributes, emits an OTel log record |
 | `track(name, props?)` | Emits an OTel log record with `event.name` and `custom.*` attributes, correlated to active pageview span (browser only) |
 | `setTags({ key: value })` | Sets tags merged into subsequent error attributes |

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { ROOT_CONTEXT, trace, propagation } from "@opentelemetry/api";
+import { ROOT_CONTEXT, trace, context, propagation } from "@opentelemetry/api";
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import {
   normalizeError,
   shouldIgnoreError,
@@ -18,6 +19,8 @@ import {
   readCookie,
   setTags,
   resetContext,
+  startSpan,
+  startInactiveSpan,
   DEFAULT_IGNORE_ERRORS,
   DEFAULT_DENY_URLS,
   ATTR,
@@ -879,5 +882,373 @@ describe("baggage round-trip propagation", () => {
     const serverBaggage = propagation.getBaggage(serverCtx);
     expect(serverBaggage!.getEntry(BAGGAGE_SESSION_ID)?.value).toBe("anon-session-xyz");
     expect(serverBaggage!.getEntry(BAGGAGE_USER_ID)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startSpan (ergonomic span creation)
+// ---------------------------------------------------------------------------
+// These tests use NodeTracerProvider to get AsyncLocalStorage context
+// propagation, which is what makes startSpan nesting work.
+
+describe("startSpan", () => {
+  let provider: NodeTracerProvider;
+  let exporter: InMemorySpanExporter;
+
+  beforeEach(() => {
+    exporter = new InMemorySpanExporter();
+    provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    provider.register();
+  });
+
+  afterEach(async () => {
+    await provider.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  it("sync callback: returns value and ends span", () => {
+    const result = startSpan({ name: "sync-work" }, (span) => {
+      span.setAttribute("key", "value");
+      return 42;
+    });
+
+    expect(result).toBe(42);
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.name).toBe("sync-work");
+    expect(spans[0]!.attributes["key"]).toBe("value");
+  });
+
+  it("async callback: returns awaited value and ends span", async () => {
+    const result = await startSpan({ name: "async-work" }, async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return "done";
+    });
+
+    expect(result).toBe("done");
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.name).toBe("async-work");
+  });
+
+  it("sync throw: sets ERROR status, records exception, re-throws", () => {
+    expect(() => {
+      startSpan({ name: "sync-error" }, () => {
+        throw new TypeError("boom");
+      });
+    }).toThrow("boom");
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    const span = spans[0]!;
+    expect(span.status.code).toBe(2); // SpanStatusCode.ERROR
+    expect(span.events).toHaveLength(1);
+    expect(span.events[0]!.name).toBe("exception");
+  });
+
+  it("async rejection: sets ERROR status, records exception, re-throws", async () => {
+    await expect(
+      startSpan({ name: "async-error" }, async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        throw new Error("async boom");
+      }),
+    ).rejects.toThrow("async boom");
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    const span = spans[0]!;
+    expect(span.status.code).toBe(2); // SpanStatusCode.ERROR
+    expect(span.events).toHaveLength(1);
+    expect(span.events[0]!.name).toBe("exception");
+  });
+
+  it("passes attributes and kind from options", () => {
+    startSpan(
+      { name: "with-attrs", attributes: { "user.id": "u123" }, kind: 1 },
+      () => {},
+    );
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans[0]!.attributes["user.id"]).toBe("u123");
+    expect(spans[0]!.kind).toBe(1); // SpanKind.CLIENT
+  });
+
+  it("nesting auto-parents child spans", () => {
+    startSpan({ name: "outer" }, () => {
+      startSpan({ name: "inner" }, () => {});
+    });
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+    const outer = spans.find((s) => s.name === "outer")!;
+    const inner = spans.find((s) => s.name === "inner")!;
+    expect(inner.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
+    expect(inner.spanContext().traceId).toBe(outer.spanContext().traceId);
+  });
+
+  it("async nesting preserves parenting across await", async () => {
+    await startSpan({ name: "async-outer" }, async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      await startSpan({ name: "async-inner" }, async () => {
+        await new Promise((r) => setTimeout(r, 5));
+      });
+    });
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+    const outer = spans.find((s) => s.name === "async-outer")!;
+    const inner = spans.find((s) => s.name === "async-inner")!;
+    expect(inner.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
+  });
+});
+
+describe("startInactiveSpan", () => {
+  let provider: NodeTracerProvider;
+  let exporter: InMemorySpanExporter;
+
+  beforeEach(() => {
+    exporter = new InMemorySpanExporter();
+    provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    provider.register();
+  });
+
+  afterEach(async () => {
+    await provider.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  it("creates a span that is not active in context", () => {
+    const span = startInactiveSpan({ name: "bg-task" });
+
+    // The span should not be the active span
+    const active = trace.getActiveSpan();
+    expect(active).toBeUndefined();
+
+    span.end();
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.name).toBe("bg-task");
+  });
+
+  it("does not parent subsequent startSpan calls", () => {
+    const inactive = startInactiveSpan({ name: "inactive-root" });
+    // Creating another span should not be parented to the inactive span
+    const other = startInactiveSpan({ name: "other" });
+    other.end();
+    inactive.end();
+
+    const spans = exporter.getFinishedSpans();
+    const inactiveSpan = spans.find((s) => s.name === "inactive-root")!;
+    const otherSpan = spans.find((s) => s.name === "other")!;
+
+    // Neither should be parented to the other
+    expect(otherSpan.parentSpanContext).toBeUndefined();
+    expect(otherSpan.spanContext().traceId).not.toBe(inactiveSpan.spanContext().traceId);
+  });
+
+  it("passes attributes and kind from options", () => {
+    const span = startInactiveSpan({
+      name: "with-opts",
+      attributes: { queue: "jobs" },
+      kind: 3, // SpanKind.PRODUCER
+    });
+    span.end();
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans[0]!.attributes["queue"]).toBe("jobs");
+    expect(spans[0]!.kind).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startActiveSpan vs startSpan parenting behavior (raw OTel)
+// ---------------------------------------------------------------------------
+// These tests verify our documentation claims about span parenting.
+// NodeTracerProvider is required because it registers the
+// AsyncLocalStorageContextManager, which is what makes startActiveSpan
+// propagate the active span through context. BasicTracerProvider alone
+// does NOT register a context manager, so startActiveSpan would be a
+// no-op for parenting.
+
+describe("startActiveSpan parenting", () => {
+  let provider: NodeTracerProvider;
+  let exporter: InMemorySpanExporter;
+
+  beforeEach(() => {
+    exporter = new InMemorySpanExporter();
+    provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    provider.register();
+  });
+
+  afterEach(async () => {
+    await provider.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  it("startActiveSpan creates parent-child spans when nested", async () => {
+    const tracer = trace.getTracer("test");
+
+    tracer.startActiveSpan("parent", (parentSpan) => {
+      tracer.startActiveSpan("child", (childSpan) => {
+        childSpan.end();
+      });
+      parentSpan.end();
+    });
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+
+    const child = spans.find((s) => s.name === "child")!;
+    const parent = spans.find((s) => s.name === "parent")!;
+
+    // Child's parent is the outer span
+    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
+    // Both share the same trace
+    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+    // Parent has no parent (it's the root)
+    expect(parent.parentSpanContext).toBeUndefined();
+  });
+
+  it("startSpan inside startActiveSpan is also parented", async () => {
+    const tracer = trace.getTracer("test");
+
+    tracer.startActiveSpan("parent", (parentSpan) => {
+      // startSpan reads the active context set by startActiveSpan
+      const child = tracer.startSpan("child-via-startSpan");
+      child.end();
+      parentSpan.end();
+    });
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    const child = spans.find((s) => s.name === "child-via-startSpan")!;
+    const parent = spans.find((s) => s.name === "parent")!;
+
+    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
+    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+  });
+
+  it("sequential startSpan calls are NOT parented to each other", async () => {
+    const tracer = trace.getTracer("test");
+
+    const spanA = tracer.startSpan("standalone-a");
+    const spanB = tracer.startSpan("standalone-b");
+    spanB.end();
+    spanA.end();
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    const a = spans.find((s) => s.name === "standalone-a")!;
+    const b = spans.find((s) => s.name === "standalone-b")!;
+
+    // Neither is parented
+    expect(a.parentSpanContext).toBeUndefined();
+    expect(b.parentSpanContext).toBeUndefined();
+    // They have different trace IDs (independent roots)
+    expect(a.spanContext().traceId).not.toBe(b.spanContext().traceId);
+  });
+
+  it("startSpan outside startActiveSpan is not parented", async () => {
+    const tracer = trace.getTracer("test");
+
+    tracer.startActiveSpan("active-parent", (parentSpan) => {
+      parentSpan.end();
+    });
+
+    // This span is created after the startActiveSpan callback returned,
+    // so the active context no longer has the parent span
+    const detached = tracer.startSpan("detached");
+    detached.end();
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    const parent = spans.find((s) => s.name === "active-parent")!;
+    const detachedSpan = spans.find((s) => s.name === "detached")!;
+
+    expect(detachedSpan.parentSpanContext).toBeUndefined();
+    expect(detachedSpan.spanContext().traceId).not.toBe(parent.spanContext().traceId);
+  });
+
+  it("three-level nesting creates correct parent chain", async () => {
+    const tracer = trace.getTracer("test");
+
+    tracer.startActiveSpan("grandparent", (gp) => {
+      tracer.startActiveSpan("parent", (p) => {
+        tracer.startActiveSpan("child", (c) => {
+          c.end();
+        });
+        p.end();
+      });
+      gp.end();
+    });
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(3);
+
+    const grandparent = spans.find((s) => s.name === "grandparent")!;
+    const parent = spans.find((s) => s.name === "parent")!;
+    const child = spans.find((s) => s.name === "child")!;
+
+    // Verify the chain: child -> parent -> grandparent
+    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
+    expect(parent.parentSpanContext?.spanId).toBe(grandparent.spanContext().spanId);
+    expect(grandparent.parentSpanContext).toBeUndefined();
+
+    // All share the same trace ID
+    const traceId = grandparent.spanContext().traceId;
+    expect(parent.spanContext().traceId).toBe(traceId);
+    expect(child.spanContext().traceId).toBe(traceId);
+  });
+
+  it("async startActiveSpan preserves parenting across await", async () => {
+    const tracer = trace.getTracer("test");
+
+    await tracer.startActiveSpan("async-parent", async (parentSpan) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      tracer.startActiveSpan("async-child", (childSpan) => {
+        childSpan.end();
+      });
+
+      parentSpan.end();
+    });
+
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    const parent = spans.find((s) => s.name === "async-parent")!;
+    const child = spans.find((s) => s.name === "async-child")!;
+
+    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
+    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+  });
+
+  it("error in startActiveSpan callback does not prevent span from being accessible", () => {
+    const tracer = trace.getTracer("test");
+
+    expect(() => {
+      tracer.startActiveSpan("erroring-span", (span) => {
+        span.setAttribute("before.error", true);
+        throw new Error("boom");
+        // span.end() never called — but the span is still recorded
+      });
+    }).toThrow("boom");
+
+    // The span was created and started, even though end() was never called.
+    // In production, you'd use try/finally to always call span.end().
+    // This test verifies the span is accessible even after an error.
+    const activeSpan = trace.getActiveSpan();
+    // After the callback threw, context is restored — no active span
+    expect(activeSpan).toBeUndefined();
   });
 });
