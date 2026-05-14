@@ -39,6 +39,10 @@
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
     },
+    "./better-auth": {
+      "types": "./dist/better-auth.d.ts",
+      "default": "./dist/better-auth.js"
+    },
     "./shared": {
       "types": "./dist/shared.d.ts",
       "default": "./dist/shared.js"
@@ -100,6 +104,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "better-auth": "https://pkg.pr.new/better-auth@9489",
     "esbuild": "^0.28.0",
     "rimraf": "^6.0.1",
     "vite": "^8.0.2"

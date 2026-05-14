@@ -10,6 +10,7 @@ import * as schema from 'db/src/schema.ts'
 import { betterAuth } from 'better-auth'
 import { deviceAuthorization, bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
+import { strataBetterAuth } from '@strada.sh/sdk/better-auth'
 import { json } from 'spiceflow'
 import { TinybirdClient, TINYBIRD_DATASOURCES } from 'strada/src/tinybird'
 
@@ -24,7 +25,7 @@ export function getDb() {
 export function getAuth() {
   const db = getDb()
   return betterAuth({
-    baseURL: getBaseUrl(),
+    baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite' }),
     session: {
@@ -42,14 +43,11 @@ export function getAuth() {
     },
     experimental: { joins: true },
     plugins: [
+      strataBetterAuth(),
       deviceAuthorization({ verificationUri: '/device', schema: {} }),
       bearer(),
     ],
   })
-}
-
-function getBaseUrl(): string {
-  return env.BETTER_AUTH_URL
 }
 
 // ── Session helpers ─────────────────────────────────────────────────

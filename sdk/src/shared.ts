@@ -816,7 +816,7 @@ function _handleCallbackErrors<T>(
     }
 
     if (typeof thenFn === "function") {
-      return (thenFn as Function).call(
+      return thenFn.call(
         result,
         (val: unknown) => {
           onFinally();

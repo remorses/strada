@@ -502,10 +502,9 @@ The cookie must be **JS-readable** (not `httpOnly`) so the browser SDK can acces
 
 ### Setting the cookie from your backend
 
-With better-auth, use the `afterSession` hook or middleware to set the cookie after login:
+Set the same cookie from your backend after login if you already have auth middleware. This keeps the user ID available before browser code runs and makes the value stable across page loads.
 
 ```ts
-// server middleware (runs on every request)
 app.use(async (req, res, next) => {
   const session = await auth.api.getSession({ headers: req.headers })
   if (session?.user) {
@@ -514,6 +513,23 @@ app.use(async (req, res, next) => {
   next()
 })
 ```
+
+### Better Auth
+
+With **Better Auth**, prefer the Strada plugin instead of writing cookie middleware manually. It sets the `strada_uid` cookie and tracks auth lifecycle events as custom events.
+
+```ts
+import { betterAuth } from "better-auth/minimal"
+import { strataBetterAuth } from "@strada.sh/sdk/better-auth"
+
+export const auth = betterAuth({
+  plugins: [
+    strataBetterAuth(),
+  ],
+})
+```
+
+The plugin emits `auth.signup`, `auth.login`, and `auth.logout` events with `user.id`, `custom.user_email`, `custom.auth_provider`, `custom.auth_method`, and `custom.auth_path` attributes. Disable email/name attributes with `strataBetterAuth({ includeUserDetails: false })`.
 
 ### Server-side user identification
 
