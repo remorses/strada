@@ -24,7 +24,7 @@ function getLoginInteractivityError() {
 
     Run it in a background terminal session like tuistory or tmux, then wait for the URL/code:
 
-      bunx tuistory launch "strada login" -s strada-login --no-wait
+      bunx tuistory launch "strada login" -s strada-login
       bunx tuistory -s strada-login wait "/Your code:|https?:\\/\\//i" --timeout 15000
 
     The login command exits by itself after successful browser approval.
