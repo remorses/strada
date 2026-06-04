@@ -29,22 +29,6 @@ const icons: Record<string, string> = {
   tokens: 'lucide:key',
 }
 
-function extractDescription(content: string): string {
-  const lines = content.split('\n')
-  let foundHeading = false
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!foundHeading && trimmed.startsWith('#')) {
-      foundHeading = true
-      continue
-    }
-    if (foundHeading && trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('|') && !trimmed.startsWith('```')) {
-      return trimmed.length > 150 ? trimmed.slice(0, 147) + '...' : trimmed
-    }
-  }
-  return ''
-}
-
 const pages = generateDocs({ cli, basePath: '/docs/cli' })
 
 if (fs.existsSync(outDir)) {
@@ -58,7 +42,6 @@ for (const page of pages) {
   const title = page.command
     ? page.command.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     : 'CLI Overview'
-  const description = extractDescription(page.content)
   const icon = icons[page.slug.split('-')[0]] || 'lucide:terminal'
 
   const frontmatter = [
@@ -67,7 +50,6 @@ for (const page of pages) {
     '$schema: https://holocron.so/frontmatter.json',
     `title: "${title}"`,
     ...(title.length > 30 ? [`sidebarTitle: "${page.command || 'CLI'}"`] : []),
-    ...(description ? [`description: "${description.replace(/"/g, '\\"')}"`] : []),
     `icon: ${icon}`,
     '---',
     '',
