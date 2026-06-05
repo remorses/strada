@@ -413,6 +413,7 @@ export const api = new Spiceflow({ tracer })
           client,
           datasources: [...bundledTinybirdResources.datasources],
           pipes: [...bundledTinybirdResources.pipes],
+          allowDestructive: true,
         })
         if (deployment instanceof Error) {
           throw json({ error: deployment.message }, { status: 502 })

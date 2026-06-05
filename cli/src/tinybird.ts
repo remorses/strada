@@ -109,6 +109,8 @@ export interface TinybirdDeployResourcesOptions {
   client: Pick<TinybirdClient, "listDeployments" | "deleteDeployment" | "createDeployment" | "getDeploymentStatus" | "promoteDeployment">;
   datasources: TinybirdResourceFile[];
   pipes: TinybirdResourceFile[];
+  /** Allow deletion of datasources/pipes that exist in Tinybird but not in the bundle. */
+  allowDestructive?: boolean;
   pollIntervalMs?: number;
   maxPollAttempts?: number;
 }
@@ -518,7 +520,7 @@ export class TinybirdClient {
     return null;
   }
 
-  async createDeployment({ datasources, pipes }: { datasources: TinybirdResourceFile[]; pipes: TinybirdResourceFile[] }) {
+  async createDeployment({ datasources, pipes, allowDestructive = false }: { datasources: TinybirdResourceFile[]; pipes: TinybirdResourceFile[]; allowDestructive?: boolean }) {
     const formData = new FormData();
 
     for (const datasource of datasources) {
@@ -529,8 +531,9 @@ export class TinybirdClient {
       formData.append("data_project://", new Blob([pipe.content], { type: "text/plain" }), `${pipe.name}.pipe`);
     }
 
+    const query = allowDestructive ? "?allow_destructive_operations=true" : "";
     return this.requestJson({
-      path: "/v1/deploy",
+      path: `/v1/deploy${query}`,
       parser: parseDeployResponse,
       init: { method: "POST", body: formData },
     });
@@ -601,6 +604,7 @@ export async function deployTinybirdResources({
   client,
   datasources,
   pipes,
+  allowDestructive,
   pollIntervalMs = 1000,
   maxPollAttempts = 120,
 }: TinybirdDeployResourcesOptions): Promise<Error | TinybirdDeployResourcesResult> {
@@ -618,7 +622,7 @@ export async function deployTinybirdResources({
     console.warn('Failed to list stale deployments before deploy:', deployments.message)
   }
 
-  const deployResponse = await client.createDeployment({ datasources, pipes })
+  const deployResponse = await client.createDeployment({ datasources, pipes, allowDestructive })
   if (deployResponse instanceof Error) return deployResponse
   if (deployResponse.result === 'failed') {
     return new Error(deployResponse.error || deployResponse.errors?.map((error) => error.error).join('\n') || 'Tinybird deployment failed')
