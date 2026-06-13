@@ -38,15 +38,14 @@ loginCli
       Authenticate with Strada via browser-based device flow.
 
       Opens a browser window for Google OAuth approval. The CLI polls until
-      approved, then saves the session token to ~/.strada/config.json.
+      approved, then saves the session token to \`~/.strada/config.json\`.
 
       Requires an interactive TTY. In non-interactive environments (agents, CI),
-      run inside a tuistory or tmux session:
-
-        bunx tuistory launch "strada login" -s strada-login
-        bunx tuistory -s strada-login wait "/Your code:|https?:\\/\\//i" --timeout 15000
+      run inside a tuistory or tmux session.
     `,
   )
+  .example('bunx tuistory launch "strada login" -s strada-login')
+  .example('bunx tuistory -s strada-login wait "/Your code:|https?:\\/\\//i" --timeout 15000')
   .option("-u, --url [url]", "Strada website URL (default: https://strada.sh)")
   .action((options, ctx) => loginAction(options, ctx));
 
@@ -56,7 +55,7 @@ loginCli
     dedent`
       Remove stored authentication from ~/.strada/config.json.
 
-      Clears the saved session token. Run 'strada login' again to re-authenticate.
+      Clears the saved session token. Run \`strada login\` again to re-authenticate.
     `,
   )
   .action((_options, ctx) => logoutAction(ctx));
@@ -68,7 +67,7 @@ loginCli
       Show the currently authenticated user and server URL.
 
       Validates the stored session token by calling the Strada API. If the
-      session is expired or invalid, run 'strada login' again.
+      session is expired or invalid, run \`strada login\` again.
     `,
   )
   .action((_options, ctx) => whoamiAction(ctx));

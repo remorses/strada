@@ -73,20 +73,18 @@ issuesCli
       range and -s to filter by service.
 
       After finding an issue, copy its fingerprint hash and run
-      'strada issues view <fingerprint>' to see the full stack trace and
+      \`strada issues view <fingerprint>\` to see the full stack trace and
       recent events.
 
-      By default only 'open' issues are shown. Use --status to filter by
+      By default only 'open' issues are shown. Use \`--status\` to filter by
       triage state: open, resolved, muted, ignored, or all.
-
-      Examples:
-        strada issues list -p my-app --since 24h
-        strada issues list -p my-app -s api-server --unhandled
-        strada issues list -p my-app --status all
-        strada issues list -p my-app --status resolved
-        strada issues list -p frontend -p api --since 7d
     `,
   )
+  .example('strada issues list -p my-app --since 24h')
+  .example('strada issues list -p my-app -s api-server --unhandled')
+  .example('strada issues list -p my-app --status all')
+  .example('strada issues list -p my-app --status resolved')
+  .example('strada issues list -p frontend -p api --since 7d')
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by service name")
@@ -259,13 +257,12 @@ issuesCli
       releases, environments, and a table of recent error events with trace
       correlation IDs.
 
-      Get the fingerprint hash from 'strada issues list'. The --events flag
+      Get the fingerprint hash from \`strada issues list\`. The \`--events\` flag
       controls how many recent occurrences to show (default 5).
-
-        strada issues view abc123def456 -p my-app
-        strada issues view abc123def456 -p my-app --events 10 --json
     `,
   )
+  .example('strada issues view abc123def456 -p my-app')
+  .example('strada issues view abc123def456 -p my-app --events 10 --json')
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-n, --events [count]", "Number of recent error events to show (default: 5)")
@@ -442,8 +439,8 @@ issuesCli
       Mark an issue as resolved.
 
       Sets the issue status to 'resolved' in otel_issue_state. Resolved issues
-      are hidden from the default 'strada issues list' output. Use --status all
-      or --status resolved to see them. Reopen with 'strada issues unresolve'.
+      are hidden from the default \`strada issues list\` output. Use \`--status all\`
+      or \`--status resolved\` to see them. Reopen with \`strada issues unresolve\`.
     `,
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
@@ -469,7 +466,7 @@ issuesCli
       Mark an issue as muted.
 
       Muted issues still collect error events but are hidden from the default
-      'strada issues list' output. Use --status muted or --status all to see them.
+      \`strada issues list\` output. Use \`--status muted\` or \`--status all\` to see them.
       Useful for known noise you want to triage separately.
     `,
   )
@@ -520,7 +517,7 @@ issuesCli
     dedent`
       Assign an issue to an org member or remove the current assignee.
 
-      Pass --to <member-id> to assign, or --unassign to clear the assignee.
+      Pass \`--to <member-id>\` to assign, or \`--unassign\` to clear the assignee.
       Get member IDs from the Strada website team page.
     `,
   )

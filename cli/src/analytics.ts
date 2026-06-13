@@ -68,10 +68,9 @@ analyticsCommand(
 
     Shows pathname, pageview count, and unique visitor count. Uses
     countMerge/uniqMerge for AggregatingMergeTree columns.
-
-      strada analytics pages -p my-app --since 30d
   `,
 )
+  .example('strada analytics pages -p my-app --since 30d')
   .action(async (options: AnalyticsOptions, { console: output, process: proc }: GokeExecutionContext) => {
     const conditions = buildMvConditions(options);
     const limit = Number(options.limit) || 20;
@@ -360,10 +359,9 @@ analyticsCommand(
 
     Queries both otel_analytics_pages and otel_analytics_sessions MVs.
     This gives a quick health check of browser analytics data.
-
-      strada analytics kpis -p my-app --since 30d
   `,
 )
+  .example('strada analytics kpis -p my-app --since 30d')
   .action(async (options: AnalyticsOptions, { console: output, process: proc }: GokeExecutionContext) => {
     const pagesConditions = buildMvConditions(options);
     const sessionsConditions = buildMvConditions(options);

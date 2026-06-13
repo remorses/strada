@@ -102,7 +102,7 @@ alertsCli
       Show all alert rules and destinations for the current org.
 
       Lists both error_threshold and health_check rules with their
-      destinations. Use 'strada checks list' to see health check details.
+      destinations. Use \`strada checks list\` to see health check details.
     `,
   )
   .action(async (_options, { console: output }) => {
@@ -209,7 +209,7 @@ alertsCli
       Update an error alert rule's settings.
 
       Change the threshold, window, cooldown, or name of an existing
-      error_threshold rule. Get the rule ID from 'strada alerts list'.
+      error_threshold rule. Get the rule ID from \`strada alerts list\`.
     `,
   )
   .option("--name <name>", z.string().describe("New rule name"))
@@ -250,7 +250,7 @@ alertsCli
       Delete an error alert rule.
 
       Destinations are not deleted; they remain for other rules.
-      Get the rule ID from 'strada alerts list'.
+      Get the rule ID from \`strada alerts list\`.
     `,
   )
   .action(async (id, _options, { console: output }) => {

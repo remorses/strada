@@ -126,14 +126,13 @@ projectsCli
     dedent`
       Create a new project and generate its first org-wide ingest token.
 
-      The generated project ID becomes the ingest hostname: {projectId}-ingest.strada.sh.
-      The token printed at creation is shown only once. Save it as STRADA_TOKEN
+      The generated project ID becomes the ingest hostname: \`{projectId}-ingest.strada.sh\`.
+      The token printed at creation is shown only once. Save it as \`STRADA_TOKEN\`
       for server-side SDKs. Browser SDKs do not need a token.
-
-        strada projects create my-app
-        strada projects create my-app-prod
     `,
   )
+  .example('strada projects create my-app')
+  .example('strada projects create my-app-prod')
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .action(async (slug, options, { console: output }) => {
     const { safeFetch } = getApiClient();
@@ -177,7 +176,7 @@ projectsCli
 
       This removes the project from D1. Data already ingested into
       Tinybird/ClickHouse is not deleted. Get the project ID from
-      'strada projects list'.
+      \`strada projects list\`.
     `,
   )
   .action(async (id, _options, { console: output }) => {

@@ -67,7 +67,7 @@ destinationsCli
       Remove a notification destination.
 
       Unlinks the destination from all alert rules and deletes it.
-      Get the destination ID from 'strada destinations list' or 'strada alerts list'.
+      Get the destination ID from \`strada destinations list\` or \`strada alerts list\`.
     `,
   )
   .action(async (id, _options, { console: output }) => {

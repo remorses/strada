@@ -22,8 +22,8 @@ tokensCli
       Strada website API. Use them in Node.js, Cloudflare Workers, Vercel, and
       other trusted server runtimes.
 
-      The only supported scope today is "ingest". The scope is still required
-      as --scope so command usage will stay stable when more token scopes are
+      The only supported scope today is \`ingest\`. The scope is still required
+      as \`--scope\` so command usage will stay stable when more token scopes are
       added later.
 
       Browser SDKs should not use tokens. Browser ingest stays

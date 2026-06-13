@@ -46,7 +46,7 @@ databaseCli
       OAuth, deploys OTel datasources and materialized views, then saves the
       tokens to your Strada database.
 
-      For non-interactive Tinybird auth, pass --token and --base-url directly.
+      For non-interactive Tinybird auth, pass \`--token\` and \`--base-url\` directly.
     `,
   )
   .option("-t, --token [token]", "Tinybird workspace admin token (skips browser login)")
@@ -65,8 +65,8 @@ databaseCli
       Upgrade the Tinybird schema to the latest version.
 
       Requires \`strada login\` first. Uses the Tinybird workspace already saved
-      in Strada for the current org. Applies any new datasource or materialized
-      view changes from the latest CLI version.
+      for the current org. Applies any new datasource or materialized view
+      changes from the latest CLI version.
     `,
   )
   .example("strada database upgrade")

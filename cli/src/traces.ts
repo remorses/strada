@@ -528,9 +528,9 @@ tracesCli
       List distributed traces in a project, grouped by TraceId.
 
       Use this to find trace IDs before running \`strada traces view\`.
-      The command scans otel_traces in the selected time range, summarizes span
-      counts, services, error spans, duration, and the first root span when one
-      exists. Project isolation is enforced by the project-scoped query API.
+      Scans otel_traces in the selected time range, summarizes span counts,
+      services, error spans, duration, and the first root span when one exists.
+      Project isolation is enforced by the project-scoped query API.
     `,
   )
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))

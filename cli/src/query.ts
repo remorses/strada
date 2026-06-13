@@ -50,22 +50,21 @@ queryCli
     dedent`
       Run a ClickHouse SQL query against a project's database.
 
-      Without a FORMAT clause, renders an auto-sized terminal table. Add --json
-      to get the raw JSON envelope { data, meta, rows, statistics } instead.
+      Without a FORMAT clause, renders an auto-sized terminal table. Add \`--json\`
+      to get the raw JSON envelope \`{ data, meta, rows, statistics }\` instead.
 
       Append a ClickHouse FORMAT clause to the SQL for raw output: JSON,
       JSONEachRow, CSV, CSVWithNames, TSV, TSVWithNames, PrettyCompact,
       Parquet, Prometheus. The response body is written directly to stdout
       so you can pipe it.
 
-      ProjectId filtering is automatic via JWT. Never add WHERE ProjectId in SQL.
-
-        strada query "SELECT count() FROM otel_errors LIMIT 1" -p my-app
-        strada query "SELECT * FROM otel_errors LIMIT 10" -p my-app --json
-        strada query "SELECT * FROM otel_errors LIMIT 100 FORMAT CSVWithNames" -p my-app > errors.csv
-        strada query "SELECT ServiceName, count() AS n FROM otel_traces GROUP BY 1 FORMAT JSONEachRow" -p my-app | jq .
+      ProjectId filtering is automatic via JWT. Never add \`WHERE ProjectId\` in SQL.
     `,
   )
+  .example('strada query "SELECT count() FROM otel_errors LIMIT 1" -p my-app')
+  .example('strada query "SELECT * FROM otel_errors LIMIT 10" -p my-app --json')
+  .example('strada query "SELECT * FROM otel_errors LIMIT 100 FORMAT CSVWithNames" -p my-app > errors.csv')
+  .example('strada query "SELECT ServiceName, count() AS n FROM otel_traces GROUP BY 1 FORMAT JSONEachRow" -p my-app | jq .')
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("--json", "Print the raw JSON envelope { data, meta, rows, statistics } instead of a table (only applies when no FORMAT clause is in the SQL)")

@@ -63,7 +63,7 @@ orgsCli
       List all organizations you belong to.
 
       Shows org name, role, and ID. A green dot marks the org configured for
-      the current folder. If no org is configured, run 'strada setup'.
+      the current folder. If no org is configured, run \`strada setup\`.
     `,
   )
   .action(async (_options, { console: output, process: proc }) => {
@@ -97,7 +97,7 @@ orgsCli
 
       Strada resolves config by walking up from the current directory and using
       the closest matching scope. Use this once per app folder so commands like
-      \`strada logs\` and \`strada issues list\` do not need \`--project\`.
+      \`strada logs\` and \`strada issues list\` do not need \`-p\`.
     `,
   )
   .option("--scope [path]", z.string().describe("Directory scope to configure (default: current directory)"))

@@ -95,16 +95,15 @@ logsCli
       Browse and search OTel log records from otel_logs.
 
       Renders one log per line with timestamp, severity, service, body, and
-      attributes. Supports subcommands: 'list' (default) and 'stats'.
+      attributes. Supports subcommands: \`list\` (default) and \`stats\`.
 
-      Use -w for raw SQL WHERE filters on attribute maps:
-
-        strada logs -p my-app -w "mapContains(LogAttributes, 'event.name')"
-        strada logs -p my-app -w "LogAttributes['user.id'] = 'user_123'"
-        strada logs -p my-app --search "timeout" --min-level error --since 24h
-        strada logs stats -p my-app --since 7d
+      Use \`-w\` for raw SQL WHERE filters on attribute maps.
     `,
   )
+  .example("strada logs -p my-app -w \"mapContains(LogAttributes, 'event.name')\"")
+  .example("strada logs -p my-app -w \"LogAttributes['user.id'] = 'user_123'\"")
+  .example('strada logs -p my-app --search "timeout" --min-level error --since 24h')
+  .example('strada logs stats -p my-app --since 7d')
   .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by ServiceName")

@@ -30,12 +30,12 @@ checksCli
       code in the configured range (default 200-299). After N consecutive
       failures (default 2), alerts fire to all configured destinations.
 
-      Checks auto-disable after continuous failure for --auto-disable-hours
+      Checks auto-disable after continuous failure for \`--auto-disable-hours\`
       (default 24) to avoid filling the database with identical failure rows.
-      Re-enable with 'strada checks enable <id>'.
+      Re-enable with \`strada checks enable <id>\`.
 
       Alerts go to the same destinations as error alerts. If no destinations
-      are configured, add one first with 'strada alerts create'.
+      are configured, add one first with \`strada alerts create\`.
     `,
   )
   .option("--url <url>", z.string().describe("URL to check (required)"))
@@ -98,7 +98,7 @@ checksCli
       List all health checks for the current org.
 
       Shows check name, URL, schedule, status, and whether it's enabled.
-      Use 'strada checks delete <id>' to remove a check.
+      Use \`strada checks delete <id>\` to remove a check.
     `,
   )
   .action(async (_options, { console: output }) => {
@@ -158,7 +158,7 @@ checksCli
       Delete a health check by ID.
 
       Removes the check rule from D1. Historical check results remain in
-      ClickHouse and are queryable via 'strada query'.
+      ClickHouse and are queryable via \`strada query\`.
     `,
   )
   .action(async (id, _options, { console: output }) => {
@@ -183,7 +183,7 @@ checksCli
       Re-enable a health check that was disabled (manually or auto-disabled).
 
       Auto-disabled checks stop running after continuous failure for too long.
-      This command re-enables them so they start checking again.
+      Re-enable them so they start checking again.
     `,
   )
   .action(async (id, _options, { console: output }) => {
@@ -209,7 +209,7 @@ checksCli
       Manually disable a health check.
 
       The check stops running but the rule is preserved. Re-enable with
-      'strada checks enable <id>'.
+      \`strada checks enable <id>\`.
     `,
   )
   .action(async (id, _options, { console: output }) => {
