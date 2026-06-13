@@ -62,6 +62,10 @@ cli
 
 Never do `options.project.split(",")`. The user passes `-p frontend -p api` instead of `-p frontend,api`.
 
+**Use `.example()` for usage examples, not the description string.** goke's `generateDocs()` auto-wraps `.example()` strings in fenced `` ```sh `` code blocks. Examples embedded in the description string render as plain text without syntax highlighting. Use backtick formatting in descriptions for flags and command references (e.g. `` `--status` ``, `` `strada issues list` ``).
+
+**Regenerate CLI docs after updating commands.** When you add, rename, or change CLI commands, descriptions, options, or examples, regenerate the docs markdown using goke's `generateDocs()`. Import the CLI instance and write the pages to `docs/cli/`. This keeps the published documentation in sync with the CLI source.
+
 ## Spiceflow version
 
 All packages that depend on `spiceflow` must use the **exact same version**. The typed fetch client passes the `App` type as a generic, and mismatched versions cause `Types have separate declarations of a private property` errors because TypeScript sees two different `Spiceflow` class declarations.
