@@ -121,6 +121,18 @@ export interface StradaOptions {
    * Default: `"strada_uid"`. Set to `false` to disable cookie reading.
    */
   userIdCookie?: string | false;
+  /**
+   * Bridge OTel spans to Cloudflare's native tracing (`tracing.enterSpan`).
+   *
+   * Only applies to the `@strada.sh/sdk` cloudflare entry point (workerd
+   * condition). When enabled, every `startActiveSpan()` call also creates a
+   * Cloudflare native span so custom spans appear in the Cloudflare trace
+   * waterfall alongside auto-instrumented KV/D1/fetch spans.
+   *
+   * Auto-enabled when `tracing.enterSpan` is available at runtime.
+   * Set to `false` to disable bridging and only export via OTLP.
+   */
+  cloudflareTracing?: boolean;
 }
 
 export interface StradaUserIdentity {

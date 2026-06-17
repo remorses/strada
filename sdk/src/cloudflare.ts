@@ -11,6 +11,12 @@
  * in wrangler.jsonc. It instruments at the runtime level, better than any
  * userland SDK can.
  *
+ * When Cloudflare native tracing is available (tracing.enterSpan from
+ * cloudflare:workers, workerd 2026-06-16+), the SDK automatically bridges
+ * every startActiveSpan() call to also create a native CF span. This makes
+ * OTel custom spans visible in Cloudflare's trace waterfall alongside
+ * auto-instrumented KV/D1/fetch spans. Disable with cloudflareTracing: false.
+ *
  * Uses BasicTracerProvider from sdk-trace-base (no Node/browser dependencies)
  * with AsyncLocalStorage for context propagation (requires nodejs_compat).
  * Auto-flushes via `waitUntil` from `cloudflare:workers` so the user never
@@ -21,7 +27,13 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { waitUntil } from "cloudflare:workers";
+import * as cfWorkers from "cloudflare:workers";
+import type { CloudflareSpan as CfNativeSpan } from "cloudflare:workers";
+
+// Destructure with fallbacks for older workerd versions where tracing
+// may not be exported yet.
+const { waitUntil } = cfWorkers;
+const cfTracing = "tracing" in cfWorkers ? (cfWorkers as any).tracing as typeof cfWorkers.tracing | undefined : undefined;
 
 // OTLP/HTTP JSON exporters come from @strada.sh/otlp-json, NOT from
 // @opentelemetry/exporter-{trace,logs}-otlp-http. The official exporters pull
@@ -50,7 +62,16 @@ import {
   trace,
   ROOT_CONTEXT,
 } from "@opentelemetry/api";
-import type { Context, ContextManager } from "@opentelemetry/api";
+import type {
+  Context,
+  ContextManager,
+  Span as OtelSpan,
+  SpanOptions,
+  Tracer,
+  TracerProvider,
+  TracerOptions,
+  SpanAttributeValue,
+} from "@opentelemetry/api";
 import {
   CompositePropagator,
   W3CBaggagePropagator,
@@ -338,6 +359,201 @@ class BaggageLogProcessor implements LogRecordProcessor {
 }
 
 // ---------------------------------------------------------------------------
+// Cloudflare native tracing bridge
+// ---------------------------------------------------------------------------
+// When Cloudflare's tracing.enterSpan() is available, these wrappers ensure
+// every startActiveSpan() call also creates a native CF span. This makes OTel
+// spans visible in Cloudflare's trace waterfall alongside auto-instrumented
+// KV/D1/fetch/R2 spans, while still exporting via OTLP to Strada.
+//
+// startSpan() (inactive spans) cannot bridge because CF's API is callback-
+// scoped only. Those spans still export to Strada via OTLP as before.
+
+/**
+ * Proxy span that forwards setAttribute to both the OTel span and the
+ * Cloudflare native span. All other methods delegate to the OTel span only.
+ */
+class BridgedSpan implements OtelSpan {
+  constructor(
+    private readonly otel: OtelSpan,
+    private readonly cf: CfNativeSpan,
+  ) {}
+
+  spanContext() {
+    return this.otel.spanContext();
+  }
+
+  setAttribute(key: string, value: SpanAttributeValue): this {
+    this.otel.setAttribute(key, value);
+    // CF spans only accept string | number | boolean | undefined.
+    // Skip arrays and objects silently; they are OTel-only attributes.
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === undefined
+    ) {
+      this.cf.setAttribute(key, value);
+    }
+    return this;
+  }
+
+  setAttributes(attributes: Record<string, SpanAttributeValue>): this {
+    for (const [k, v] of Object.entries(attributes)) {
+      this.setAttribute(k, v);
+    }
+    return this;
+  }
+
+  addEvent(...args: Parameters<OtelSpan["addEvent"]>): this {
+    this.otel.addEvent(...args);
+    return this;
+  }
+
+  addLink(...args: Parameters<OtelSpan["addLink"]>): this {
+    this.otel.addLink(...args);
+    return this;
+  }
+
+  addLinks(...args: Parameters<OtelSpan["addLinks"]>): this {
+    this.otel.addLinks(...args);
+    return this;
+  }
+
+  setStatus(...args: Parameters<OtelSpan["setStatus"]>): this {
+    this.otel.setStatus(...args);
+    return this;
+  }
+
+  updateName(name: string): this {
+    this.otel.updateName(name);
+    return this;
+  }
+
+  end(endTime?: Parameters<OtelSpan["end"]>[0]): void {
+    this.otel.end(endTime);
+  }
+
+  isRecording(): boolean {
+    return this.otel.isRecording();
+  }
+
+  recordException(...args: Parameters<OtelSpan["recordException"]>): void {
+    this.otel.recordException(...args);
+  }
+}
+
+/**
+ * Tracer wrapper that intercepts startActiveSpan() to create both an OTel
+ * span and a Cloudflare native span via tracing.enterSpan().
+ *
+ * startSpan() (inactive) delegates directly to the inner tracer since CF's
+ * API has no manual-lifetime equivalent.
+ */
+class BridgedTracer implements Tracer {
+  constructor(private readonly inner: Tracer) {}
+
+  startSpan(name: string, options?: SpanOptions, context?: Context): OtelSpan {
+    return this.inner.startSpan(name, options, context);
+  }
+
+  startActiveSpan<F extends (span: OtelSpan) => unknown>(
+    name: string,
+    fnOrOptions: F | SpanOptions,
+    fnOrContext?: F | Context,
+    maybeFn?: F,
+  ): ReturnType<F> {
+    // Resolve the three overloads:
+    //   (name, fn)              → arity 2
+    //   (name, options, fn)     → arity 3
+    //   (name, options, ctx, fn) → arity 4
+    let fn: F;
+    let arity: 2 | 3 | 4;
+
+    if (typeof fnOrOptions === "function") {
+      fn = fnOrOptions;
+      arity = 2;
+    } else if (typeof fnOrContext === "function") {
+      fn = fnOrContext;
+      arity = 3;
+    } else {
+      fn = maybeFn!;
+      arity = 4;
+    }
+
+    // Wrap: CF enterSpan creates the native span, inside which the real
+    // OTel startActiveSpan creates the OTel span. The user's callback
+    // receives a BridgedSpan that forwards setAttribute to both.
+    //
+    // After the callback settles we copy all scalar OTel span attributes
+    // to the CF span. This catches attributes from SpanOptions.attributes,
+    // BaggageSpanProcessor.onStart(), and trace.getActiveSpan()?.setAttribute()
+    // which bypass the BridgedSpan proxy.
+    return cfTracing!.enterSpan(name, (cfSpan) => {
+      const wrapFn = (otelSpan: OtelSpan) => {
+        const bridged = new BridgedSpan(otelSpan, cfSpan) as unknown as OtelSpan;
+        const result = fn(bridged);
+        if (result instanceof Promise) {
+          return result.finally(() => copyScalarAttributes(otelSpan, cfSpan));
+        }
+        copyScalarAttributes(otelSpan, cfSpan);
+        return result;
+      };
+
+      // Forward with exact arity to match the overload the inner tracer expects.
+      // Using explicit branches instead of dynamic args array avoids the bug
+      // where undefined options/context would shift the positional arguments.
+      const inner = this.inner.startActiveSpan as Function;
+      if (arity === 2) return inner.call(this.inner, name, wrapFn);
+      if (arity === 3) return inner.call(this.inner, name, fnOrOptions, wrapFn);
+      return inner.call(this.inner, name, fnOrOptions, fnOrContext, wrapFn);
+    }) as ReturnType<F>;
+  }
+}
+
+/**
+ * Copy all scalar attributes from an OTel SDK span to a CF native span.
+ * Called after the user callback settles to catch attributes set by
+ * SpanOptions.attributes, span processors, and trace.getActiveSpan().
+ * The CF span may already have some attrs from BridgedSpan.setAttribute();
+ * setAttribute is idempotent so duplicates are harmless.
+ */
+function copyScalarAttributes(otelSpan: OtelSpan, cfSpan: CfNativeSpan): void {
+  const attrs = readSpanAttributes(otelSpan);
+  if (!attrs) return;
+  for (const [key, value] of Object.entries(attrs)) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      cfSpan.setAttribute(key, value);
+    }
+  }
+}
+
+/**
+ * TracerProvider wrapper that returns BridgedTracer instances.
+ */
+class BridgedTracerProvider implements TracerProvider {
+  constructor(private readonly inner: BasicTracerProvider) {}
+
+  getTracer(name: string, version?: string, options?: TracerOptions): Tracer {
+    return new BridgedTracer(this.inner.getTracer(name, version, options));
+  }
+
+  /** Proxy forceFlush to the inner provider. */
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush();
+  }
+
+  /** Proxy shutdown to the inner provider. */
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Module state
 // ---------------------------------------------------------------------------
 
@@ -364,6 +580,9 @@ export function getLogger(name = "strada"): StradaLogger {
  * - BatchSpanProcessor + AutoFlushSpanProcessor for automatic export
  * - LoggerProvider with BaggageLogProcessor + AutoFlushLogProcessor
  * - W3C TraceContext + Baggage propagation
+ * - Cloudflare native tracing bridge (auto-detected, opt-out via
+ *   cloudflareTracing: false). When enabled, startActiveSpan() calls
+ *   also create CF native spans visible in the Cloudflare dashboard.
  *
  * No automatic spans or instrumentation. The SDK only sends data when
  * you explicitly call captureException(), trace.getTracer(), or logs.getLogger().
@@ -426,8 +645,18 @@ export function initStrada(options: StradaOptions): void {
     ],
   });
 
-  // Register globals manually (BasicTracerProvider has no register() method)
-  trace.setGlobalTracerProvider(_tracerProvider);
+  // Register globals manually (BasicTracerProvider has no register() method).
+  // When Cloudflare native tracing is available, wrap the provider so that
+  // startActiveSpan() also creates CF native spans via tracing.enterSpan().
+  const useCfTracing =
+    options.cloudflareTracing !== false &&
+    typeof cfTracing?.enterSpan === "function";
+
+  trace.setGlobalTracerProvider(
+    useCfTracing
+      ? new BridgedTracerProvider(_tracerProvider)
+      : _tracerProvider,
+  );
   otelContext.setGlobalContextManager(new WorkerContextManager());
   propagation.setGlobalPropagator(
     new CompositePropagator({
