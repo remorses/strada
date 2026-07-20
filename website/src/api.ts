@@ -409,14 +409,30 @@ export const api = new Spiceflow({ tracer })
           token: existing.tinybirdAdminToken,
         })
 
+        // Short server-side wait budget: Tinybird data migrations can take
+        // many minutes, far longer than an HTTP request should stay open
+        // (undici aborts if response headers take > 5 min). On timeout the
+        // deploy returns `in_progress` and the CLI retries this endpoint;
+        // deployTinybirdResources adopts the in-flight deployment instead of
+        // deleting it, so retries resume the same migration.
         const deployment = await deployTinybirdResources({
           client,
           datasources: [...bundledTinybirdResources.datasources],
           pipes: [...bundledTinybirdResources.pipes],
           allowDestructive: true,
+          pollIntervalMs: 3000,
+          waitTimeoutMs: 60_000,
         })
         if (deployment instanceof Error) {
           throw json({ error: deployment.message }, { status: 502 })
+        }
+        if (deployment.result === 'in_progress') {
+          return {
+            ok: false,
+            result: deployment.result,
+            backend: existing.backend,
+            tinybirdEndpoint: existing.tinybirdEndpoint,
+          }
         }
 
         const readToken = await getDeploymentManagedReadToken(client)

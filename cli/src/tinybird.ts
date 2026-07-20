@@ -112,11 +112,18 @@ export interface TinybirdDeployResourcesOptions {
   /** Allow deletion of datasources/pipes that exist in Tinybird but not in the bundle. */
   allowDestructive?: boolean;
   pollIntervalMs?: number;
-  maxPollAttempts?: number;
+  /**
+   * Max wall-clock time to wait for a deployment to reach data_ready before
+   * returning `in_progress`. On shared Tinybird infra the data migration for a
+   * schema change can take many minutes, so callers running inside an HTTP
+   * request (the website /migrate endpoint) pass a short budget and let the
+   * CLI retry; the retry adopts the in-flight deployment instead of deleting it.
+   */
+  waitTimeoutMs?: number;
 }
 
 export interface TinybirdDeployResourcesResult {
-  result: "updated" | "no_changes";
+  result: "updated" | "no_changes" | "in_progress";
   deploymentId?: string;
 }
 
@@ -600,26 +607,81 @@ export async function getDeploymentManagedReadToken(client: Pick<TinybirdClient,
   return readToken
 }
 
+// Lessons from a production deadlock (adding otel_health_checks on the shared
+// Personal-org workspace):
+//
+// 1. NEVER promote a deployment before it reaches data_ready. The old code
+//    polled for a fixed number of attempts and then promoted unconditionally,
+//    which fails on Tinybird's side when the data migration is still running.
+// 2. NEVER delete an in-flight deployment just because it isn't live yet.
+//    Deleting restarts the data migration from scratch, so retrying the
+//    upgrade became an infinite destructive loop. Adopt the in-flight
+//    deployment instead: wait for data_ready, promote it, then diff against
+//    the target bundle (createDeployment returns no_changes when the adopted
+//    deployment already matched the target schema).
+// 3. Data migrations on shared Tinybird infra can take many minutes, so the
+//    wait must be wall-clock based and resumable: on timeout we return
+//    `in_progress` (not an Error) and the next call picks up where we left off.
 export async function deployTinybirdResources({
   client,
   datasources,
   pipes,
   allowDestructive,
   pollIntervalMs = 1000,
-  maxPollAttempts = 120,
+  waitTimeoutMs = 30 * 60 * 1000,
 }: TinybirdDeployResourcesOptions): Promise<Error | TinybirdDeployResourcesResult> {
+  const deadline = Date.now() + waitTimeoutMs
+
+  const waitAndPromote = async (deploymentId: string): Promise<Error | TinybirdDeployResourcesResult> => {
+    while (true) {
+      const statusResponse = await client.getDeploymentStatus({ deploymentId })
+      if (statusResponse instanceof Error) return statusResponse
+      const status = statusResponse.deployment.status
+      if (status === 'data_ready') break
+      if (status === 'failed' || status === 'error') {
+        return new Error(`Deployment ${deploymentId} failed with status ${status}`)
+      }
+      if (Date.now() >= deadline) {
+        return { result: 'in_progress', deploymentId }
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    }
+
+    const promoteResult = await client.promoteDeployment({ deploymentId })
+    if (promoteResult instanceof Error) return promoteResult
+    return { result: 'updated', deploymentId }
+  }
+
+  // Tinybird allows only one staged deployment at a time. Delete failed ones,
+  // adopt in-flight ones (see file-top comment for why deleting them is wrong).
   const deployments = await client.listDeployments()
-  if (!(deployments instanceof Error)) {
+  if (deployments instanceof Error) {
+    console.warn('Failed to list existing deployments before deploy:', deployments.message)
+  } else {
     for (const deployment of deployments) {
-      if (!deployment.live && deployment.status !== 'live') {
+      if (deployment.live || deployment.status === 'live') continue
+      if (deployment.status === 'deleting' || deployment.status === 'deleted') continue
+      if (deployment.status === 'failed' || deployment.status === 'error') {
         const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id })
         if (deleteResult instanceof Error) {
-          console.warn(`Failed to delete stale deployment ${deployment.id}:`, deleteResult.message)
+          console.warn(`Failed to delete failed deployment ${deployment.id}:`, deleteResult.message)
         }
+        continue
       }
+
+      const adopted = await waitAndPromote(deployment.id)
+      if (adopted instanceof Error) {
+        // The in-flight deployment failed while we waited. Clean it up so the
+        // fresh createDeployment below is not blocked by a staged deployment.
+        console.warn(`Adopted deployment ${deployment.id} failed, deleting it:`, adopted.message)
+        const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id })
+        if (deleteResult instanceof Error) {
+          console.warn(`Failed to delete failed deployment ${deployment.id}:`, deleteResult.message)
+        }
+        continue
+      }
+      if (adopted.result === 'in_progress') return adopted
     }
-  } else {
-    console.warn('Failed to list stale deployments before deploy:', deployments.message)
   }
 
   const deployResponse = await client.createDeployment({ datasources, pipes, allowDestructive })
@@ -636,20 +698,7 @@ export async function deployTinybirdResources({
     return new Error('No deployment ID in Tinybird response')
   }
 
-  for (let i = 0; i < maxPollAttempts; i++) {
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    const statusResponse = await client.getDeploymentStatus({ deploymentId })
-    if (statusResponse instanceof Error) return statusResponse
-    if (statusResponse.deployment.status === 'data_ready') break
-    if (statusResponse.deployment.status === 'failed' || statusResponse.deployment.status === 'error') {
-      return new Error(`Deployment failed with status ${statusResponse.deployment.status}`)
-    }
-  }
-
-  const promoteResult = await client.promoteDeployment({ deploymentId })
-  if (promoteResult instanceof Error) return promoteResult
-
-  return { result: 'updated', deploymentId }
+  return waitAndPromote(deploymentId)
 }
 
 export async function exchangeTinybirdCliCode({ authHost, code, fetch: customFetch }: { authHost: string; code: string; fetch?: typeof fetch }) {

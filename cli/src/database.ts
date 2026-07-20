@@ -189,6 +189,14 @@ export async function databaseCreateAction(
     clack.log.error(deployment.message);
     return proc.exit(1);
   }
+  if (deployment.result === "in_progress") {
+    spinner.stop("Deployment still migrating");
+    clack.log.error(
+      "The Tinybird deployment is still migrating data after 30 minutes.\n" +
+      "  It keeps running on Tinybird's side. Re-run `strada database create` later to finish the setup.",
+    );
+    return proc.exit(1);
+  }
 
   spinner.stop(deployment.result === "no_changes" ? "No schema changes to deploy" : "Deployed successfully");
 
@@ -269,16 +277,37 @@ export async function databaseUpgradeAction(
   const spinner = clack.spinner();
   spinner.start("Upgrading database schema...");
 
+  // The server waits up to ~60s per call and returns result "in_progress"
+  // when the Tinybird data migration is still running. Retrying is safe: the
+  // server adopts the in-flight deployment instead of restarting it. Keep
+  // calling until the migration completes or the overall timeout is hit.
   const { safeFetch } = getApiClient();
-  const result = await safeFetch("/api/v0/orgs/:orgId/database/migrate", {
+  const overallDeadline = Date.now() + 45 * 60 * 1000;
+  const startedAt = Date.now();
+  const migrateOnce = () => safeFetch("/api/v0/orgs/:orgId/database/migrate", {
     method: "POST",
     params: { orgId: org.id },
   });
-
-  if (result instanceof Error) {
-    spinner.stop("Upgrade failed");
-    clack.log.error(result.message);
-    return proc.exit(1);
+  let result: Awaited<ReturnType<typeof migrateOnce>>;
+  while (true) {
+    result = await migrateOnce();
+    if (result instanceof Error) {
+      spinner.stop("Upgrade failed");
+      clack.log.error(result.message);
+      return proc.exit(1);
+    }
+    if (result.result !== "in_progress") break;
+    if (Date.now() >= overallDeadline) {
+      spinner.stop("Upgrade timed out");
+      clack.log.error(
+        "The Tinybird data migration is still running after 45 minutes.\n" +
+        "  It keeps running on Tinybird's side. Re-run `strada database upgrade` later to finish the promotion.",
+      );
+      return proc.exit(1);
+    }
+    const elapsedMin = Math.round((Date.now() - startedAt) / 60_000);
+    spinner.message(`Waiting for Tinybird data migration... (${elapsedMin}m elapsed)`);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
   spinner.stop(result.result === "no_changes" ? "Schema already up to date" : "Schema upgraded");
