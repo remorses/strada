@@ -53,6 +53,8 @@ export function getAuth() {
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite' }),
     session: {
+      expiresIn: 60 * 60 * 24 * 365,
+      updateAge: 60 * 60 * 24,
       cookieCache: {
         enabled: true,
         maxAge: 5 * 60,
