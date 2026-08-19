@@ -772,12 +772,18 @@ The Workers runtime is a minimal, opt-in only entry. No automatic instrumentatio
 This keeps the bundle small and avoids the per-request billing overhead of automatic instrumentation. For automatic instrumentation of KV, D1, Durable Objects, fetch, etc., use Cloudflare's built-in tracing instead (see below).
 
 ```ts
+import { env } from "cloudflare:workers"
 import { initStrada, captureException } from "@strada.sh/sdk"
 
-export default {
-  fetch(request, env) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "api" })
+initStrada({
+  projectId: env.STRADA_PROJECT_ID,
+  token: env.STRADA_TOKEN,
+  service: "api",
+  environment: env.ENVIRONMENT,
+})
 
+export default {
+  fetch(request) {
     try {
       return handleRequest(request)
     } catch (err) {
@@ -788,17 +794,26 @@ export default {
 } satisfies ExportedHandler<Env>
 ```
 
-Same API as Node. `initStrada()` is safe to call on every request (no-op after the first call). Config comes from `env` bindings since Workers don't have `process.env`.
+Initialize at module scope, before the Worker or framework creates its first
+span or logger. `env` from `cloudflare:workers` is available during module
+evaluation, so there is no reason to initialize in Hono, Spiceflow, or other
+per-request middleware. Workers do not have `process.env`.
 
 Manual spans and logs work the same way:
 
 ```ts
+import { env } from "cloudflare:workers"
 import { initStrada, startSpan } from "@strada.sh/sdk"
 
-export default {
-  fetch(request, env) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "api" })
+initStrada({
+  projectId: env.STRADA_PROJECT_ID,
+  token: env.STRADA_TOKEN,
+  service: "api",
+  environment: env.ENVIRONMENT,
+})
 
+export default {
+  fetch(request) {
     return startSpan({ name: "process-order" }, async (span) => {
       span.setAttribute("order.id", "ord_123")
       // ...
@@ -815,19 +830,25 @@ No `flush()`, no `ctx.waitUntil()`, no special imports. The SDK auto-flushes via
 The auto-flush works well for HTTP request handlers. For **scheduled (cron) handlers**, **queue consumers**, and **Durable Object alarms**, logs emitted near the end of execution may not flush before the isolate terminates. Call `flush()` explicitly before returning:
 
 ```ts
+import { env } from "cloudflare:workers"
 import { initStrada, getLogger, flush } from "@strada.sh/sdk"
 
+initStrada({
+  projectId: env.STRADA_PROJECT_ID,
+  token: env.STRADA_TOKEN,
+  service: "cron",
+  environment: env.ENVIRONMENT,
+})
+
 export default {
-  async scheduled(controller, env, ctx) {
-    initStrada({ projectId: env.STRADA_PROJECT_ID, token: env.STRADA_TOKEN, service: "cron" })
+  async scheduled() {
     const logger = getLogger("alerts")
 
     logger.info({ message: "cron started" })
     await doWork()
     logger.info({ message: "cron finished" })
 
-    // Flush before returning so ctx.waitUntil keeps the isolate alive
-    // until all buffered logs are exported
+    // Flush before returning so all buffered logs are exported
     await flush()
   },
 } satisfies ExportedHandler<Env>

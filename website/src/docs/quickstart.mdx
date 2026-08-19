@@ -77,6 +77,27 @@ try {
 
 On Node, the SDK registers process handlers so buffered telemetry flushes on `beforeExit`, `SIGTERM`, `SIGINT`, and `uncaughtException`. You usually do not call `flush()` yourself. See the [SDK reference](../sdk/README.mdx) for the exit-path details.
 
+### Cloudflare Workers
+
+Workers expose bindings through `cloudflare:workers`. Initialize at module
+scope, not inside request middleware:
+
+```ts
+import { env } from "cloudflare:workers"
+import { initStrada } from "@strada.sh/sdk"
+
+initStrada({
+  projectId: env.STRADA_PROJECT_ID,
+  token: env.STRADA_TOKEN,
+  service: "my-worker",
+  environment: env.ENVIRONMENT,
+})
+```
+
+Use one Strada project for related services. Give each Worker a distinct
+`service` and set `environment` to `development`, `preview`, or `production`
+so the same queries can compare deployments.
+
 ## 4. Browser setup
 
 Initialize Strada in the browser with the **same project ID** but **no token**. Browser ingest is anonymous and rate limited by design, because any token shipped to the browser would be public.
@@ -178,6 +199,10 @@ Why a component and not a bare `import`? In RSC, a `"use client"` module is only
 
 > The chunk evaluates **during hydration**, not before first paint. Pageview spans and React error handlers work. A synchronous error thrown before hydration is not captured. If you need pre-hydration capture, use an inline `<script>` in `<head>` instead.
 
+If a framework owns the root document and exposes no client component slot, do
+not force this component into an unrelated wildcard layout. Keep server-side
+instrumentation only until the framework provides a supported client hook.
+
 If your framework exposes an OpenTelemetry tracer hook (for example Spiceflow's `new Spiceflow({ tracer })`), pass the SDK tracer so request spans flow to the same project:
 
 ```ts
@@ -186,6 +211,10 @@ import { trace } from "@strada.sh/sdk"
 const tracer = trace.getTracer("my-app")
 // pass `tracer` to your framework's constructor / config
 ```
+
+Keep route and handler tags low-cardinality. **Email and user id are fine** on
+errors, logs, and product events. That is how you find who hit an issue. Do not
+attach API keys, prompts, or the raw text the user typed.
 
 ## 7. Verify
 

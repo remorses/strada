@@ -98,6 +98,16 @@ Rules to never break:
 - **Browser project id needs a public prefix** or the bundler will strip it.
 - In **RSC / server-rendered** apps, run browser `initStrada()` from a side-effect-only `"use client"` module rendered once in the root layout (a component that returns `null`). A bare `import` runs on the server and gets tree-shaken from the client bundle. See `website/src/docs/quickstart.mdx` for the pattern.
 - If the framework exposes an OTel tracer hook (e.g. Spiceflow `new Spiceflow({ tracer })`), pass `trace.getTracer("my-app")` from the SDK so request spans flow to the same project.
+- In **Cloudflare Workers**, import `env` from `cloudflare:workers` and call
+  `initStrada()` at module scope. Never initialize in per-request middleware.
+  See the Cloudflare Workers section of `website/src/sdk/README.mdx`.
+- **Email and user id belong on errors, logs, and product events.** That is how
+  you open an issue and see who hit it. Use `strataBetterAuth()` (default
+  `includeUserDetails: true`), `identifyUser()`, or `tags` / event properties
+  with `user.id` and `user.email`. Do not strip them.
+- Never attach API keys, prompts, or raw user content (the text they typed)
+  to tags or events. Use stable route, handler, service, and environment
+  identifiers for those.
 
 ## Terminal UI
 
@@ -233,4 +243,33 @@ FROM otel_traces
 WHERE Duration > 1000000000
 ORDER BY Duration DESC
 LIMIT 20
+
+-- HTTP route performance: top routes by RPS and latency
+-- ParentSpanId = '' filters to root spans (one per HTTP request)
+-- Duration is nanoseconds, divide by 1e6 for milliseconds
+SELECT
+  SpanName AS path,
+  count() AS total_requests,
+  round(count() / 3600, 2) AS rps,
+  round(avg(Duration) / 1e6, 1) AS avg_ms,
+  round(quantile(0.95)(Duration) / 1e6, 1) AS p95_ms,
+  round(max(Duration) / 1e6, 1) AS max_ms
+FROM otel_traces
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+  AND ParentSpanId = ''
+GROUP BY path
+ORDER BY total_requests DESC
+LIMIT 30
+
+-- Per-minute traffic pattern for a specific route
+SELECT
+  toStartOfMinute(Timestamp) AS minute,
+  count() AS requests
+FROM otel_traces
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+  AND ParentSpanId = ''
+  AND SpanName = 'POST /api/my-route'
+GROUP BY minute
+ORDER BY minute DESC
+LIMIT 60
 ```

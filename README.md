@@ -440,6 +440,49 @@ strada query "
 " -p my-app
 ```
 
+### HTTP route performance
+
+Use `strada query` to find the heaviest HTTP routes by request count and latency. Filter to **root spans** with `ParentSpanId = ''` so each row is one HTTP request, not a nested DB query or downstream call. `Duration` is in nanoseconds; divide by `1e6` to get milliseconds.
+
+```bash
+# top routes by request count, with RPS and latency percentiles
+strada query "
+  SELECT
+    SpanName AS path,
+    count() AS total_requests,
+    round(count() / 3600, 2) AS rps,
+    round(avg(Duration) / 1e6, 1) AS avg_ms,
+    round(quantile(0.95)(Duration) / 1e6, 1) AS p95_ms,
+    round(max(Duration) / 1e6, 1) AS max_ms
+  FROM otel_traces
+  WHERE Timestamp >= now() - INTERVAL 1 HOUR
+    AND ParentSpanId = ''
+  GROUP BY path
+  ORDER BY total_requests DESC
+  LIMIT 30
+" -p my-app
+```
+
+Once you spot a hot route, drill into its per-minute traffic pattern:
+
+```bash
+# per-minute breakdown for a specific route
+strada query "
+  SELECT
+    toStartOfMinute(Timestamp) AS minute,
+    count() AS requests
+  FROM otel_traces
+  WHERE Timestamp >= now() - INTERVAL 1 HOUR
+    AND ParentSpanId = ''
+    AND SpanName = 'POST /api/my-route'
+  GROUP BY minute
+  ORDER BY minute DESC
+  LIMIT 60
+" -p my-app
+```
+
+`quantile(0.95)(Duration)` is ClickHouse's built-in percentile function. You can swap `0.95` for `0.5` (median) or `0.99` (p99).
+
 ## Browser analytics
 
 Browser analytics in Strada is just **OTel data sent from the browser**. Pageviews are spans. Custom events are log records. Sessions are grouped by a `session.id` UUID stored in `sessionStorage`.
