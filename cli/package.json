@@ -66,7 +66,7 @@
     "react": "19.2.6",
     "spiceflow": "1.26.0-rsc.3",
     "string-dedent": "^3.0.2",
-    "termcast": "^1.7.0",
+    "termcast": "^1.8.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.8"
   },

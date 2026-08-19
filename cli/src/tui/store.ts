@@ -50,9 +50,7 @@ export interface TuiState {
   lastAiSql: string | null;
 }
 
-// Cache is sync (SQLite-backed) and works at module scope because
-// the termcast provider sets up extensionPath before the component
-// renders. This is different from LocalStorage which is async.
+// The CLI initializes Termcast before importing this module.
 const cache = new Cache({ namespace: "strada-tui" });
 
 function loadPersistedState(): Partial<TuiState> {

@@ -92,7 +92,8 @@ cli.command(
   }
 
   const React = await import("react");
-  const { renderWithProviders } = await import("termcast");
+  const { initializeExtension, renderWithProviders } = await import("termcast");
+  initializeExtension({ extensionName: "strada" });
   const { default: StradaTui } = await import("./tui/index.js");
   await renderWithProviders(React.createElement(StradaTui), {
     extensionName: "strada",
