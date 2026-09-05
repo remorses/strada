@@ -200,9 +200,14 @@ function TabBar({ projectId, pathname }: { projectId: string; pathname: string }
 // ── AppShell: HTML wrapper for non-holocron pages ───────────
 // Holocron provides its own HTML shell for docs pages. This shell wraps
 // dashboard, login, and device pages with the same base HTML structure.
-function AppShell({ children }: { children: ReactNode }) {
+function getInitialThemeClass(request: Request) {
+  const cookie = request.headers.get('cookie') ?? ''
+  return /(?:^|;\s*)color-theme=dark(?:;|$)/.test(cookie) ? 'dark' : undefined
+}
+
+function AppShell({ children, request }: { children: ReactNode; request: Request }) {
   return (
-    <html lang="en">
+    <html lang="en" className={getInitialThemeClass(request)} suppressHydrationWarning>
       <Head>
         <Head.Meta charSet="UTF-8" />
         <Head.Meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -286,35 +291,50 @@ export const app = new Spiceflow({ tracer })
     return next()
   })
 
+  .state('session', null as Awaited<ReturnType<typeof getSession>>)
+  .use(async ({ request, state }) => {
+    state.session = await getSession(request)
+  })
+  .loader('/*', ({ state }) => {
+    return { session: state.session }
+  })
+
+  .get('/signup', ({ request }) => {
+    const callbackURL = request.parsedUrl.searchParams.get('callbackURL')
+    throw redirect(router.href('/login', { callbackURL: callbackURL || undefined }))
+  })
+  .get('/pricing', () => {
+    throw redirect('/docs/tinybird-pricing', { status: 301 })
+  })
+
   // ── Dashboard pause redirect ────────────────────────────────────
-  .use(async ({ request }, next) => {
+  .use(async ({ request, state }, next) => {
     if (request.parsedUrl.pathname.startsWith('/dash')) {
-      const session = await getSession(request)
-      if (!session) throw redirect(router.href('/login', { callbackURL: '/wip' }))
+      if (!state.session) throw redirect(router.href('/login', { callbackURL: '/wip' }))
       throw redirect('/wip')
     }
     return next()
   })
 
   // ── AppShell: HTML wrapper for non-holocron pages ──────────────
-  .layout('/dash/*', async ({ children }) => {
+  .layout('/dash/*', async ({ children, request }) => {
     return (
-      <AppShell>{children}</AppShell>
+      <AppShell request={request}>{children}</AppShell>
     )
   })
-  .layout('/login', async ({ children }) => {
+  .layout('/login', async ({ children, request }) => {
     return (
-      <AppShell>{children}</AppShell>
+      <AppShell request={request}>{children}</AppShell>
     )
   })
-  .layout('/wip', async ({ children }) => {
+  .layout('/wip', async ({ children, request }) => {
     return (
-      <AppShell>{children}</AppShell>
+      <AppShell request={request}>{children}</AppShell>
     )
   })
-  .layout('/device', async ({ children }) => {
+  .layout('/device', async ({ children, request }) => {
     return (
-      <AppShell>{children}</AppShell>
+      <AppShell request={request}>{children}</AppShell>
     )
   })
 
@@ -532,9 +552,8 @@ export const app = new Spiceflow({ tracer })
   .page({
     path: '/login',
     query: loginQuerySchema,
-    handler: async ({ request, query }) => {
-      const session = await getSession(request)
-      if (session) throw redirect(safeRedirectPath(query.callbackURL))
+    handler: async ({ query, loaderData }) => {
+      if (loaderData.session) throw redirect(safeRedirectPath(query.callbackURL))
       const callbackURL = safeRedirectPath(query.callbackURL)
       const { LoginButton } = await import('./components/login-button.tsx')
       return (
@@ -558,7 +577,7 @@ export const app = new Spiceflow({ tracer })
   .page({
     path: '/device',
     query: devicePageQuerySchema,
-    handler: async ({ request, query }) => {
+    handler: async ({ request, query, loaderData }) => {
       const userCode = query.user_code ?? ''
       const status = query.status
 
@@ -575,6 +594,14 @@ export const app = new Spiceflow({ tracer })
               </p>
             </div>
           </AuthPage>
+        )
+      }
+
+      if (!loaderData.session) {
+        throw redirect(
+          router.href('/login', {
+            callbackURL: `${request.parsedUrl.pathname}${request.parsedUrl.search}`,
+          }),
         )
       }
 
@@ -596,15 +623,6 @@ export const app = new Spiceflow({ tracer })
               </p>
             </div>
           </AuthPage>
-        )
-      }
-
-      const session = await getSession(request)
-      if (!session) {
-        throw redirect(
-          router.href('/login', {
-            callbackURL: `${request.parsedUrl.pathname}${request.parsedUrl.search}`,
-          }),
         )
       }
 

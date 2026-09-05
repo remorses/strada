@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@strada.sh/sdk": "workspace:^",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "spiceflow": "1.26.0-rsc.3"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "spiceflow": "1.26.0-rsc.18"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.31.2",

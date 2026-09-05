@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@holocron.so/vite": "^0.18.2",
+    "@holocron.so/vite": "^0.33.1",
     "@number-flow/react": "^0.6.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
@@ -52,11 +52,11 @@
     "lucide-react": "^1.14.0",
     "marked": "^18.0.2",
     "radix-ui": "latest",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "recharts": "^3.8.1",
     "safe-mdx": "^1.12.0",
-    "spiceflow": "1.26.0-rsc.3",
+    "spiceflow": "1.26.0-rsc.18",
     "strada": "workspace:^",
     "string-dedent": "^3.0.2",
     "tailwind-merge": "^3.5.0",
@@ -78,6 +78,6 @@
     "typescript": "latest",
     "vite": "latest",
     "vitest": "^4.1.6",
-    "wrangler": "latest"
+    "wrangler": "4.96.0"
   }
 }

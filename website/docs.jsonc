@@ -8,6 +8,19 @@
   "appearance": {
     "default": "system"
   },
+  "fonts": {
+    "family": "Syne",
+    "heading": {
+      "family": "Syne",
+      "weight": 600
+    },
+    "body": {
+      "family": "Syne"
+    }
+  },
+  "layout": {
+    "mode": "compact"
+  },
   "icons": {
     "library": "lucide"
   },
@@ -182,7 +195,10 @@
   },
   "knownPaths": [
     "/login",
+    "/signup",
+    "/pricing",
     "/device",
+    "/wip",
     "/dash/*",
     "/api/*"
   ]

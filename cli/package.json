@@ -63,8 +63,8 @@
     "@tinybirdco/sdk": "^0.0.64",
     "errore": "^0.14.1",
     "goke": "^6.12.3",
-    "react": "19.2.6",
-    "spiceflow": "1.26.0-rsc.3",
+    "react": "^19.2.8",
+    "spiceflow": "1.26.0-rsc.18",
     "string-dedent": "^3.0.2",
     "termcast": "^1.8.0",
     "zod": "^4.4.3",
@@ -72,7 +72,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.18",
     "strada-website": "workspace:^",
     "typescript": "^6.0.2"
   }

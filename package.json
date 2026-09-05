@@ -28,7 +28,7 @@
   },
   "pnpm": {
     "overrides": {
-      "spiceflow": "1.26.0-rsc.2"
+      "spiceflow": "1.26.0-rsc.18"
     }
   },
   "devDependencies": {

@@ -1,8 +1,12 @@
 ---
 $schema: https://holocron.so/frontmatter.json
-title: Health Checks
+title: Monitor URLs with health checks
+sidebarTitle: Health Checks
 description: Monitor URLs on a schedule. Get alerted when endpoints go down, recover notifications when they come back, and auto-disable checks that fail for too long.
 icon: lucide:heart-pulse
+prompt: |
+  Write the health checks guide from @/cli/src/checks.ts,
+  @/website/src/health-check-dispatch.ts, and @/website/src/health-check-workflow.ts.
 ---
 
 # Health Checks
@@ -237,4 +241,4 @@ strada checks create \
 
 Health checks share the same destination system as error alerts. One destination can receive both error alerts and health check alerts.
 
-See [Alerts and Destinations](/docs/alerts) for the full guide on setting up email, webhook, and Slack destinations.
+See [Alerts and Destinations](./alerts.mdx) for the full guide on setting up email, webhook, and Slack destinations.
