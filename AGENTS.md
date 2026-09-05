@@ -18,7 +18,9 @@ See other files in sqltemplates as well for other kinds of tables.
 
 ## npm packages
 
-all publishable packages in this repo should have name `strada` (the main cli, cli folder) or be under the `@strada.sh` scope. 
+all publishable packages in this repo should have name `strada` (the main cli, cli folder) or be under the `@strada.sh` scope.
+
+**After publishing to npm**, deploy the website to production. Do this after publish finishes, not before. See [Deployments](#deployments). 
 
 ## CLI conventions (goke)
 
@@ -97,6 +99,15 @@ pnpm --dir otel-collector deploy:prod
 If the preview migration or deploy fails, **stop**. Do not continue to production.
 
 The website `deploy` and `deploy:prod` scripts run the D1 migration before building and deploying. If migration fails, the `&&` chain stops and the deploy never happens.
+
+**After publishing npm packages** (`strada`, `@strada.sh/*`), deploy the website to production so the live docs and control plane match the published versions:
+
+```bash
+# after pnpm publish finishes
+pnpm --dir website deploy:prod
+```
+
+Do this after publish, not before. If website code also changed in the same release, still deploy preview first, verify, then prod.
 
 ## D1 migrations (manual SQL, no drizzle-kit generate)
 

@@ -337,8 +337,8 @@ importers:
         specifier: ^1.4.1
         version: 1.4.1(@types/react@19.2.18)(date-fns@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@holocron.so/vite':
-        specifier: ^0.33.1
-        version: 0.33.1(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(hono@4.13.5)(immer@11.1.6)(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(use-sync-external-store@1.6.0(react@19.2.8))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260518.1)(wrangler@4.96.0)
+        specifier: ^0.34.0
+        version: 0.34.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(hono@4.13.5)(immer@11.1.6)(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(use-sync-external-store@1.6.0(react@19.2.8))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)
       '@number-flow/react':
         specifier: ^0.6.0
         version: 0.6.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -444,7 +444,7 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.33.2
-        version: 1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260518.1)(wrangler@4.96.0)
+        version: 1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.16.7
         version: 0.16.7(@vitest/runner@4.1.6)(@vitest/snapshot@4.1.6)(vitest@4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0)))
@@ -1728,12 +1728,12 @@ packages:
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
-  '@holocron.so/cli@0.22.0':
-    resolution: {integrity: sha512-J5Nz2zWXk0jQi8+T6anrl+HVD29gnLXEmxc5Ew/ACniPvCFtFjdyVnrZRyAfn1JdffSv+rGRPDhI13lrfLiQMQ==}
+  '@holocron.so/cli@0.22.1':
+    resolution: {integrity: sha512-7vXkxbuqZa5EDobpNy22lkdBhhRgYsUi5N6CB/N1ASDudg9juW3TZyypTI9iHdop0lyLXChi+tY4qYkyr7/CCw==}
     hasBin: true
 
-  '@holocron.so/vite@0.33.1':
-    resolution: {integrity: sha512-7aLftuhQ2xW1BbP2f/EzbEYukkEvobNT3Mva1EQNHPzheufXuBviqi1zMH4EWjJ9meYTAQCT4CdCGRA4Xa+Vig==}
+  '@holocron.so/vite@0.34.0':
+    resolution: {integrity: sha512-lgGetZcLqwvA4lOJQAzP1kKMK/mJ46/UZb8+uqLkyVJrIV327q3amK2Y5P8aiT+n44lOGnFSgfZMXR2Q9iKNuQ==}
     hasBin: true
 
   '@hono/node-server@2.1.1':
@@ -7910,9 +7910,9 @@ snapshots:
     optionalDependencies:
       workerd: 1.20260903.1
 
-  '@cloudflare/vite-plugin@1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260518.1)(wrangler@4.96.0)':
+  '@cloudflare/vite-plugin@1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)':
     dependencies:
-      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260518.1)
+      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260529.1)
       miniflare: 4.20260424.0
       unenv: 2.0.0-rc.24
       vite: 8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0)
@@ -8433,7 +8433,7 @@ snapshots:
 
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
-  '@holocron.so/cli@0.22.0(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))':
+  '@holocron.so/cli@0.22.1(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@clack/prompts': 1.7.0
       '@opencode-ai/sdk': 1.18.5
@@ -8463,12 +8463,12 @@ snapshots:
       - supports-color
       - vite
 
-  '@holocron.so/vite@0.33.1(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(hono@4.13.5)(immer@11.1.6)(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(use-sync-external-store@1.6.0(react@19.2.8))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260518.1)(wrangler@4.96.0)':
+  '@holocron.so/vite@0.34.0(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(hono@4.13.5)(immer@11.1.6)(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(use-sync-external-store@1.6.0(react@19.2.8))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)':
     dependencies:
-      '@cloudflare/vite-plugin': 1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260518.1)(wrangler@4.96.0)
+      '@cloudflare/vite-plugin': 1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)
       '@fontsource-variable/inter': 5.3.0
       '@fontsource-variable/jetbrains-mono': 5.3.0
-      '@holocron.so/cli': 0.22.0(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+      '@holocron.so/cli': 0.22.1(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
       '@iconify-json/fa6-brands': 1.2.6
       '@iconify-json/fa6-regular': 1.2.4
       '@iconify-json/fa6-solid': 1.2.4
