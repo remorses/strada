@@ -63,16 +63,15 @@ alertsCli
       projectId = resolved.id;
     }
 
-    const body: Record<string, unknown> = {
+    const body = {
       name: options.name,
       projectId,
       errorThreshold: options.threshold ?? 1,
       errorWindowMinutes: options.window ?? 5,
       cooldownMinutes: options.cooldown ?? 60,
-    };
-    if (options.channel && options.to) {
-      body.channel = options.channel;
-      body.destination = options.to;
+      ...(options.channel && options.to
+        ? { channel: options.channel, destination: options.to }
+        : {}),
     }
 
     const res = await safeFetch("/api/v0/orgs/:orgId/alerts", {
