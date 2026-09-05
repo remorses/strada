@@ -1,6 +1,6 @@
 {
   "name": "strada",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "CLI for Strada — open-source OpenTelemetry observability on Tinybird",
   "keywords": [
     "cli",

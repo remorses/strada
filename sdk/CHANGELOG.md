@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.6.0
+
+1. **`trackPageview()` for server-side pageviews** — emit a zero-duration `pageview` span from Node or Cloudflare Workers. It lands in the same analytics materialized views as browser pageviews, so bots, AI crawlers, JS-blocked visitors, and SSR-only pages show up in analytics:
+
+   ```ts
+   import { initStrada, trackPageview } from "@strada.sh/sdk"
+
+   app.use((req, res, next) => {
+     trackPageview({
+       path: req.path,
+       url: req.url,
+       referrer: req.headers.referer,
+     })
+     next()
+   })
+   ```
+
+   Cloudflare Workers:
+
+   ```ts
+   export default {
+     fetch(request, env) {
+       initStrada({ projectId: "...", service: "docs", token: env.STRADA_TOKEN })
+       const url = new URL(request.url)
+       trackPageview({ path: url.pathname, url: url.href })
+     },
+   }
+   ```
+
+   `session.id` and `user.id` come from W3C Baggage when not passed. Relative URLs are parsed safely; only absolute URLs set `url.full`.
+
+2. **Cloudflare native tracing bridge** — when `tracing.enterSpan` is available (workerd 2026-06-16+), every `startActiveSpan()` also creates a Cloudflare native span. Custom OTel spans then appear in the Cloudflare trace waterfall next to auto-instrumented KV, D1, and fetch spans.
+
+   Auto-enabled at runtime. Disable with `cloudflareTracing: false`:
+
+   ```ts
+   initStrada({
+     projectId: "...",
+     token: env.STRADA_TOKEN,
+     cloudflareTracing: false,
+   })
+   ```
+
+3. **Better Auth plugin reports API errors** — `strataBetterAuth()` now calls `captureException` on Better Auth `onAPIError` failures, tagged `source: better-auth`.
+
 ## 0.5.0
 
 1. **Automatic request context propagation into errors and logs** -- `captureException()` and manual log records inside HTTP handlers now automatically carry `url.path`, `http.route`, `http.method`, and other request-scoped attributes without any app code. `BaggageLogProcessor` reads curated attributes from the active span and injects them into every log record:

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.6.0
+
+1. **URL health checks** — monitor any HTTP endpoint on a cron schedule and get alerted when it fails. Checks run as a Cloudflare Workflow, one durable step per org, so a slow tenant does not block others:
+
+   ```bash
+   strada checks create --url https://api.example.com/health --name "API health"
+   strada checks list
+   strada checks disable <id>
+   strada checks enable <id>
+   strada checks delete <id>
+   ```
+
+   Defaults: GET, expect 200-299, check every 5 minutes (`*/5 * * * *`), alert after 2 consecutive failures, 60 minute cooldown. After 24 hours of continuous failure the check auto-disables so a dead URL does not fill ClickHouse. Recovery notifications fire automatically when the URL comes back.
+
+   Results live in `otel_health_checks`. Failed checks store the response body (up to 16KB) and headers so you can see what the server returned:
+
+   ```bash
+   strada query "
+     SELECT Timestamp, StatusCode, LatencyMs, ErrorMessage
+     FROM otel_health_checks
+     WHERE Success = 0
+     ORDER BY Timestamp DESC
+     LIMIT 20
+   "
+   ```
+
+2. **Rewritten alerts and destinations** — multiple named error-alert rules per org, with project-scoped overrides. Destinations (email, webhook, Slack) are org-scoped and auto-link to every rule, including health checks:
+
+   ```bash
+   # Org-wide default
+   strada alerts create --name "All errors" --channel email --to ops@example.com
+
+   # Project override: only fire after 20 errors in 30 minutes
+   strada alerts create --name "Frontend noise" --project frontend --threshold 20 --window 30
+
+   strada alerts list
+   strada alerts update <id> --threshold 5 --window 15
+   strada alerts delete <id>
+   strada alerts test
+   strada destinations list
+   strada destinations remove <id>
+   ```
+
+   `alerts add` / `alerts set` / `alerts remove` are gone. Use `create`, `update`, and `delete`.
+
+3. **`--status` on `issues list`** — default is now **open only**. Pass `--status` to include other triage states:
+
+   ```bash
+   strada issues list -p my-app
+   strada issues list -p my-app --status all
+   strada issues list -p my-app --status resolved
+   ```
+
+   Valid values: `open`, `resolved`, `muted`, `ignored`, `all`.
+
+4. **CLI docs site** — every command now has a generated Holocron page under the CLI tab, with usage, flags, and examples. Command descriptions use `.example()` so `--help` and the docs stay in sync.
+
+5. **CLI sessions last one year** — device-flow tokens no longer expire after 7 days. Active sessions refresh at most once per day.
+
+6. **TUI starts correctly** — Termcast is initialized before the cache module, so `strada` opens with the right `~/.termcast/compiled/strada` storage instead of creating a cache before Termcast is ready.
+
+7. **`strada database upgrade` no longer deadlocks** on slow Tinybird data migrations. It waits for `data_ready` (up to 45 minutes), adopts in-flight deployments, and allows destructive schema changes so removed datasources can be cleaned up.
+
 ## 0.5.0
 
 1. **Enriched issue detail view** -- issue detail now shows URL path, user ID, session ID, browser brands, and environment alongside the existing metadata. The events table displays URL path and user ID columns. A 30-day frequency bar chart renders below the metadata so you can see error trends at a glance.
