@@ -21,6 +21,7 @@ import {
   applyBeforeSend,
   resolveMetricReaderOptions,
   resolveReleaseAttributes,
+  shouldExportTelemetry,
   resolveUserId,
   readCookie,
   writeUserIdCookie,
@@ -393,6 +394,68 @@ describe("resolveMetricReaderOptions", () => {
         "exportTimeoutMillis": 1500,
       }
     `);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// export kill switch
+// ---------------------------------------------------------------------------
+
+describe("shouldExportTelemetry", () => {
+  it("exports by default when a projectId is configured", () => {
+    expect(
+      shouldExportTelemetry({ projectId: "proj_1", service: "api" }),
+    ).toMatchInlineSnapshot(`true`);
+  });
+
+  it("is a kill switch when enabled is false", () => {
+    expect(
+      shouldExportTelemetry({
+        projectId: "proj_1",
+        service: "api",
+        enabled: false,
+      }),
+    ).toMatchInlineSnapshot(`false`);
+  });
+
+  it("disables export when the projectId secret is missing", () => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (message: string) => {
+      warnings.push(message);
+    };
+
+    const results = [
+      shouldExportTelemetry({ projectId: "", service: "api" }),
+      shouldExportTelemetry({ projectId: "   ", service: "api" }),
+      // enabled: true cannot rescue a missing projectId, there is nowhere to send
+      shouldExportTelemetry({ projectId: "", service: "api", enabled: true }),
+    ];
+
+    console.warn = original;
+
+    expect({ results, warnings }).toMatchInlineSnapshot(`
+      {
+        "results": [
+          false,
+          false,
+          false,
+        ],
+        "warnings": [
+          "[@strada.sh/sdk] initStrada() called without a projectId. Telemetry is disabled and all SDK calls are no-ops.",
+        ],
+      }
+    `);
+  });
+
+  it("still exports without a projectId when an endpoint is set explicitly", () => {
+    expect(
+      shouldExportTelemetry({
+        projectId: "",
+        service: "api",
+        endpoint: "http://localhost:4318",
+      }),
+    ).toMatchInlineSnapshot(`true`);
   });
 });
 

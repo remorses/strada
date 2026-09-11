@@ -77,6 +77,15 @@ export interface StradaOptions {
    * Defaults to `false` in dev mode (`import.meta.hot` is truthy, e.g. Vite,
    * Webpack HMR, RSC dev servers) and `true` otherwise. Set explicitly to
    * override the default in either direction.
+   *
+   * `enabled: false` is a full kill switch for both product analytics and
+   * error reporting. The providers are still installed, so `track()`,
+   * `captureException()`, `getLogger()`, and `startSpan()` keep working and
+   * drop their data. Never guard your own SDK calls behind an app-level flag;
+   * pass the flag here once instead.
+   *
+   * A blank `projectId` also disables export, so reading the id from a secret
+   * that may be missing is safe without extra checks.
    */
   enabled?: boolean;
   /** Override the ingest endpoint. Defaults to https://{projectId}-ingest.strada.sh */
@@ -335,6 +344,18 @@ export interface CaptureExceptionOptions {
 
 let _tags: Record<string, string> = {};
 
+/**
+ * Warnings about SDK configuration run on every request in a worker or server,
+ * so they are deduplicated by message. Reset by `resetContext()` for tests.
+ */
+const _warnedMessages = new Set<string>();
+
+export function warnOnce(message: string): void {
+  if (_warnedMessages.has(message)) return;
+  _warnedMessages.add(message);
+  console.warn(message);
+}
+
 export function setTags(tags: Record<string, string>): void {
   _tags = { ..._tags, ...tags };
 }
@@ -345,6 +366,7 @@ export function getTags(): Record<string, string> {
 
 export function resetContext(): void {
   _tags = {};
+  _warnedMessages.clear();
   resetRuntimeUserId();
 }
 
@@ -890,7 +912,26 @@ export function resolveIngestHeaders(options: StradaOptions): Record<string, str
   return options.token ? { Authorization: `Bearer ${options.token}` } : undefined;
 }
 
+/**
+ * Decide whether this process should send anything to the ingest endpoint.
+ *
+ * When this returns false, `initStrada()` still installs the OTel providers,
+ * just without any exporter. Every API keeps working and silently drops its
+ * data: `track()`, `captureException()`, `getLogger()`, `startSpan()`. That is
+ * deliberate, so apps never need to wrap SDK calls in their own `if (enabled)`
+ * guards or skip `initStrada()` and then hit "called before initStrada()".
+ */
 export function shouldExportTelemetry(options: StradaOptions): boolean {
+  // A blank projectId cannot be exported to: the default endpoint is derived
+  // from it. Apps read it from an env var or a platform secret that can be
+  // missing locally or in a half configured deployment, so treat it as "off"
+  // instead of posting to https://-ingest.strada.sh.
+  if (!options.projectId?.trim() && !options.endpoint?.trim()) {
+    warnOnce(
+      "[@strada.sh/sdk] initStrada() called without a projectId. Telemetry is disabled and all SDK calls are no-ops.",
+    );
+    return false;
+  }
   if (options.enabled !== undefined) return options.enabled;
   // Disable export by default in dev mode (import.meta.hot present).
   // Users can override with `enabled: true` to force export during development.

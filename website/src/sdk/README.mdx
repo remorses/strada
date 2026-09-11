@@ -40,6 +40,44 @@ try {
 }
 ```
 
+## Turning telemetry off
+
+`enabled` is the single kill switch for **everything** the SDK sends: product events, errors, logs, spans, and metrics. Set it once at init.
+
+```ts
+initStrada({
+  projectId: process.env.STRADA_PROJECT_ID,
+  token: process.env.STRADA_TOKEN,
+  service: "api",
+  enabled: process.env.NODE_ENV === "production",
+})
+```
+
+When it is off, `initStrada()` **still installs the OTel providers**, just without an exporter. Every API keeps working and quietly drops its data:
+
+```ts
+track("checkout_started", { plan: "pro" }) // no-op, no network call
+captureException(error) // no-op
+getLogger("api").info({ message: "hi" }) // no-op
+await startSpan({ name: "work" }, doWork) // still runs doWork, span is dropped
+```
+
+**Never guard SDK calls behind your own flag**, and never skip `initStrada()` to disable it. Skipping init makes every call print `called before initStrada()`. Pass `enabled` and leave your call sites clean.
+
+A **blank `projectId` also disables export**, with one warning at startup. Reading the id from an env var or platform secret that may be missing is therefore safe:
+
+```ts
+// Missing secret in local dev or a half configured deploy: no crash, no
+// requests to a garbage endpoint, no per-call guards.
+initStrada({
+  projectId: env.STRADA_PROJECT_ID, // "" while the secret is not set
+  token: env.STRADA_TOKEN,
+  service: "worker",
+})
+```
+
+An explicit `endpoint` (a local collector, for example) keeps export on even without a `projectId`.
+
 ## Use normal OpenTelemetry APIs
 
 After `initStrada()`, the global OTel providers are configured. Use the standard OTel APIs re-exported by `@strada.sh/sdk`.

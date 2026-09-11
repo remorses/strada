@@ -103,6 +103,13 @@ Use one Strada project for related services. Give each Worker a distinct
 `service` and set `environment` to `development`, `preview`, or `production`
 so the same queries can compare deployments.
 
+`env.STRADA_PROJECT_ID` is empty until the secret is uploaded, and it is always
+empty in `wrangler dev`. That is fine: a blank `projectId` disables export, the
+providers are still installed, and `track()` / `captureException()` become
+silent no-ops. Call `initStrada()` unconditionally and keep your call sites free
+of `if (analyticsEnabled)` checks. Use `enabled: false` when you want to turn
+telemetry off explicitly. See [Turning telemetry off](../sdk/README.mdx#turning-telemetry-off).
+
 ## 4. Browser setup
 
 Initialize Strada in the browser with the **same project ID** but **no token**. Browser ingest is anonymous and rate limited by design, because any token shipped to the browser would be public.
