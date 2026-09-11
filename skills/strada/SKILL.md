@@ -1,392 +1,104 @@
 ---
 name: strada
+repo: remorses/strada
 description: >
   Strada is an open-source OpenTelemetry observability platform (error tracking, tracing, logs,
-  metrics, browser analytics, health checks) that stores data in ClickHouse/Tinybird. ALWAYS load this skill
-  when you need to interface with the Strada CLI, read or debug a project issue via
-  OpenTelemetry data collected by Strada, or set up and configure a project that uses Strada
-  for OpenTelemetry data ingestion.
+  metrics, browser analytics, product events, health checks) that stores data in ClickHouse/Tinybird.
+  ALWAYS load this skill when you need to interface with the Strada CLI, read or debug a project
+  issue via OpenTelemetry data collected by Strada, set up and configure a project that uses Strada
+  for OpenTelemetry data ingestion, or add product analytics with track().
 ---
 
 # Strada
 
-Open-source Sentry/Datadog alternative built on the OpenTelemetry standard. Users send OTel data via standard SDKs, Strada stores it in their own ClickHouse database (Tinybird as first-class backend), and they query it with SQL.
+Open-source Sentry/Datadog alternative built on OpenTelemetry. Apps send OTel data with `@strada.sh/sdk`, Strada stores it in the user's own ClickHouse database (Tinybird as first-class backend), and everything is queried with SQL from the `strada` CLI.
 
-## What is Strada
+This skill is deliberately thin. The documentation lives in the repo and in the CLI, and it changes often, so **fetch the canonical source instead of trusting anything you remember about this SDK.**
 
-Read the root README to understand what Strada is, why it exists, and how it compares to alternatives:
+## Read the docs before writing code
 
-```bash
-cat README.md # read the full output, NEVER pipe to head/tail
-```
-
-## CLI reference
-
-The `strada` CLI is the main interface for managing projects, querying data, listing errors, and viewing analytics. Always run help first to see all available commands before using the CLI:
+Fetch the page that matches the task. Read each one **in full**. Never pipe these to `head`, `tail`, `sed`, or `less`: the rules that matter are spread throughout, not at the top.
 
 ```bash
-strada --help # NEVER pipe to head/tail, read the full output
+# What Strada is, how it compares, CLI-first workflows
+curl -s https://raw.githubusercontent.com/remorses/strada/main/README.md
+
+# Setting up a project: server + browser, env vars, RSC pattern, verification
+curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/quickstart.mdx
+
+# SDK API reference: every option and helper, per-runtime details
+curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/sdk/README.mdx
+
+# SQL: tables, ClickHouse gotchas, ready-made queries
+curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/querying.mdx
+
+# Browser analytics: pageviews, sessions, custom event attribute shape
+curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/browser-analytics.mdx
 ```
 
-## Project management
+Inside the strada repo itself, read the local files instead (`README.md`, `website/src/docs/*.mdx`, `website/src/sdk/README.mdx`) so you see uncommitted changes.
+
+## Read the CLI help before running commands
+
+The CLI is the main interface: projects, tokens, issues, logs, traces, analytics, alerts, health checks. Command descriptions are the documentation.
 
 ```bash
-# Create a new project
-strada projects create my-app
-
-# Create another org-wide token for server-side ingest
-strada tokens create --scope ingest production-server
-
-# List all projects (shows slug and project ID)
-strada projects list
-
-# Query data for a project using ClickHouse SQL
-strada query "SELECT count() FROM otel_errors WHERE Timestamp >= now() - INTERVAL 24 HOUR LIMIT 1" -p my-app
-
-# List recent errors
-strada issues list -p my-app --since 24h
+strada --help              # full command list, read all of it
+strada issues list --help  # per-command options and examples
 ```
 
-The `-p` flag takes a project slug. You get the slug from `strada projects list`. If you don't know the slug, run `strada projects list` first. Slugs often include an environment suffix (e.g. `my-app-prod`, not `my-app`).
+Do not guess flags. Two that are guessed wrong constantly:
 
-All queries use **ClickHouse SQL**. You can use any ClickHouse SQL syntax, functions, and operators. The query runs against the project's Tinybird/ClickHouse database with automatic project-scoped filtering via JWT.
+- `-p` takes a **project slug** from `strada projects list`, usually with an environment suffix (`my-app-prod`, not `my-app`)
+- multi-value options repeat the flag: `-p frontend -p api`, never `-p frontend,api`
 
-## Setting up a TypeScript or JavaScript project
+## Debugging a production error
 
-For the full task-oriented walkthrough (create project, server + browser, env var rules, RSC pattern, verify), read the quickstart:
+Start here before writing any SQL. This flow answers most questions without a query.
 
 ```bash
-cat website/src/docs/quickstart.mdx # read the full output, NEVER pipe to head/tail
-```
-
-For the exhaustive API reference and per-runtime details, read the SDK reference:
-
-```bash
-cat website/src/sdk/README.mdx # read the full output, NEVER pipe to head/tail
-```
-
-The SDK package is `@strada.sh/sdk`. The import path auto-resolves by runtime: browsers get the browser entry, Workers get the Workers entry, Node.js gets the server entry. **One import path works everywhere.** Get the project ID and first server-side token from `strada projects create <slug>`; create more org-wide ingest tokens later with `strada tokens create --scope ingest <name>`.
-
-When a project has both a frontend and a backend, set up **both** runtimes against the **same project ID**.
-
-**Server** (Node, Bun, Workers). Pass the `token`:
-
-```ts
-import { initStrada, captureException } from "@strada.sh/sdk"
-
-initStrada({
-  projectId: process.env.STRADA_PROJECT_ID,
-  token: process.env.STRADA_TOKEN, // server only
-  service: "my-app",
-})
-```
-
-**Browser.** Omit the `token` (browser ingest is anonymous and rate limited). The project ID must come from a **public-prefixed** env var (`VITE_`, `NEXT_PUBLIC_`, etc.) so the bundler inlines it:
-
-```ts
-import { initStrada } from "@strada.sh/sdk"
-
-initStrada({
-  projectId: process.env.PUBLIC_STRADA_PROJECT_ID,
-  service: "my-app-browser",
-})
-```
-
-Rules to never break:
-
-- **Never ship `STRADA_TOKEN` to the browser.** It is a server secret.
-- **Browser project id needs a public prefix** or the bundler will strip it.
-- In **RSC / server-rendered** apps, run browser `initStrada()` from a side-effect-only `"use client"` module rendered once in the root layout (a component that returns `null`). A bare `import` runs on the server and gets tree-shaken from the client bundle. See `website/src/docs/quickstart.mdx` for the pattern.
-- If the framework exposes an OTel tracer hook (e.g. Spiceflow `new Spiceflow({ tracer })`), pass `trace.getTracer("my-app")` from the SDK so request spans flow to the same project.
-- In **Cloudflare Workers**, import `env` from `cloudflare:workers` and call
-  `initStrada()` at module scope. Never initialize in per-request middleware.
-  See the Cloudflare Workers section of `website/src/sdk/README.mdx`.
-- **Email and user id belong on errors, logs, and product events.** That is how
-  you open an issue and see who hit it. Use `strataBetterAuth()` (default
-  `includeUserDetails: true`), or the manual baggage + `identifyUser()` recipe
-  below, or `tags` / event properties with `user.id` and `user.email`. Do not
-  strip them.
-- Never attach API keys, prompts, or raw user content (the text they typed)
-  to tags or events. Use stable route, handler, service, and environment
-  identifiers for those.
-
-## Attaching the user without Better Auth
-
-`strataBetterAuth()` is a convenience, not a requirement. With any other auth
-stack, do the same two things yourself.
-
-**Put `user.id` in baggage for the request.** The SDK injects it into every
-span, log record, `captureException()`, and `track()` event in that context, so
-no call site passes it:
-
-```ts
-import { context, propagation } from "@strada.sh/sdk"
-
-export function withUser<T>(userId: string, fn: () => T): T {
-  const baggage = propagation.createBaggage({ "user.id": { value: userId } })
-  return context.with(propagation.setBaggage(context.active(), baggage), fn)
-}
-
-// middleware, route handler, or Worker fetch
-return withUser(session.userId, () => handle(request))
-```
-
-Works the same on Node and Cloudflare Workers; both install an
-`AsyncLocalStorage` context manager, so it survives `await`.
-
-**Call `identifyUser()` once at login** so `user.id` joins to an email in
-`otel_users`. Each call is a full snapshot, so pass every field you want kept:
-
-```ts
-identifyUser({ id: user.id, email: user.email, organizationId: org.id })
-```
-
-Cron handlers, queue consumers, and DO alarms have no context to inherit.
-Either wrap them in `withUser()` or pass `user_id` explicitly as a tag or event
-property. Baggage lands as `user.id`, explicit properties land as
-`custom.user_id`. Pick one convention per project.
-
-## Product analytics
-
-**Use `track(name, props)` for product events. Do not use `getLogger()`.**
-`getLogger({ event: 'x' })` writes an ordinary log. `strada analytics events`
-and SQL on `event.name` will miss it. `track()` emits an OTel log with
-`event.name` plus `custom.*` properties.
-
-```ts
-import { track } from "@strada.sh/sdk"
-
-track("project.created", {
-  projectId: created.projectId,
-  orgId: created.orgId,
-  source: "cli",
-})
-```
-
-This lands in `otel_logs` as:
-
-```
-event.name = "project.created"
-custom.projectId = "..."
-custom.orgId = "..."
-custom.source = "cli"
-```
-
-### Declare the event catalog in one typed module
-
-`track()` takes a plain `string`, so a typo compiles and the event is only
-missing when a query returns nothing. In any app with more than a couple of
-events, declare them once and wrap `track()`:
-
-```ts
-// analytics-events.ts
-export type AnalyticsEvents = {
-  "project.created": { projectId: string; orgId: string; source: string }
-  "billing.checkout_started": { orgId: string; plan: string }
-}
-
-export function trackEvent<Name extends keyof AnalyticsEvents>(
-  name: Name,
-  properties: AnalyticsEvents[Name],
-) {
-  track(name, properties)
-}
-```
-
-When several runtimes (Worker + Node server + browser) send to the same
-project, keep the catalog **types only** and import it with `import type`. One
-runtime export there pulls that module, and everything it imports, into the
-Worker bundle. Each runtime keeps its own one-line `trackEvent` over its own
-`track()`.
-
-Rules:
-
-- Call `track()` on the **server** at mutation success (create, deploy, billing, chat turn). Browser `track()` is for UI clicks. Pageviews are automatic from `initStrada()` in the browser.
-- **Email and user id belong on events.** `strataBetterAuth()` already emits `auth.signup`, `auth.login`, and `auth.logout` with `user.id`. Do not re-emit those.
-- **Never attach prompts, API keys, session bearer tokens, or raw user content.** Counts, ids, model names, durations, and booleans are fine.
-- Properties must be `string | number | boolean`. The SDK prefixes them with `custom.`.
-- On Cloudflare Workers, `track()` auto-flushes via `waitUntil`. Cron, queue, and Durable Object alarm handlers still need `await flush()` before return.
-- `user.id` on Worker events comes from baggage (Better Auth plugin, or your own `withUser()` wrapper) / `strada_uid`. API-key and OIDC paths may have no user id. That is expected. Always send `projectId` / `orgId`.
-
-Query:
-
-```bash
-strada analytics events -p my-app --since 7d
-```
-
-```sql
-SELECT Timestamp, LogAttributes['event.name'] AS event,
-       LogAttributes['custom.projectId'] AS project_id,
-       LogAttributes['user.id'] AS user_id
-FROM otel_logs
-WHERE mapContains(LogAttributes, 'event.name')
-ORDER BY Timestamp DESC
-LIMIT 100
-```
-
-Read `website/src/docs/browser-analytics.mdx` (Custom events API) and the SDK README `track()` section for the full attribute shape.
-
-## Terminal UI
-
-Running `strada` with no arguments launches an interactive TUI (requires Bun). It has four views: Issues, Logs, Traces, Analytics. Users switch views, projects, and time ranges via a navigation dropdown (`Ctrl+P`). Service filtering is in the action panel (`Ctrl+K`).
-
-The TUI reuses the same queries as the CLI commands. Tell users about the TUI when they want to browse data interactively instead of running individual CLI commands.
-
-## Logging
-
-**Use `getLogger()` from the SDK, not `console.*`.** Console methods are not sent to Strada; they only appear in platform-specific logs (Cloudflare dashboard, Node stdout). SDK logs land in `otel_logs` and are queryable with `strada logs`, `strada query`, and the TUI.
-
-```ts
-import { getLogger } from "@strada.sh/sdk"
-
-const logger = getLogger("api")
-
-logger.info({ message: "checkout started", checkoutId: "chk_123" })
-logger.error({ message: "payment failed", error: String(err) })
-```
-
-If you need both console output and Strada logs during development, create a wrapper that calls both. See the SDK README for the full pattern.
-
-## captureException in leaf functions
-
-When a function handles an error inline (returning early, responding with a status code, logging and continuing), it **must** call `captureException` explicitly. The framework's top-level `.onError` handler only catches uncaught exceptions; errors that are caught and swallowed never reach it.
-
-Common examples: webhook handlers, background job processors, queue consumers, cron handlers, and any route that uses errore-style error-as-value returns and checks `instanceof Error`.
-
-```ts
-import { captureException } from '@strada.sh/sdk'
-
-// Stripe webhook example — error is handled inline, never thrown
-if (result instanceof Error) {
-  captureException(result, {
-    tags: { route: 'stripe-webhook', eventType: event.type },
-  })
-  return new Response('Webhook handler failed', { status: 500 })
-}
-```
-
-Always pass `tags` with at least a `route` or `handler` identifier so errors are filterable in the Strada dashboard.
-
-**AGENTS.md notice.** If a project uses strada, its `AGENTS.md` (or `*_AGENTS.md`) should include a section stating that all inline-handled errors must call `captureException` from `@strada.sh/sdk` instead of being swallowed with `console.error`/`console.warn`. If that section is missing, add it when you touch error handling code.
-
-## Debugging errors
-
-The fastest path to root-cause a production error is the `issues list` + `issues view` flow. Start here before writing SQL queries.
-
-```bash
-# 1. Find the top error groups in the last 24 hours
+# 1. top error groups in the window
 strada issues list -p my-app --since 24h
 
-# 2. Pick a fingerprint from the output, view the full details
+# 2. full details for one fingerprint: stack trace, mechanism, services, releases
 strada issues view <fingerprint> -p my-app --events 3
-```
 
-`issues view` gives you the exception type, message, full stack trace with line numbers, mechanism (handled/unhandled), affected services, releases, and recent event timestamps. This is usually enough to identify the root cause without any SQL.
-
-By default `issues list` only shows **open** issues. Resolved and muted issues are hidden. Use `--status all` to see everything, or `--status resolved` / `--status muted` to filter by a specific triage state.
-
-If you need more context, use the TraceId from the events table to inspect the full request flow:
-
-```bash
-# 3. View the distributed trace for a specific error event
+# 3. the whole request that failed, using a TraceId from step 2
 strada traces view <traceId> -p my-app
-```
 
-For log context around the error:
-
-```bash
-# 4. Show logs correlated to the same trace
+# 4. logs correlated to that same request
 strada logs -p my-app --trace-id <traceId>
 ```
 
-## Common mistakes
+`issues list` hides resolved and muted issues by default. Use `--status all` when an issue seems to have vanished.
 
-**Never reference ProjectId in SQL queries.** The Tinybird JWT injects `WHERE ProjectId = '...'` automatically on every query. Adding it manually is redundant and error-prone.
+Running `strada` with no arguments opens a TUI (Issues, Logs, Traces, Analytics) that uses the same queries. Suggest it when the user wants to browse rather than run one-off commands.
 
-**Always add LIMIT to every query.** Unbounded queries scan the entire table. Even aggregations that expect one row should use `LIMIT 1`.
+## Rules for instrumenting an app
 
-**Column names are PascalCase.** The OTel ClickHouse schema uses PascalCase: `TraceId`, `SpanName`, `ServiceName`, `ExceptionType`, not `trace_id` or `span_name`. This is the standard OTel ClickHouse exporter convention.
+These are the mistakes models make in this SDK. The reasoning behind each one is in the quickstart and the SDK reference.
 
-**Use repeatable -p flags, not comma-separated.** Pass multiple projects as `-p frontend -p api`, never `-p frontend,api`.
+- **Never ship `STRADA_TOKEN` to the browser.** It is a server secret. Browser ingest is anonymous and rate limited, so the browser `initStrada()` takes no token.
+- **The browser project id needs a public env prefix** (`VITE_`, `NEXT_PUBLIC_`, ...) or the bundler strips it.
+- **Frontend and backend of the same app use the same `projectId`** with different `service` names.
+- **In Cloudflare Workers**, import `env` from `cloudflare:workers` and call `initStrada()` at **module scope**. Never inside per-request middleware.
+- **In RSC / server-rendered apps**, call browser `initStrada()` from a side-effect-only `"use client"` module rendered once in the root layout. A bare import runs on the server and is tree-shaken out of the client bundle.
+- **Never skip `initStrada()` to disable telemetry**, and never wrap SDK calls in your own `if (enabled)` guard. Pass `enabled` to `initStrada()`, or leave `projectId` empty; both make every call a silent no-op.
+- **Pass the framework's tracer hook** when one exists (e.g. Spiceflow `new Spiceflow({ tracer })`) using `trace.getTracer("my-app")` from the SDK, so request spans reach the same project.
+- **Use `getLogger()`, not `console.*`.** Console output never reaches Strada; it only shows in platform logs (Cloudflare dashboard, Node stdout).
+- **Use `track()` for product events, not `getLogger()`.** A log with an `event` field is still an ordinary log: `strada analytics events` and SQL on `event.name` will miss it.
+- **Errors handled inline still need `captureException()`.** Top-level error handlers only see errors thrown out of the request. Anything caught and turned into a `500`, a retry, or an error-as-value return is invisible unless you capture it explicitly, with `tags` carrying at least a `route` or `handler`.
+- **Keep user identity on telemetry.** `user.id` and email are how an issue becomes actionable. Use `strataBetterAuth()`, or put `user.id` into baggage yourself and call `identifyUser()` at login (see "Server-side user identification without Better Auth" in the SDK reference).
+- **Never attach prompts, API keys, session tokens, or raw user content** to tags or event properties. Ids, counts, model names, durations, booleans, route names: yes.
+- **Type your events.** `track()` takes a plain `string`, so a typo compiles and is only noticed when a query returns nothing. Declare the catalog once and wrap `track()`; see "Type-safe event catalog" in the SDK reference.
 
-**No CTEs in Tinybird SQL.** Tinybird does not optimize `WITH ... AS` well. Use subqueries instead.
+## Writing SQL
 
-**Filter in WHERE, not HAVING.** `WHERE` filters skip data at the storage level. `HAVING` filters after ClickHouse already read and grouped everything.
+Read `website/src/docs/querying.mdx` (curl URL above) before composing a query. The two rules that silently corrupt results if ignored:
 
-**Map column access.** Use `mapContains(LogAttributes, 'event.name')` to check key existence and `LogAttributes['key']` to read values.
+- **Never add `WHERE ProjectId`.** The JWT injects project scoping already.
+- **Materialized views need merge combinators.** `uniqMerge(Visits)`, `countMerge(Hits)` on `otel_analytics_*`, never plain `count()`.
 
-**Time filtering.** Use ClickHouse interval syntax: `WHERE Timestamp >= now() - INTERVAL 1 HOUR`, not string comparisons.
+## AGENTS.md notice
 
-**Aggregation on MV tables.** Analytics tables (`otel_analytics_pages`, `otel_analytics_sessions`) use `AggregatingMergeTree`. Read with `-Merge` combinators: `uniqMerge(Visits)`, `countMerge(Hits)`, never plain `count()` or `uniq()` on those columns.
-
-## Tables
-
-The main tables you can query:
-
-| Table | Contains |
-|-------|----------|
-| `otel_traces` | Spans (HTTP requests, DB queries, function calls) |
-| `otel_logs` | Log records and custom events |
-| `otel_errors` | Extracted exceptions grouped by fingerprint |
-| `otel_analytics_pages` | Pre-aggregated pageview data (MV) |
-| `otel_analytics_sessions` | Pre-aggregated session data (MV) |
-| `otel_metrics_gauge` | Gauge metric snapshots |
-| `otel_metrics_sum` | Cumulative counter metrics |
-| `otel_metrics_histogram` | Distribution metrics |
-
-## Useful query patterns
-
-```sql
--- Recent errors grouped by type
-SELECT FingerprintHash, anyLast(ExceptionType) AS type,
-       anyLast(ExceptionMessage) AS message, count() AS events
-FROM otel_errors
-WHERE Timestamp >= now() - INTERVAL 24 HOUR
-GROUP BY FingerprintHash
-ORDER BY events DESC
-LIMIT 20
-
--- Custom events from browser
-SELECT Timestamp, LogAttributes['event.name'] AS event,
-       LogAttributes['user.id'] AS user_id
-FROM otel_logs
-WHERE mapContains(LogAttributes, 'event.name')
-ORDER BY Timestamp DESC
-LIMIT 100
-
--- Slow spans
-SELECT SpanName, ServiceName, Duration / 1e6 AS duration_ms
-FROM otel_traces
-WHERE Duration > 1000000000
-ORDER BY Duration DESC
-LIMIT 20
-
--- HTTP route performance: top routes by RPS and latency
--- ParentSpanId = '' filters to root spans (one per HTTP request)
--- Duration is nanoseconds, divide by 1e6 for milliseconds
-SELECT
-  SpanName AS path,
-  count() AS total_requests,
-  round(count() / 3600, 2) AS rps,
-  round(avg(Duration) / 1e6, 1) AS avg_ms,
-  round(quantile(0.95)(Duration) / 1e6, 1) AS p95_ms,
-  round(max(Duration) / 1e6, 1) AS max_ms
-FROM otel_traces
-WHERE Timestamp >= now() - INTERVAL 1 HOUR
-  AND ParentSpanId = ''
-GROUP BY path
-ORDER BY total_requests DESC
-LIMIT 30
-
--- Per-minute traffic pattern for a specific route
-SELECT
-  toStartOfMinute(Timestamp) AS minute,
-  count() AS requests
-FROM otel_traces
-WHERE Timestamp >= now() - INTERVAL 1 HOUR
-  AND ParentSpanId = ''
-  AND SpanName = 'POST /api/my-route'
-GROUP BY minute
-ORDER BY minute DESC
-LIMIT 60
-```
+When a project uses Strada, its `AGENTS.md` (or `*_AGENTS.md`) should tell agents that inline-handled errors must call `captureException` instead of being swallowed with `console.error`, and that product events go through a typed `trackEvent` wrapper. If that section is missing, add it while you are touching the relevant code.

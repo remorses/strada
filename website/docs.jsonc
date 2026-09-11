@@ -63,6 +63,7 @@
             "group": "Guides",
             "icon": "lucide:map",
             "pages": [
+              "docs/querying",
               "docs/browser-analytics",
               "docs/cloudflare-workers-otel-export",
               "docs/tinybird-pricing"

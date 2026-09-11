@@ -778,6 +778,8 @@ track("purchase", {
 
 In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`user_id`, `org_id`, ...). Use the same key names on both sides so one query covers them.
 
+Call `track()` on the **server at mutation success** (project created, deploy finished, subscription started). Those events are the ones you trust, because they cannot fire from a click that later failed. Browser `track()` is for intent and UI interaction (button clicked, form started). Pageviews need no call at all, they are automatic from `initStrada()`.
+
 ### Type-safe event catalog
 
 `track()` takes a plain `string`, so `track("signup_startedd", { plann: "pro" })` compiles. The typo reaches ClickHouse and you only notice when a dashboard query returns zero rows. Event names and properties are effectively a schema, so declare them in one place and wrap `track()` once:
@@ -1357,6 +1359,26 @@ Auto-instrumentation packages are large. The Node metapackage pulls in ~30 instr
 - return the same `Error`
 - return a rewritten `Error`
 - return `null` to drop the event
+
+### Errors handled inline need an explicit call
+
+A framework's top-level error handler only sees errors that are **thrown out of** the request. An error you catch, log, and turn into a `500` never reaches it, so it never reaches Strada either. Those are exactly the errors worth seeing: webhook handlers, queue consumers, cron jobs, retry loops, and any code returning errors as values instead of throwing.
+
+Call `captureException()` at the point you swallow the error:
+
+```ts
+import { captureException } from "@strada.sh/sdk"
+
+// Stripe webhook: the error is handled inline and never thrown
+if (result instanceof Error) {
+  captureException(result, {
+    tags: { route: "stripe-webhook", eventType: event.type },
+  })
+  return new Response("Webhook handler failed", { status: 500 })
+}
+```
+
+Always pass `tags` with at least a `route` or `handler` identifier, otherwise the issue has nothing to filter by. `console.error()` is not a substitute: it is not sent to Strada.
 
 ## Query shape later
 

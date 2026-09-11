@@ -1,0 +1,143 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: Querying your data with SQL
+sidebarTitle: Querying
+description: The tables Strada writes, the ClickHouse SQL rules that matter, and copy-pasteable queries for errors, events, and route performance.
+icon: lucide:database
+---
+
+# Querying your data
+
+Every signal Strada collects lands in your own ClickHouse/Tinybird database and is queried with plain **ClickHouse SQL**. There is no query DSL and no API pagination, so anything the dashboard shows, you can compute yourself.
+
+```bash
+strada query "SELECT count() FROM otel_errors WHERE Timestamp >= now() - INTERVAL 24 HOUR LIMIT 1" -p my-app
+```
+
+The `-p` flag takes a **project slug**, which you get from `strada projects list`. Slugs often carry an environment suffix, so it is usually `my-app-prod`, not `my-app`.
+
+## Tables
+
+| Table | Contains |
+| --- | --- |
+| `otel_traces` | Spans: HTTP requests, DB queries, function calls, browser pageviews |
+| `otel_logs` | Log records and custom events (`track()`) |
+| `otel_errors` | Exceptions extracted from logs, grouped by fingerprint |
+| `otel_users` | Latest profile snapshot per user, written by `identifyUser()` |
+| `otel_analytics_pages` | Pre-aggregated pageview data (materialized view) |
+| `otel_analytics_sessions` | Pre-aggregated session data (materialized view) |
+| `otel_metrics_gauge` | Gauge metric snapshots |
+| `otel_metrics_sum` | Cumulative counter metrics |
+| `otel_metrics_histogram` | Distribution metrics |
+
+## Rules that trip people up
+
+**Never filter on `ProjectId`.** The Tinybird JWT injects `WHERE ProjectId = '...'` into every query automatically. Adding it yourself is redundant and easy to get wrong.
+
+**Always add `LIMIT`.** An unbounded query scans the whole table. Even an aggregation you expect to return one row should end with `LIMIT 1`.
+
+**Column names are PascalCase.** The OTel ClickHouse schema uses `TraceId`, `SpanName`, `ServiceName`, `ExceptionType`. Not `trace_id`, not `span_name`.
+
+**Attributes are maps.** Use `mapContains(LogAttributes, 'event.name')` to test for a key and `LogAttributes['event.name']` to read it. A missing key reads as an empty string, so `mapContains` is the only reliable existence check.
+
+**Filter in `WHERE`, not `HAVING`.** `WHERE` skips data at the storage level. `HAVING` runs after ClickHouse has already read and grouped everything.
+
+**Use interval syntax for time.** `WHERE Timestamp >= now() - INTERVAL 1 HOUR`, never string comparisons.
+
+**No CTEs.** Tinybird does not optimize `WITH ... AS` well. Use subqueries instead.
+
+**Materialized views need `-Merge`.** `otel_analytics_pages` and `otel_analytics_sessions` are `AggregatingMergeTree`, so read them with the merge combinators: `uniqMerge(Visits)`, `countMerge(Hits)`. Plain `count()` or `uniq()` on those columns returns garbage.
+
+**Repeat `-p` for multiple projects.** `-p frontend -p api`, never `-p frontend,api`.
+
+## Errors
+
+```sql
+-- top error groups in the last 24 hours
+SELECT FingerprintHash,
+       anyLast(ExceptionType) AS type,
+       anyLast(ExceptionMessage) AS message,
+       count() AS events
+FROM otel_errors
+WHERE Timestamp >= now() - INTERVAL 24 HOUR
+GROUP BY FingerprintHash
+ORDER BY events DESC
+LIMIT 20
+```
+
+For day-to-day triage prefer the CLI, which formats stack traces and groups for you:
+
+```bash
+strada issues list -p my-app --since 24h
+strada issues view <fingerprint> -p my-app --events 3
+```
+
+## Custom events
+
+Events emitted with `track()` are log records carrying `event.name` plus `custom.*` properties.
+
+```sql
+-- event volume by name over the last 7 days
+SELECT LogAttributes['event.name'] AS event,
+       count() AS n,
+       uniq(LogAttributes['user.id']) AS users
+FROM otel_logs
+WHERE Timestamp >= now() - INTERVAL 7 DAY
+  AND mapContains(LogAttributes, 'event.name')
+GROUP BY event
+ORDER BY n DESC
+LIMIT 30
+```
+
+Properties passed to `track()` are prefixed, so `plan` is read as `LogAttributes['custom.plan']`. Identity injected from baggage is not prefixed: `LogAttributes['user.id']`.
+
+## Route performance
+
+Filter to **root spans** with `ParentSpanId = ''` so each row is one HTTP request instead of a nested DB query. `Duration` is nanoseconds; divide by `1e6` for milliseconds.
+
+```sql
+SELECT SpanName AS path,
+       count() AS total_requests,
+       round(count() / 3600, 2) AS rps,
+       round(avg(Duration) / 1e6, 1) AS avg_ms,
+       round(quantile(0.95)(Duration) / 1e6, 1) AS p95_ms,
+       round(max(Duration) / 1e6, 1) AS max_ms
+FROM otel_traces
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+  AND ParentSpanId = ''
+GROUP BY path
+ORDER BY total_requests DESC
+LIMIT 30
+```
+
+Once a route looks hot, break it down per minute:
+
+```sql
+SELECT toStartOfMinute(Timestamp) AS minute, count() AS requests
+FROM otel_traces
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+  AND ParentSpanId = ''
+  AND SpanName = 'POST /api/my-route'
+GROUP BY minute
+ORDER BY minute DESC
+LIMIT 60
+```
+
+## Slow spans anywhere in the stack
+
+```sql
+SELECT SpanName, ServiceName, Duration / 1e6 AS duration_ms
+FROM otel_traces
+WHERE Timestamp >= now() - INTERVAL 1 HOUR
+  AND Duration > 1000000000
+ORDER BY Duration DESC
+LIMIT 20
+```
+
+## Output formats
+
+`strada query` renders a terminal table by default. Add `--json` for the raw envelope, or append a ClickHouse `FORMAT` clause to stream CSV, TSV, Parquet, or `JSONEachRow` straight to a file or to `jq`:
+
+```bash
+strada query "SELECT * FROM otel_errors LIMIT 100 FORMAT CSVWithNames" -p my-app > errors.csv
+```
