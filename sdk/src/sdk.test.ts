@@ -105,7 +105,12 @@ describe("normalizeError", () => {
     const circular: Record<string, unknown> = { code: 500 };
     circular.self = circular;
 
+    // JSON.stringify is tried first and calls toJSON, not toString, so both
+    // have to throw for the String() fallback to be exercised.
     const throwingToString = {
+      toJSON() {
+        throw new Error("toJSON exploded");
+      },
       toString() {
         throw new Error("toString exploded");
       },
@@ -129,7 +134,7 @@ describe("normalizeError", () => {
     ]).toMatchInlineSnapshot(`
       [
         "[object Object]",
-        "{}",
+        "[unserializable object]",
         "[unserializable object]",
         "Symbol(sym)",
         "10",
@@ -507,6 +512,79 @@ describe("tryTelemetry", () => {
     `);
   });
 
+  it("survives an error whose own message getter throws", () => {
+    const hostile = new Error("never read");
+    // defineProperty returns the Error it patched, which is not a failure
+    void Object.defineProperty(hostile, "message", {
+      get() {
+        throw new Error("message getter exploded");
+      },
+    });
+
+    const warnings = recordWarnings(() => {
+      const error = tryTelemetry({
+        operation: "captureException()",
+        run: () => {
+          throw hostile;
+        },
+      });
+      expect(error).toBe(hostile);
+    });
+
+    expect(warnings).toMatchInlineSnapshot(`
+      [
+        "[@strada.sh/sdk] captureException() failed: unknown telemetry error",
+      ]
+    `);
+  });
+
+  it("survives a proxy that throws from its prototype lookup", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("getPrototypeOf exploded");
+        },
+        get() {
+          throw new Error("get exploded");
+        },
+      },
+    );
+
+    const warnings = recordWarnings(() => {
+      const error = tryTelemetry({
+        operation: "track()",
+        run: () => {
+          throw hostile;
+        },
+      });
+      expect(error).toBeInstanceOf(Error);
+    });
+
+    expect(warnings).toMatchInlineSnapshot(`
+      [
+        "[@strada.sh/sdk] track() failed: unknown telemetry error",
+      ]
+    `);
+  });
+
+  it("survives a console that throws", () => {
+    const original = console.warn;
+    console.warn = () => {
+      throw new Error("console is broken");
+    };
+
+    const error = tryTelemetry({
+      operation: "track()",
+      run: () => {
+        throw new Error("exporter is down");
+      },
+    });
+
+    console.warn = original;
+    expect(error instanceof Error ? error.message : null).toMatchInlineSnapshot(`"exporter is down"`);
+  });
+
   it("survives a run that throws a non-Error value", () => {
     const warnings = recordWarnings(() => {
       const error = tryTelemetry({
@@ -527,6 +605,17 @@ describe("tryTelemetry", () => {
 });
 
 describe("tryTelemetryAsync", () => {
+  it("returns the error when run throws before returning a promise", async () => {
+    const error = await tryTelemetryAsync({
+      operation: "shutdown()",
+      run: () => {
+        throw new Error("synchronous boom");
+      },
+    });
+
+    expect(error instanceof Error ? error.message : null).toMatchInlineSnapshot(`"synchronous boom"`);
+  });
+
   it("returns the rejection instead of rejecting", async () => {
     const error = await tryTelemetryAsync({
       operation: "flush()",
@@ -636,6 +725,16 @@ describe("shouldExportTelemetry", () => {
         ],
       }
     `);
+  });
+
+  it("stays quiet when telemetry is disabled on purpose without a projectId", () => {
+    const warnings = recordWarnings(() => {
+      expect(
+        shouldExportTelemetry({ projectId: "", service: "api", enabled: false }),
+      ).toBe(false);
+    });
+
+    expect(warnings).toMatchInlineSnapshot(`[]`);
   });
 
   it("still exports without a projectId when an endpoint is set explicitly", () => {

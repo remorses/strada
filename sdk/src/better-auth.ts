@@ -21,6 +21,7 @@ import {
   emitUserIdentifyLog,
   captureExceptionViaOtel,
   tryTelemetry,
+  tryTelemetryAsync,
 } from "./shared.ts";
 
 export interface StradaBetterAuthOptions {
@@ -119,12 +120,25 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
     track: options.track ?? emitAuthLog,
   };
 
-  async function trackSafely(name: string, properties: StradaAuthEventProperties) {
-    try {
-      await config.track(name, properties);
-    } catch (error) {
-      console.warn("[@strada.sh/sdk] Better Auth event tracking failed", error);
-    }
+  /**
+   * Properties are built inside the boundary, not passed in already built.
+   * `buildProperties()` reads `user.id`, `user.email`, and `ctx.path`, which
+   * are app-controlled getters: evaluating them in the argument position would
+   * throw before any protection ran and break the auth request.
+   */
+  async function trackSafely({
+    name,
+    buildProperties,
+  }: {
+    name: string;
+    buildProperties: () => StradaAuthEventProperties;
+  }) {
+    void (await tryTelemetryAsync({
+      operation: `betterAuth ${name}`,
+      run: async () => {
+        await config.track(name, buildProperties());
+      },
+    }));
   }
 
   if (!config.enabled) return pluginBase;
@@ -136,10 +150,21 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
         options: {
           onAPIError: {
             onError(error: unknown) {
-              console.error("[better-auth]", error instanceof Error ? error.message : String(error));
-              captureExceptionViaOtel(error, {
-                tags: { source: "better-auth" },
-                loggerName: "strada-better-auth",
+              // Runs inside the auth request path. Reading `error.message` and
+              // `String(error)` can throw on a hostile value, so the whole
+              // handler sits behind the boundary.
+              void tryTelemetry({
+                operation: "betterAuth onAPIError",
+                run: () => {
+                  void captureExceptionViaOtel(error, {
+                    tags: { source: "better-auth" },
+                    loggerName: "strada-better-auth",
+                  });
+                  console.error(
+                    "[better-auth]",
+                    error instanceof Error ? error.message : String(error),
+                  );
+                },
               });
             },
           },
@@ -148,13 +173,16 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
               create: {
                 after: async (user, context) => {
                   emitIdentifyLog(user, config.includeUserDetails);
-                  await trackSafely("auth.signup", {
-                    ...commonAuthProperties({
-                      user,
-                      path: context?.path,
-                      includeUserDetails: config.includeUserDetails,
+                  await trackSafely({
+                    name: "auth.signup",
+                    buildProperties: () => ({
+                      ...commonAuthProperties({
+                        user,
+                        path: context?.path,
+                        includeUserDetails: config.includeUserDetails,
+                      }),
+                      isSignup: true,
                     }),
-                    isSignup: true,
                   });
                 },
               },
@@ -176,11 +204,14 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
               const previousUserId = ctx.getCookie?.(config.cookieName) ?? undefined;
               const headers = makeClearCookieHeaders(config.cookieName);
               const user = ctx.context.session?.user ?? (previousUserId ? { id: previousUserId } : undefined);
-              await trackSafely("auth.logout", commonAuthProperties({
-                user,
-                path: ctx.path,
-                includeUserDetails: config.includeUserDetails,
-              }));
+              await trackSafely({
+                name: "auth.logout",
+                buildProperties: () => commonAuthProperties({
+                  user,
+                  path: ctx.path,
+                  includeUserDetails: config.includeUserDetails,
+                }),
+              });
               return { headers };
             }
 
@@ -194,11 +225,14 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
 
             if (ctx.path?.startsWith("/sign-up")) return { headers };
 
-            await trackSafely("auth.login", commonAuthProperties({
-              user,
-              path: ctx.path,
-              includeUserDetails: config.includeUserDetails,
-            }));
+            await trackSafely({
+              name: "auth.login",
+              buildProperties: () => commonAuthProperties({
+                user,
+                path: ctx.path,
+                includeUserDetails: config.includeUserDetails,
+              }),
+            });
             return { headers };
           }) as BetterAuthAfterHookHandler,
         },

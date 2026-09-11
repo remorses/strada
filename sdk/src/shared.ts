@@ -347,13 +347,58 @@ let _tags: Record<string, string> = {};
 /**
  * Warnings about SDK configuration run on every request in a worker or server,
  * so they are deduplicated by message. Reset by `resetContext()` for tests.
+ *
+ * Messages embed error text, which can be unique per call, so the set is
+ * capped: a long-lived server must not accumulate them forever. Clearing on
+ * overflow is deliberate, the alternative (stop warning) hides real failures.
  */
 const _warnedMessages = new Set<string>();
+const MAX_WARNED_MESSAGES = 200;
 
 export function warnOnce(message: string): void {
   if (_warnedMessages.has(message)) return;
+  if (_warnedMessages.size >= MAX_WARNED_MESSAGES) _warnedMessages.clear();
   _warnedMessages.add(message);
-  console.warn(message);
+  warnSafely(message);
+}
+
+/**
+ * `console` is not guaranteed: it can be stripped, replaced by app code, or
+ * throw from a patched `warn`. Diagnostics must never be the thing that
+ * crashes an app inside the no-throw boundary below.
+ */
+function warnSafely(message: string): void {
+  try {
+    globalThis.console?.warn?.(message);
+  } catch {
+    // nothing left to do, the console itself is broken
+  }
+}
+
+/**
+ * `error.message` is a getter that app code controls, so reading it inside a
+ * catch handler can throw a second time.
+ */
+function messageSafely(error: Error): string {
+  try {
+    const message = error.message;
+    return typeof message === "string" ? message : "unknown telemetry error";
+  } catch {
+    return "unknown telemetry error";
+  }
+}
+
+/**
+ * `normalizeError` starts with `value instanceof Error`, and `instanceof`
+ * walks the prototype chain, which a Proxy `getPrototypeOf` trap can throw
+ * from. The catch handler of the boundary cannot afford that.
+ */
+function toErrorSafely(value: unknown): Error {
+  try {
+    return normalizeError(value);
+  } catch {
+    return new Error("unknown telemetry error");
+  }
 }
 
 /**
@@ -368,8 +413,18 @@ export function warnOnce(message: string): void {
  * `warnOnce` keys on the message, which keeps a failing exporter from
  * flooding the console on every request.
  *
+ * Every step of the failure path is itself guarded: normalizing the thrown
+ * value, reading its message, and writing to the console can all throw on
+ * hostile input, and a boundary that throws is not a boundary.
+ *
  * This is the only place the SDK catches: everything above it returns errors.
  */
+function handleTelemetryFailure(operation: string, thrown: unknown): Error {
+  const error = toErrorSafely(thrown);
+  warnOnce(`[@strada.sh/sdk] ${operation} failed: ${messageSafely(error)}`);
+  return error;
+}
+
 export function tryTelemetry({
   operation,
   run,
@@ -381,9 +436,7 @@ export function tryTelemetry({
     run();
     return undefined;
   } catch (thrown) {
-    const error = normalizeError(thrown);
-    warnOnce(`[@strada.sh/sdk] ${operation} failed: ${error.message}`);
-    return error;
+    return handleTelemetryFailure(operation, thrown);
   }
 }
 
@@ -395,13 +448,19 @@ export async function tryTelemetryAsync({
   operation: string;
   run: () => Promise<void>;
 }): Promise<Error | undefined> {
-  return run()
+  // run() itself can throw synchronously before returning a promise.
+  const started = ((): Promise<void> | Error => {
+    try {
+      return run();
+    } catch (thrown) {
+      return handleTelemetryFailure(operation, thrown);
+    }
+  })();
+  if (started instanceof Error) return started;
+
+  return started
     .then(() => undefined)
-    .catch((thrown: unknown) => {
-      const error = normalizeError(thrown);
-      warnOnce(`[@strada.sh/sdk] ${operation} failed: ${error.message}`);
-      return error;
-    });
+    .catch((thrown: unknown) => handleTelemetryFailure(operation, thrown));
 }
 
 export function setTags(tags: Record<string, string>): void {
@@ -587,16 +646,21 @@ export function errorToAttributes(
 export function captureExceptionViaOtel(
   error: unknown,
   opts?: CaptureExceptionOptions & { loggerName?: string },
-): void {
-  const normalized = normalizeError(error);
-  const attributes = errorToAttributes(normalized, opts);
-  const logger = logs.getLogger(opts?.loggerName ?? "strada");
-  logger.emit({
-    eventName: "exception",
-    severityNumber: ERROR_SEVERITY,
-    severityText: ERROR_SEVERITY_TEXT,
-    body: normalized.message,
-    attributes,
+): Error | undefined {
+  return tryTelemetry({
+    operation: "captureExceptionViaOtel()",
+    run: () => {
+      const normalized = normalizeError(error);
+      const attributes = errorToAttributes(normalized, opts);
+      const logger = logs.getLogger(opts?.loggerName ?? "strada");
+      logger.emit({
+        eventName: "exception",
+        severityNumber: ERROR_SEVERITY,
+        severityText: ERROR_SEVERITY_TEXT,
+        body: normalized.message,
+        attributes,
+      });
+    },
   });
 }
 
@@ -1036,6 +1100,10 @@ export function resolveIngestHeaders(options: StradaOptions): Record<string, str
  * guards or skip `initStrada()` and then hit "called before initStrada()".
  */
 export function shouldExportTelemetry(options: StradaOptions): boolean {
+  // Checked before the projectId warning: telemetry turned off on purpose is
+  // not a misconfiguration, so `{ projectId: '', enabled: false }` stays quiet.
+  if (options.enabled === false) return false;
+
   // A blank projectId cannot be exported to: the default endpoint is derived
   // from it. Apps read it from an env var or a platform secret that can be
   // missing locally or in a half configured deployment, so treat it as "off"
