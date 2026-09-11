@@ -539,7 +539,7 @@ try {
 
 ### Same thing with Strada helpers
 
-For analytics-style events, prefer `track()` in the browser:
+For analytics-style events, prefer `track()`:
 
 ```ts
 import { initStrada, track } from "@strada.sh/sdk"
@@ -592,13 +592,13 @@ The cookie must be **JS-readable** (not `httpOnly`) so the browser SDK can acces
 
 ### Setting the cookie from your backend
 
-Set the same cookie from your backend after login if you already have auth middleware. This keeps the user ID available before browser code runs and makes the value stable across page loads.
+Set the same cookie from your backend after login if you already have auth middleware. This keeps the user ID available before browser code runs and makes the value stable across page loads. Any auth library works, the SDK only reads the cookie:
 
 ```ts
 app.use(async (req, res, next) => {
-  const session = await auth.api.getSession({ headers: req.headers })
-  if (session?.user) {
-    res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(session.user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
+  const user = await getUserFromRequest(req) // your own session lookup
+  if (user) {
+    res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
   }
   next()
 })
@@ -621,29 +621,89 @@ export const auth = betterAuth({
 
 The plugin emits `auth.signup`, `auth.login`, and `auth.logout` events with `user.id`, `custom.user_email`, `custom.auth_provider`, `custom.auth_method`, and `custom.auth_path` attributes. Disable email/name attributes with `strataBetterAuth({ includeUserDetails: false })`.
 
-### Server-side user identification
+### Server-side user identification without Better Auth
 
-For browser-initiated requests, the backend gets `user.id` automatically via W3C Baggage. For server-first requests, put the user into baggage in auth middleware using standard OTel `propagation` APIs:
+The Better Auth plugin is only a convenience. Any auth stack gets the same result with two standard calls, and neither depends on a library.
+
+**1. Put the user into baggage for the request.** Baggage is what the SDK reads: `user.id` is injected into every **span**, every **log record**, every `captureException()` and every `track()` event inside that request. You never pass the id at the call site.
 
 ```ts
 import { context, propagation } from "@strada.sh/sdk"
 
 app.use(async (req, res, next) => {
-  const session = await auth.api.getSession({ headers: req.headers })
-  if (!session?.user) return next()
+  const user = await getUserFromRequest(req) // session cookie, JWT, API key, anything
+  if (!user) return next()
 
-  res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(session.user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
+  // Optional: lets the browser SDK tag frontend telemetry with the same id
+  res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
 
-  const baggage = propagation.createBaggage({
-    "user.id": { value: session.user.id },
-  })
+  const baggage = propagation.createBaggage({ "user.id": { value: user.id } })
   const ctx = propagation.setBaggage(context.active(), baggage)
 
   return context.with(ctx, next)
 })
 ```
 
-That makes `user.id` show up in both **server spans** and **server logs** for the current request.
+For browser-initiated requests this is already done for you: the browser SDK propagates `user.id` over W3C Baggage headers. The middleware above is for **server-first requests**, plugin backends, APIs, and CLIs, where no browser sent the header.
+
+**2. Send the profile once at login** so `user.id` can be joined to an email later. Without Better Auth, call `identifyUser()` yourself wherever a session is created:
+
+```ts
+import { identifyUser } from "@strada.sh/sdk"
+
+identifyUser({
+  id: user.id,
+  email: user.email,
+  name: user.name,
+  organizationId: org.id,
+})
+```
+
+This writes one row to `otel_users`. Telemetry rows keep carrying only `user.id`, so no PII is copied into every span and log.
+
+#### Frameworks without middleware
+
+When the user is only known inside a handler, or the framework has no middleware layer, wrap the work in the same context. A local helper keeps it to one line per call site:
+
+```ts
+import { context, propagation } from "@strada.sh/sdk"
+
+export function withUser<T>(userId: string, fn: () => T): T {
+  const baggage = propagation.createBaggage({ "user.id": { value: userId } })
+  return context.with(propagation.setBaggage(context.active(), baggage), fn)
+}
+
+// anywhere a user becomes known
+return withUser(session.userId, async () => {
+  await handleRequest(req)
+})
+```
+
+#### Cloudflare Workers
+
+Identical API. The Workers entry installs an `AsyncLocalStorage` based context manager, so `context.with()` survives `await`:
+
+```ts
+export default {
+  async fetch(request: Request) {
+    const session = await validateSession(request)
+    if (!session) return new Response("unauthorized", { status: 401 })
+
+    return withUser(session.userId, () => handle(request, session))
+  },
+}
+```
+
+#### Background work with no request context
+
+Cron handlers, queue consumers, Durable Object alarms, and deep callbacks often have no context to inherit. Either wrap them in `withUser()` too, or pass the identifier explicitly:
+
+```ts
+captureException(error, { tags: { user_id: job.userId, job: job.type } })
+track("export.finished", { user_id: job.userId, files: 12 })
+```
+
+Explicit properties land as `custom.user_id`, baggage lands as `user.id`. Pick one convention per project so queries stay simple.
 
 ## Browser pageview tracking
 
@@ -687,9 +747,9 @@ SPA navigation is auto-detected across all frameworks (Next.js, React Router, Vu
 
 Two **materialized views** in ClickHouse/Tinybird pre-aggregate pageview spans at ingest time into compact tables (`otel_analytics_pages`, `otel_analytics_sessions`) for fast dashboard queries (top pages, browsers, countries, bounce rate, session duration). See [Browser Analytics](../docs/browser-analytics.mdx) for the full schema and queries.
 
-## Browser custom events
+## Custom events (product analytics)
 
-In the browser runtime, Strada also exposes `track()` for product analytics style events.
+`track()` emits a product analytics event. It works in **all three runtimes**: browser, Node, and Workers.
 
 ```ts
 import { initStrada, track } from "@strada.sh/sdk"
@@ -716,7 +776,56 @@ track("purchase", {
 })
 ```
 
-The log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`. Context attributes (`session.id`, `url.path`, `user.id`) are injected automatically. You only pass event-specific properties.
+In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`user_id`, `org_id`, ...). Use the same key names on both sides so one query covers them.
+
+### Type-safe event catalog
+
+`track()` takes a plain `string`, so `track("signup_startedd", { plann: "pro" })` compiles. The typo reaches ClickHouse and you only notice when a dashboard query returns zero rows. Event names and properties are effectively a schema, so declare them in one place and wrap `track()` once:
+
+```ts
+// analytics-events.ts
+export type AnalyticsEvents = {
+  "signup_started": { plan: string; source: string }
+  "purchase": { plan: string; amount: number }
+}
+
+export function trackEvent<Name extends keyof AnalyticsEvents>(
+  name: Name,
+  properties: AnalyticsEvents[Name],
+) {
+  track(name, properties)
+}
+```
+
+Call sites are now checked. A wrong name, a missing property, or a misspelled key fails the build:
+
+```ts
+trackEvent("purchase", { plan: "pro", amount: 49 }) // ok
+trackEvent("purchse", { plan: "pro", amount: 49 }) // error: unknown event
+trackEvent("purchase", { plan: "pro" }) // error: missing amount
+```
+
+Property values must stay **flat primitives** (`string | number | boolean`). Nested objects and arrays are rejected by `track()`, which is what you want: `custom.*` attributes map to single ClickHouse columns, so a nested object would be silently useless in SQL.
+
+The catalog is also the right place for the rule that events must never carry prompts, raw user input, tokens, or API keys. Keep it to stable identifiers, names, counts, and booleans.
+
+**Sharing a catalog across runtimes.** When a Worker and a Node server send to the same project, keep the catalog in **one module with no runtime exports**, types only, and import it with `import type`. A single runtime export (a const, an array, a helper) pulls that module, and whatever it imports, into the Worker bundle:
+
+```ts
+import type { AnalyticsEvents } from "shared/analytics-events"
+```
+
+Each runtime then defines its own one-line `trackEvent` wrapper over its own `track()`, typed by the shared catalog. Event names stay identical across services, so one query covers all of them:
+
+```sql
+SELECT ServiceName, LogAttributes['custom.plan'] AS plan, count() AS n
+FROM otel_logs
+WHERE Timestamp >= now() - INTERVAL 7 DAY
+  AND LogAttributes['event.name'] = 'purchase'
+GROUP BY ServiceName, plan
+ORDER BY n DESC
+LIMIT 50
+```
 
 ## What it sends
 
@@ -1287,6 +1396,7 @@ That excludes ordinary logs that do not have `event.name`.
 - `startSpan({ name }, callback)` — creates a span, auto-ends, auto-records errors
 - `startInactiveSpan({ name })` — creates a detached span (manual end)
 - `captureException(error, opts?)`
+- `track(name, properties?)` — product analytics event, see [typed catalog](#type-safe-event-catalog)
 - `setTags(tags)`
 - `flush()`
 - `shutdown()`
@@ -1354,7 +1464,7 @@ This sends logs to both Strada and the local console. Use the wrapper in develop
 - use **`startSpan()`** for spans (auto-end, auto-error recording)
 - use **raw OTel APIs** (`trace.getTracer()`) when you need full span control
 - use **`captureException()`** when you want Strada error conventions
-- use **`track()`** in the browser when you want analytics events in `otel_logs`
+- use **`track()`** when you want analytics events in `otel_logs`, wrapped in a [typed catalog](#type-safe-event-catalog)
 
 ## Summary
 

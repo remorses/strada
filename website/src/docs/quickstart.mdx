@@ -247,4 +247,6 @@ Browser and server rows share the same project. Filter by `ServiceName` to tell 
 
 ## 8. User identity (optional)
 
-Once the browser knows who the user is, set the `strada_uid` cookie (JS-readable) on login. The browser SDK reads it automatically and **propagates `user.id` to the server via W3C Baggage**, so server spans and logs for that request also carry the user id. See the [SDK reference](../sdk/README.mdx) for the cookie, Better Auth plugin, and server-side `identifyUser()` snapshot details.
+Once the browser knows who the user is, set the `strada_uid` cookie (JS-readable) on login. The browser SDK reads it automatically and **propagates `user.id` to the server via W3C Baggage**, so server spans and logs for that request also carry the user id.
+
+For server-first requests there is no browser header to read, so put the user into baggage yourself in auth middleware. That works with any auth library; the Better Auth plugin just does it for you. See [Server-side user identification without Better Auth](../sdk/README.mdx#server-side-user-identification-without-better-auth) for the middleware, the `withUser()` wrapper, Workers, and the `identifyUser()` profile snapshot.

@@ -676,6 +676,8 @@ Custom product events are stored as **OTel log records**, not spans. They live i
 | `event.name` | string | Structured event name. Presence of this key means the log record is a custom event, not an ordinary application log. Example: `"signup_started"`, `"purchase"` |
 | `custom.*` | string / number / boolean | Event-specific properties namespaced under `custom.` so they don't collide with OTel semantic attributes. Example: `custom.plan = "pro"`, `custom.source = "hero"` |
 
+Event names and properties are a schema, but `track()` accepts a plain `string`, so apps should declare a typed catalog and wrap `track()` once. The pattern, including the types-only rule for catalogs shared between a Worker and a server, is documented in the SDK README under "Type-safe event catalog".
+
 This is how browser and backend custom events are queryable later with SQL while ignoring normal logs:
 
 ```sql

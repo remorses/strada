@@ -103,11 +103,128 @@ Rules to never break:
   See the Cloudflare Workers section of `website/src/sdk/README.mdx`.
 - **Email and user id belong on errors, logs, and product events.** That is how
   you open an issue and see who hit it. Use `strataBetterAuth()` (default
-  `includeUserDetails: true`), `identifyUser()`, or `tags` / event properties
-  with `user.id` and `user.email`. Do not strip them.
+  `includeUserDetails: true`), or the manual baggage + `identifyUser()` recipe
+  below, or `tags` / event properties with `user.id` and `user.email`. Do not
+  strip them.
 - Never attach API keys, prompts, or raw user content (the text they typed)
   to tags or events. Use stable route, handler, service, and environment
   identifiers for those.
+
+## Attaching the user without Better Auth
+
+`strataBetterAuth()` is a convenience, not a requirement. With any other auth
+stack, do the same two things yourself.
+
+**Put `user.id` in baggage for the request.** The SDK injects it into every
+span, log record, `captureException()`, and `track()` event in that context, so
+no call site passes it:
+
+```ts
+import { context, propagation } from "@strada.sh/sdk"
+
+export function withUser<T>(userId: string, fn: () => T): T {
+  const baggage = propagation.createBaggage({ "user.id": { value: userId } })
+  return context.with(propagation.setBaggage(context.active(), baggage), fn)
+}
+
+// middleware, route handler, or Worker fetch
+return withUser(session.userId, () => handle(request))
+```
+
+Works the same on Node and Cloudflare Workers; both install an
+`AsyncLocalStorage` context manager, so it survives `await`.
+
+**Call `identifyUser()` once at login** so `user.id` joins to an email in
+`otel_users`. Each call is a full snapshot, so pass every field you want kept:
+
+```ts
+identifyUser({ id: user.id, email: user.email, organizationId: org.id })
+```
+
+Cron handlers, queue consumers, and DO alarms have no context to inherit.
+Either wrap them in `withUser()` or pass `user_id` explicitly as a tag or event
+property. Baggage lands as `user.id`, explicit properties land as
+`custom.user_id`. Pick one convention per project.
+
+## Product analytics
+
+**Use `track(name, props)` for product events. Do not use `getLogger()`.**
+`getLogger({ event: 'x' })` writes an ordinary log. `strada analytics events`
+and SQL on `event.name` will miss it. `track()` emits an OTel log with
+`event.name` plus `custom.*` properties.
+
+```ts
+import { track } from "@strada.sh/sdk"
+
+track("project.created", {
+  projectId: created.projectId,
+  orgId: created.orgId,
+  source: "cli",
+})
+```
+
+This lands in `otel_logs` as:
+
+```
+event.name = "project.created"
+custom.projectId = "..."
+custom.orgId = "..."
+custom.source = "cli"
+```
+
+### Declare the event catalog in one typed module
+
+`track()` takes a plain `string`, so a typo compiles and the event is only
+missing when a query returns nothing. In any app with more than a couple of
+events, declare them once and wrap `track()`:
+
+```ts
+// analytics-events.ts
+export type AnalyticsEvents = {
+  "project.created": { projectId: string; orgId: string; source: string }
+  "billing.checkout_started": { orgId: string; plan: string }
+}
+
+export function trackEvent<Name extends keyof AnalyticsEvents>(
+  name: Name,
+  properties: AnalyticsEvents[Name],
+) {
+  track(name, properties)
+}
+```
+
+When several runtimes (Worker + Node server + browser) send to the same
+project, keep the catalog **types only** and import it with `import type`. One
+runtime export there pulls that module, and everything it imports, into the
+Worker bundle. Each runtime keeps its own one-line `trackEvent` over its own
+`track()`.
+
+Rules:
+
+- Call `track()` on the **server** at mutation success (create, deploy, billing, chat turn). Browser `track()` is for UI clicks. Pageviews are automatic from `initStrada()` in the browser.
+- **Email and user id belong on events.** `strataBetterAuth()` already emits `auth.signup`, `auth.login`, and `auth.logout` with `user.id`. Do not re-emit those.
+- **Never attach prompts, API keys, session bearer tokens, or raw user content.** Counts, ids, model names, durations, and booleans are fine.
+- Properties must be `string | number | boolean`. The SDK prefixes them with `custom.`.
+- On Cloudflare Workers, `track()` auto-flushes via `waitUntil`. Cron, queue, and Durable Object alarm handlers still need `await flush()` before return.
+- `user.id` on Worker events comes from baggage (Better Auth plugin, or your own `withUser()` wrapper) / `strada_uid`. API-key and OIDC paths may have no user id. That is expected. Always send `projectId` / `orgId`.
+
+Query:
+
+```bash
+strada analytics events -p my-app --since 7d
+```
+
+```sql
+SELECT Timestamp, LogAttributes['event.name'] AS event,
+       LogAttributes['custom.projectId'] AS project_id,
+       LogAttributes['user.id'] AS user_id
+FROM otel_logs
+WHERE mapContains(LogAttributes, 'event.name')
+ORDER BY Timestamp DESC
+LIMIT 100
+```
+
+Read `website/src/docs/browser-analytics.mdx` (Custom events API) and the SDK README `track()` section for the full attribute shape.
 
 ## Terminal UI
 
