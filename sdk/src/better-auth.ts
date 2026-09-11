@@ -20,6 +20,7 @@ import {
   DEFAULT_USER_ID_COOKIE,
   emitUserIdentifyLog,
   captureExceptionViaOtel,
+  tryTelemetry,
 } from "./shared.ts";
 
 export interface StradaBetterAuthOptions {
@@ -269,27 +270,46 @@ function stringValue(value: string | null | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+// These hooks run inside the auth request path, so a throw here would break
+// sign in. Telemetry failures must stay invisible to the user.
 function emitAuthLog(name: string, properties: StradaAuthEventProperties): void {
-  const attributes: Record<string, string | number | boolean> = {
-    [ATTR["event.name"]]: name,
-  };
+  void tryTelemetry({
+    operation: `betterAuth ${name}`,
+    run: () => {
+      const attributes: Record<string, string | number | boolean> = {
+        [ATTR["event.name"]]: name,
+      };
 
-  if (properties.userId) attributes[ATTR["user.id"]] = properties.userId;
-  for (const key of Object.keys(customAttributeKeys) as Array<keyof StradaAuthEventProperties>) {
-    const value = properties[key];
-    if (value !== undefined) attributes[customAttributeKeys[key]] = value;
-  }
+      if (properties.userId) attributes[ATTR["user.id"]] = properties.userId;
+      for (const key of Object.keys(customAttributeKeys) as Array<keyof StradaAuthEventProperties>) {
+        const value = properties[key];
+        if (value !== undefined) attributes[customAttributeKeys[key]] = value;
+      }
 
-  logs.getLogger("strada-better-auth").emit({
-    eventName: name,
-    severityNumber: SeverityNumber.INFO,
-    severityText: "INFO",
-    body: name,
-    attributes,
+      logs.getLogger("strada-better-auth").emit({
+        eventName: name,
+        severityNumber: SeverityNumber.INFO,
+        severityText: "INFO",
+        body: name,
+        attributes,
+      });
+    },
   });
 }
 
 function emitIdentifyLog(user: BetterAuthUser | undefined | null, includeUserDetails: boolean): void {
+  void tryTelemetry({
+    operation: "betterAuth identify",
+    run: () => {
+      emitIdentifyLogUnsafe(user, includeUserDetails);
+    },
+  });
+}
+
+function emitIdentifyLogUnsafe(
+  user: BetterAuthUser | undefined | null,
+  includeUserDetails: boolean,
+): void {
   const userId = stringValue(user?.id);
   if (!userId) return;
   const email = includeUserDetails ? stringValue(user?.email) : undefined;

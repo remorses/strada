@@ -65,6 +65,8 @@ import {
   resolveIngestHeaders,
   resolveReleaseAttributes,
   shouldExportTelemetry,
+  tryTelemetry,
+  tryTelemetryAsync,
   emitUserIdentifyLog,
   buildPageviewAttributes,
   ATTR,
@@ -379,7 +381,21 @@ export function getLogger(name = "strada"): StradaLogger {
  * - Global uncaughtException / unhandledRejection handlers
  * - captureException() for manual error reporting
  */
-export function initStrada(options: StradaOptions): void {
+export function initStrada(options: StradaOptions): Error | undefined {
+  return tryTelemetry({
+    operation: "initStrada()",
+    run: () => {
+      setupStrada(options);
+    },
+  });
+}
+
+/**
+ * The real setup. Split out so the public entry point can turn a throw into a
+ * returned Error: a broken telemetry setup must never stop an app from
+ * booting. The app runs with telemetry off instead.
+ */
+function setupStrada(options: StradaOptions): void {
   if (_tracerProvider) {
     console.warn(
       "[@strada.sh/sdk] initStrada() was already called. Ignoring duplicate init.",
@@ -476,20 +492,20 @@ export function initStrada(options: StradaOptions): void {
   });
   metrics.setGlobalMeterProvider(_meterProvider);
 
-  // Global error handlers
+  // The SDK's own handlers deliberately drop the Error that captureException
+  // and flush return: there is nobody left to report it to, and tryTelemetry
+  // already logged it. Reporting it again here would recurse.
   process.on("uncaughtException", (error) => {
-    captureException(error, {
+    void captureException(error, {
       handled: false,
       mechanism: "uncaughtException",
     });
-    flush()
-      .catch(() => {})
-      .finally(() => process.exit(1));
+    void flush().finally(() => process.exit(1));
   });
 
   process.on("unhandledRejection", (reason) => {
     const error = normalizeError(reason);
-    captureException(error, {
+    void captureException(error, {
       handled: false,
       mechanism: "unhandledRejection",
     });
@@ -534,60 +550,71 @@ export function initStrada(options: StradaOptions): void {
 export function captureException(
   error: unknown,
   opts?: CaptureExceptionOptions,
-): void {
-  const normalized = normalizeError(error);
+): Error | undefined {
+  return tryTelemetry({
+    operation: "captureException()",
+    run: () => {
+      const normalized = normalizeError(error);
 
-  if (_options && shouldIgnoreError(normalized, _options)) return;
-  const prepared = applyBeforeSend(normalized, _options?.beforeSend);
-  if (prepared === null) return;
+      if (_options && shouldIgnoreError(normalized, _options)) return;
+      const prepared = applyBeforeSend(normalized, _options?.beforeSend);
+      if (prepared === null) return;
 
-  const attributes = errorToAttributes(prepared, opts);
-  if (opts?.handled === false) {
-    recordExceptionOnSpan(prepared);
-  }
+      const attributes = errorToAttributes(prepared, opts);
+      if (opts?.handled === false) {
+        recordExceptionOnSpan(prepared);
+      }
 
-  if (_logger) {
-    _logger.emit({
-      eventName: "exception",
-      severityNumber: ERROR_SEVERITY,
-      severityText: ERROR_SEVERITY_TEXT,
-      body: prepared.message,
-      attributes,
-    });
-  } else {
-    console.warn(
-      "[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.",
-    );
-  }
+      if (!_logger) {
+        console.warn(
+          "[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.",
+        );
+        return;
+      }
+
+      _logger.emit({
+        eventName: "exception",
+        severityNumber: ERROR_SEVERITY,
+        severityText: ERROR_SEVERITY_TEXT,
+        body: prepared.message,
+        attributes,
+      });
+    },
+  });
 }
 
 export function track(
   name: string,
   properties?: Record<string, string | number | boolean>,
-): void {
-  if (!_logger) {
-    console.warn(
-      "[@strada.sh/sdk] track() called before initStrada(). Event was not sent.",
-    );
-    return;
-  }
+): Error | undefined {
+  return tryTelemetry({
+    operation: "track()",
+    run: () => {
+      if (!_logger) {
+        console.warn(
+          "[@strada.sh/sdk] track() called before initStrada(). Event was not sent.",
+        );
+        return;
+      }
 
-  const attributes: Record<string, string | number | boolean> = {
-    [ATTR["event.name"]]: name,
-  };
+      const attributes: Record<string, string | number | boolean> = {
+        [ATTR["event.name"]]: name,
+      };
 
-  if (properties) {
-    for (const [key, value] of Object.entries(properties)) {
-      attributes[`custom.${key}`] = value;
-    }
-  }
+      if (properties) {
+        for (const [key, value] of Object.entries(properties)) {
+          attributes[`custom.${key}`] = value;
+        }
+      }
 
-  _logger.emit({
-    eventName: name,
-    severityNumber: INFO_SEVERITY,
-    severityText: INFO_SEVERITY_TEXT,
-    body: name,
-    attributes,
+      _logger.emit({
+        eventName: name,
+        severityNumber: INFO_SEVERITY,
+        severityText: INFO_SEVERITY_TEXT,
+        body: name,
+        attributes,
+      });
+    },
   });
 }
 
@@ -612,19 +639,24 @@ export function track(
  * })
  * ```
  */
-export function trackPageview(opts: TrackPageviewOptions): void {
-  if (!_tracerProvider) {
-    console.warn(
-      "[@strada.sh/sdk] trackPageview() called before initStrada(). Pageview was not sent.",
-    );
-    return;
-  }
+export function trackPageview(opts: TrackPageviewOptions): Error | undefined {
+  return tryTelemetry({
+    operation: "trackPageview()",
+    run: () => {
+      if (!_tracerProvider) {
+        console.warn(
+          "[@strada.sh/sdk] trackPageview() called before initStrada(). Pageview was not sent.",
+        );
+        return;
+      }
 
-  const baggage = propagation.getBaggage(otelContext.active());
-  const attributes = buildPageviewAttributes(opts, baggage);
+      const baggage = propagation.getBaggage(otelContext.active());
+      const attributes = buildPageviewAttributes(opts, baggage);
 
-  const span = trace.getTracer("strada").startSpan("pageview", { attributes });
-  span.end();
+      const span = trace.getTracer("strada").startSpan("pageview", { attributes });
+      span.end();
+    },
+  });
 }
 
 /**
@@ -632,42 +664,60 @@ export function trackPageview(opts: TrackPageviewOptions): void {
  * The collector stores the raw event in otel_logs and extracts the latest
  * profile into otel_users for joins from issue/session views.
  */
-export function identifyUser(user: StradaUserIdentity): void {
-  if (!_logger) {
-    console.warn(
-      "[@strada.sh/sdk] identifyUser() called before initStrada(). User profile was not sent.",
-    );
-    return;
-  }
+export function identifyUser(user: StradaUserIdentity): Error | undefined {
+  return tryTelemetry({
+    operation: "identifyUser()",
+    run: () => {
+      if (!_logger) {
+        console.warn(
+          "[@strada.sh/sdk] identifyUser() called before initStrada(). User profile was not sent.",
+        );
+        return;
+      }
 
-  emitUserIdentifyLog(_logger, user);
+      emitUserIdentifyLog(_logger, user);
+    },
+  });
 }
 
 /**
  * Flush all buffered telemetry (logs, traces, metrics).
  * Call this before process exit to ensure nothing is lost.
  */
-export async function flush(): Promise<void> {
-  await Promise.all([
-    _loggerProvider?.forceFlush(),
-    _tracerProvider?.forceFlush(),
-    _meterProvider?.forceFlush(),
-  ]);
+export async function flush(): Promise<Error | undefined> {
+  return tryTelemetryAsync({
+    operation: "flush()",
+    run: async () => {
+      await Promise.all([
+        _loggerProvider?.forceFlush(),
+        _tracerProvider?.forceFlush(),
+        _meterProvider?.forceFlush(),
+      ]);
+    },
+  });
 }
 
 /**
  * Shut down the SDK and flush remaining telemetry.
  */
-export async function shutdown(): Promise<void> {
-  await Promise.all([
-    _tracerProvider?.shutdown(),
-    _meterProvider?.shutdown(),
-    _loggerProvider?.shutdown(),
-  ]);
+export async function shutdown(): Promise<Error | undefined> {
+  const error = await tryTelemetryAsync({
+    operation: "shutdown()",
+    run: async () => {
+      await Promise.all([
+        _tracerProvider?.shutdown(),
+        _meterProvider?.shutdown(),
+        _loggerProvider?.shutdown(),
+      ]);
+    },
+  });
+  // Reset even when the providers failed to shut down, otherwise a failed
+  // shutdown leaves the SDK half alive and initStrada() cannot recover it.
   _tracerProvider = undefined;
   _meterProvider = undefined;
   _loggerProvider = undefined;
   _logger = undefined;
   _options = undefined;
   resetContext();
+  return error;
 }

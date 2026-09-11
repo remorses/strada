@@ -816,6 +816,24 @@ try { ... } catch (err) {
 
 This applies to `catch {}`, `catch (_e) {}`, and `Promise.allSettled` results that are never inspected. If you use `allSettled`, always check for `status === 'rejected'` and log the `reason`.
 
+### SDK public API must never throw
+
+Inside `sdk/`, the high-level telemetry functions (`captureException`, `track`, `trackPageview`, `identifyUser`, `initStrada`, `flush`, `shutdown`, and the `getLogger()` methods) must be impossible to throw from. An app crashing inside the observability SDK is worse than a dropped event.
+
+Known gaps, not covered yet: the SDK's own OTel processors (`onStart` / `onEnd` / `onEmit`, which run user code such as the browser `userId` resolver), the low-level exports (`setTags`, `errorToAttributes`, `recordExceptionOnSpan`, `captureExceptionViaOtel`, `startPageSpan`), and the Better Auth `onAPIError` hook. Wrap those before widening the claim in the SDK README.
+
+The only place the SDK catches is `tryTelemetry` / `tryTelemetryAsync` in `shared.ts`, which is the boundary adapter. It turns a throw into a **returned** `Error` (errors as values, see [errore](https://errore.org)) and logs it once via `warnOnce`. When adding a public function, wrap its body:
+
+```ts
+export function track(name: string, properties?: EventProperties): Error | undefined {
+  return tryTelemetry({ operation: 'track()', run: () => { /* ... */ } })
+}
+```
+
+Never add a bare `try`/`catch` elsewhere in `sdk/`. Helpers that touch hostile input (`normalizeError`, `describeUnknownValue`, cookie writes, `applyBeforeSend`) are written to be total instead: they fall back rather than throw, because they run on values the app threw and on browser APIs that fail inside sandboxed iframes.
+
+`startSpan()` is the deliberate exception: it wraps user code, so it records the exception on the span and re-throws so app control flow is unchanged.
+
 ## Testing
 
 Run tests with `vitest run` (not `vitest` which starts watch mode and never exits):

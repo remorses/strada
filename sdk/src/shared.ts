@@ -356,6 +356,54 @@ export function warnOnce(message: string): void {
   console.warn(message);
 }
 
+/**
+ * Boundary between the throwing world and the SDK's public API.
+ *
+ * Telemetry must never take an app down. A dropped event is an acceptable
+ * outcome, an app crashing inside `captureException()` is not. Every public
+ * entry point runs its body through this, so a throw becomes a **returned**
+ * Error (errors as values) instead of propagating into app code.
+ *
+ * Most call sites ignore the return value, so the failure is also logged.
+ * `warnOnce` keys on the message, which keeps a failing exporter from
+ * flooding the console on every request.
+ *
+ * This is the only place the SDK catches: everything above it returns errors.
+ */
+export function tryTelemetry({
+  operation,
+  run,
+}: {
+  operation: string;
+  run: () => void;
+}): Error | undefined {
+  try {
+    run();
+    return undefined;
+  } catch (thrown) {
+    const error = normalizeError(thrown);
+    warnOnce(`[@strada.sh/sdk] ${operation} failed: ${error.message}`);
+    return error;
+  }
+}
+
+/** Async variant of `tryTelemetry`, for `flush()` and `shutdown()`. */
+export async function tryTelemetryAsync({
+  operation,
+  run,
+}: {
+  operation: string;
+  run: () => Promise<void>;
+}): Promise<Error | undefined> {
+  return run()
+    .then(() => undefined)
+    .catch((thrown: unknown) => {
+      const error = normalizeError(thrown);
+      warnOnce(`[@strada.sh/sdk] ${operation} failed: ${error.message}`);
+      return error;
+    });
+}
+
 export function setTags(tags: Record<string, string>): void {
   _tags = { ..._tags, ...tags };
 }
@@ -401,18 +449,44 @@ export const DEFAULT_DENY_URLS: RegExp[] = [
  * Ensure we always work with a proper Error object.
  * Wraps non-Error thrown values (strings, numbers, objects) into an Error.
  */
+/**
+ * Every conversion here runs on a value the app threw, so it can be anything:
+ * a circular object (`JSON.stringify` throws), a Proxy with a throwing get
+ * trap (`Reflect.get` throws), an object with a throwing `toString`
+ * (`String()` throws). A crash inside the error reporter would replace the
+ * app's real error with a Strada one, so every step falls back instead.
+ */
+function describeUnknownValue(value: unknown): string {
+  try {
+    const serialized = JSON.stringify(value);
+    if (typeof serialized === "string") return serialized;
+  } catch {
+    // circular structure, BigInt, or a throwing toJSON
+  }
+  try {
+    return String(value);
+  } catch {
+    // throwing toString / Symbol.toPrimitive
+  }
+  return `[unserializable ${typeof value}]`;
+}
+
 export function normalizeError(value: unknown): Error {
   if (value instanceof Error) return value;
   if (typeof value === "string") return new Error(value);
   if (typeof value === "object" && value !== null) {
-    const message = Reflect.get(value, "message");
-    const msg =
-      typeof message === "string"
-        ? message
-        : JSON.stringify(value);
-    return new Error(msg);
+    const message = (() => {
+      try {
+        return Reflect.get(value, "message");
+      } catch {
+        return undefined;
+      }
+    })();
+    return new Error(
+      typeof message === "string" ? message : describeUnknownValue(value),
+    );
   }
-  return new Error(String(value));
+  return new Error(describeUnknownValue(value));
 }
 
 // ---------------------------------------------------------------------------
@@ -552,13 +626,23 @@ export function recordExceptionOnSpan(
  * Apply user beforeSend hook semantics consistently across runtimes.
  * Returning null drops the error. Returning a different Error rewrites it.
  */
+/**
+ * `beforeSend` is app code running inside the error reporter. If it throws,
+ * report the original error rather than losing it, and say so once.
+ */
 export function applyBeforeSend(
   error: Error,
   beforeSend: StradaOptions["beforeSend"] | undefined,
 ): Error | null {
   if (!beforeSend) return error;
-  const result = beforeSend(error);
-  return result ?? null;
+  try {
+    return beforeSend(error) ?? null;
+  } catch (thrown) {
+    warnOnce(
+      `[@strada.sh/sdk] beforeSend threw, sending the original error instead: ${normalizeError(thrown).message}`,
+    );
+    return error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -630,6 +714,12 @@ export const INFO_SEVERITY_TEXT = "INFO";
 
 type LogAttributePrimitive = string | number | boolean;
 type LogAttributes = Record<string, unknown>;
+/**
+ * Logger methods never throw. They stay `void` because `StradaLogger` extends
+ * the OTel `Logger` interface, whose `emit` is `void`; a different return type
+ * on the sibling methods would only be confusing. Failures are logged by
+ * `tryTelemetry`. Use `captureException()` when you need the error back.
+ */
 type LogMethod = (...args: unknown[]) => void;
 type LogSeverityMethod = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
@@ -703,39 +793,49 @@ export function createStradaLogger(
   getContext?: () => Context | undefined,
   name = "strada",
 ): StradaLogger {
-  const emitConsoleLog = (method: LogSeverityMethod, args: unknown[]) => {
-    const logger = getOtelLogger(name);
-    if (!logger) {
-      console.warn(
-        `[@strada.sh/sdk] logger.${method}() called before initStrada(). Log was not sent.`,
-      );
-      return;
-    }
+  // Logging must never take the app down either: a log argument can be a
+  // circular object, a Proxy, or anything else with a throwing accessor.
+  const emitConsoleLog = (method: LogSeverityMethod, args: unknown[]) =>
+    tryTelemetry({
+      operation: `logger.${method}()`,
+      run: () => {
+        const logger = getOtelLogger(name);
+        if (!logger) {
+          console.warn(
+            `[@strada.sh/sdk] logger.${method}() called before initStrada(). Log was not sent.`,
+          );
+          return;
+        }
 
-    const [severityNumber, severityText] = severityByMethod[method];
-    const { body, attributes } = normalizeLogInput(args);
-    const activeContext = getContext?.();
+        const [severityNumber, severityText] = severityByMethod[method];
+        const { body, attributes } = normalizeLogInput(args);
+        const activeContext = getContext?.();
 
-    logger.emit({
-      severityNumber,
-      severityText,
-      body,
-      attributes,
-      ...(activeContext ? { context: activeContext } : {}),
+        logger.emit({
+          severityNumber,
+          severityText,
+          body,
+          attributes,
+          ...(activeContext ? { context: activeContext } : {}),
+        });
+      },
     });
-  };
 
   return {
-    emit: (record) => {
-      const logger = getOtelLogger(name);
-      if (!logger) {
-        console.warn(
-          "[@strada.sh/sdk] logger.emit() called before initStrada(). Log was not sent.",
-        );
-        return;
-      }
-      logger.emit(record);
-    },
+    emit: (record) =>
+      tryTelemetry({
+        operation: "logger.emit()",
+        run: () => {
+          const logger = getOtelLogger(name);
+          if (!logger) {
+            console.warn(
+              "[@strada.sh/sdk] logger.emit() called before initStrada(). Log was not sent.",
+            );
+            return;
+          }
+          logger.emit(record);
+        },
+      }),
     trace: (...args) => emitConsoleLog("trace", args),
     debug: (...args) => emitConsoleLog("debug", args),
     info: (...args) => emitConsoleLog("info", args),
@@ -783,6 +883,20 @@ export function readCookie(name: string): string | undefined {
   }
 }
 
+/**
+ * Writing `document.cookie` throws a SecurityError inside a sandboxed iframe
+ * without `allow-same-origin`, which is how plugin and widget hosts embed
+ * apps. Losing the user id cookie there is fine, crashing is not.
+ */
+function writeCookie(value: string): void {
+  if (typeof document === "undefined") return;
+  try {
+    document.cookie = value;
+  } catch {
+    // sandboxed iframe or cookies blocked by the user
+  }
+}
+
 export function writeUserIdCookie({
   name = DEFAULT_USER_ID_COOKIE,
   value,
@@ -792,13 +906,13 @@ export function writeUserIdCookie({
   value: string;
   maxAge?: number;
 }): void {
-  if (typeof document === "undefined") return;
-  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
+  writeCookie(
+    `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+  );
 }
 
 export function clearUserIdCookie(name = DEFAULT_USER_ID_COOKIE): void {
-  if (typeof document === "undefined") return;
-  document.cookie = `${encodeURIComponent(name)}=; Path=/; SameSite=Lax; Max-Age=0`;
+  writeCookie(`${encodeURIComponent(name)}=; Path=/; SameSite=Lax; Max-Age=0`);
 }
 
 function escapeRegExp(s: string): string {

@@ -78,6 +78,53 @@ initStrada({
 
 An explicit `endpoint` (a local collector, for example) keeps export on even without a `projectId`.
 
+## Telemetry never throws
+
+Observability must never be the reason an app goes down. The high-level telemetry functions catch internally and **return** the failure instead of throwing it, following the [errore](https://errore.org) convention of errors as values:
+
+```ts
+const error = captureException(err)
+if (error) {
+  // optional. The SDK already logged it once.
+}
+```
+
+| Function | Returns |
+| --- | --- |
+| `captureException()` | `Error \| undefined` |
+| `track()` | `Error \| undefined` |
+| `trackPageview()` | `Error \| undefined` |
+| `identifyUser()` | `Error \| undefined` |
+| `initStrada()` | `Error \| undefined` |
+| `flush()` / `shutdown()` | `Promise<Error \| undefined>` |
+
+Almost every call site ignores the return value, which is fine: failures are also logged once with `console.warn`, deduplicated by message so a broken exporter cannot flood the console on every request.
+
+This holds for inputs that are hostile by accident. `captureException()` is routinely handed whatever a `catch` block received:
+
+```ts
+const circular = { code: 500 }
+circular.self = circular
+
+captureException(circular) // JSON.stringify throws internally, still safe
+captureException(new Proxy({}, { get() { throw new Error("nope") } }))
+captureException(10n) // BigInt is not JSON-serializable
+```
+
+A `beforeSend` hook that throws does not lose the report either: the **original** error is sent and the hook failure is logged.
+
+The one deliberate exception is `startSpan()`. It wraps your callback, so it records the error on the span and then **re-throws** it. Your own control flow is unchanged:
+
+```ts
+await startSpan({ name: "checkout" }, async () => {
+  throw new PaymentError() // recorded on the span, then rethrown to you
+})
+```
+
+Logger methods (`getLogger().info()` and friends) stay `void` because `StradaLogger` extends the OTel `Logger` interface, but they never throw either.
+
+The guarantee covers the functions in the table above. Low-level exports (`setTags`, `errorToAttributes`, `recordExceptionOnSpan`, `startPageSpan`) and the SDK's OTel span/log processors are not wrapped yet, so a hostile getter reached through those can still surface.
+
 ## Use normal OpenTelemetry APIs
 
 After `initStrada()`, the global OTel providers are configured. Use the standard OTel APIs re-exported by `@strada.sh/sdk`.

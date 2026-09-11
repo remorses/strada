@@ -54,6 +54,8 @@ import {
   resolveEndpoint,
   resolveReleaseAttributes,
   shouldExportTelemetry,
+  tryTelemetry,
+  tryTelemetryAsync,
   ATTR,
   createStradaBaggage,
   BAGGAGE_SESSION_ID,
@@ -347,7 +349,21 @@ class PageviewContextManager implements ContextManager {
  * - First pageview span
  * - track() and identify() APIs
  */
-export function initStrada(options: StradaOptions): void {
+export function initStrada(options: StradaOptions): Error | undefined {
+  return tryTelemetry({
+    operation: "initStrada()",
+    run: () => {
+      setupStrada(options);
+    },
+  });
+}
+
+/**
+ * The real setup. Split out so the public entry point can turn a throw into a
+ * returned Error: a broken telemetry setup must never stop an app from
+ * booting. The app runs with telemetry off instead.
+ */
+function setupStrada(options: StradaOptions): void {
   if (_tracerProvider) {
     console.warn("[@strada.sh/sdk] initStrada() was already called. Ignoring duplicate init.");
     return;
@@ -470,12 +486,15 @@ export function initStrada(options: StradaOptions): void {
   startPageSpan();
 
   // Global error handlers
+  // The SDK's own handlers deliberately drop the Error that captureException
+  // returns: there is nobody left to report it to, and tryTelemetry already
+  // logged it. Reporting it again here would recurse.
   _errorListener = (event: ErrorEvent) => {
     const error = event.error;
     if (error instanceof Error) {
-      captureException(error, { handled: false, mechanism: "onerror" });
+      void captureException(error, { handled: false, mechanism: "onerror" });
     } else if (typeof event.message === "string" && event.message) {
-      captureException(new Error(event.message), {
+      void captureException(new Error(event.message), {
         handled: false,
         mechanism: "onerror",
       });
@@ -484,7 +503,7 @@ export function initStrada(options: StradaOptions): void {
 
   _rejectionListener = (event: PromiseRejectionEvent) => {
     const error = normalizeError(event.reason);
-    captureException(error, {
+    void captureException(error, {
       handled: false,
       mechanism: "unhandledrejection",
     });
@@ -596,36 +615,41 @@ export function endCurrentPageSpan(): void {
 export function track(
   name: string,
   properties?: Record<string, string | number | boolean>,
-): void {
-  if (!_logger) {
-    console.warn("[@strada.sh/sdk] track() called before initStrada(). Event was not sent.");
-    return;
-  }
+): Error | undefined {
+  return tryTelemetry({
+    operation: "track()",
+    run: () => {
+      if (!_logger) {
+        console.warn("[@strada.sh/sdk] track() called before initStrada(). Event was not sent.");
+        return;
+      }
 
-  const attributes: Record<string, string | number | boolean> = {
-    [ATTR["event.name"]]: name,
-  };
+      const attributes: Record<string, string | number | boolean> = {
+        [ATTR["event.name"]]: name,
+      };
 
-  // Add custom properties with custom.* prefix
-  if (properties) {
-    for (const [k, v] of Object.entries(properties)) {
-      attributes[`custom.${k}`] = v;
-    }
-  }
+      // Add custom properties with custom.* prefix
+      if (properties) {
+        for (const [k, v] of Object.entries(properties)) {
+          attributes[`custom.${k}`] = v;
+        }
+      }
 
-  // Emit within the context of the current pageview span so TraceId/SpanId
-  // are automatically set on the log record by OTel context propagation
-  const ctx = _currentPageviewSpan
-    ? trace.setSpan(context.active(), _currentPageviewSpan)
-    : context.active();
+      // Emit within the context of the current pageview span so TraceId/SpanId
+      // are automatically set on the log record by OTel context propagation
+      const ctx = _currentPageviewSpan
+        ? trace.setSpan(context.active(), _currentPageviewSpan)
+        : context.active();
 
-  _logger.emit({
-    eventName: name,
-    severityNumber: INFO_SEVERITY,
-    severityText: INFO_SEVERITY_TEXT,
-    body: name,
-    attributes,
-    context: ctx,
+      _logger.emit({
+        eventName: name,
+        severityNumber: INFO_SEVERITY,
+        severityText: INFO_SEVERITY_TEXT,
+        body: name,
+        attributes,
+        context: ctx,
+      });
+    },
   });
 }
 
@@ -641,38 +665,43 @@ export function track(
  * written to cookies; call identifyUser() from a trusted server runtime to emit
  * the profile event extracted into otel_users.
  */
-export function identifyUser(user: StradaUserIdentity | null): void {
-  const cookieName = typeof _options?.userIdCookie === "string"
-    ? _options.userIdCookie
-    : DEFAULT_USER_ID_COOKIE;
-  const hadPageview = Boolean(_currentPageviewSpan);
+export function identifyUser(user: StradaUserIdentity | null): Error | undefined {
+  return tryTelemetry({
+    operation: "identifyUser()",
+    run: () => {
+      const cookieName = typeof _options?.userIdCookie === "string"
+        ? _options.userIdCookie
+        : DEFAULT_USER_ID_COOKIE;
+      const hadPageview = Boolean(_currentPageviewSpan);
 
-  if (hadPageview) {
-    endCurrentPageSpan();
-  }
+      if (hadPageview) {
+        endCurrentPageSpan();
+      }
 
-  if (user === null) {
-    setRuntimeUserId(null);
-    if (_options?.userIdCookie !== false) {
-      clearUserIdCookie(cookieName);
-    }
-    if (hadPageview) {
-      startPageSpan();
-    }
-    return;
-  }
+      if (user === null) {
+        setRuntimeUserId(null);
+        if (_options?.userIdCookie !== false) {
+          clearUserIdCookie(cookieName);
+        }
+        if (hadPageview) {
+          startPageSpan();
+        }
+        return;
+      }
 
-  setRuntimeUserId(user.id);
-  if (_options?.userIdCookie !== false) {
-    writeUserIdCookie({
-      name: cookieName,
-      value: user.id,
-      maxAge: DEFAULT_USER_ID_COOKIE_MAX_AGE,
-    });
-  }
-  if (hadPageview) {
-    startPageSpan();
-  }
+      setRuntimeUserId(user.id);
+      if (_options?.userIdCookie !== false) {
+        writeUserIdCookie({
+          name: cookieName,
+          value: user.id,
+          maxAge: DEFAULT_USER_ID_COOKIE_MAX_AGE,
+        });
+      }
+      if (hadPageview) {
+        startPageSpan();
+      }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -687,35 +716,41 @@ export function identifyUser(user: StradaUserIdentity | null): void {
 export function captureException(
   error: unknown,
   opts?: CaptureExceptionOptions,
-): void {
-  const normalized = normalizeError(error);
+): Error | undefined {
+  return tryTelemetry({
+    operation: "captureException()",
+    run: () => {
+      const normalized = normalizeError(error);
 
-  if (_options && shouldIgnoreError(normalized, _options)) return;
-  const prepared = applyBeforeSend(normalized, _options?.beforeSend);
-  if (prepared === null) return;
+      if (_options && shouldIgnoreError(normalized, _options)) return;
+      const prepared = applyBeforeSend(normalized, _options?.beforeSend);
+      if (prepared === null) return;
 
-  const attributes = errorToAttributes(prepared, opts);
-  if (opts?.handled === false) {
-    recordExceptionOnSpan(prepared, trace.getActiveSpan() ?? _currentPageviewSpan);
-  }
+      const attributes = errorToAttributes(prepared, opts);
+      if (opts?.handled === false) {
+        recordExceptionOnSpan(prepared, trace.getActiveSpan() ?? _currentPageviewSpan);
+      }
 
-  if (_logger) {
-    // Emit within pageview span context for trace correlation
-    const ctx = _currentPageviewSpan
-      ? trace.setSpan(context.active(), _currentPageviewSpan)
-      : context.active();
+      if (!_logger) {
+        console.warn("[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.");
+        return;
+      }
 
-    _logger.emit({
-      eventName: "exception",
-      severityNumber: ERROR_SEVERITY,
-      severityText: ERROR_SEVERITY_TEXT,
-      body: prepared.message,
-      attributes,
-      context: ctx,
-    });
-  } else {
-    console.warn("[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.");
-  }
+      // Emit within pageview span context for trace correlation
+      const ctx = _currentPageviewSpan
+        ? trace.setSpan(context.active(), _currentPageviewSpan)
+        : context.active();
+
+      _logger.emit({
+        eventName: "exception",
+        severityNumber: ERROR_SEVERITY,
+        severityText: ERROR_SEVERITY_TEXT,
+        body: prepared.message,
+        attributes,
+        context: ctx,
+      });
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -725,38 +760,50 @@ export function captureException(
 /**
  * Flush all buffered telemetry (logs, traces).
  */
-export async function flush(): Promise<void> {
-  await _loggerProvider?.forceFlush();
-  await _tracerProvider?.forceFlush();
+export async function flush(): Promise<Error | undefined> {
+  return tryTelemetryAsync({
+    operation: "flush()",
+    run: async () => {
+      await _loggerProvider?.forceFlush();
+      await _tracerProvider?.forceFlush();
+    },
+  });
 }
 
 /**
  * Shut down the SDK, flush remaining telemetry, and remove global handlers.
  */
-export async function shutdown(): Promise<void> {
-  if (_errorListener) {
-    window.removeEventListener("error", _errorListener);
-    _errorListener = undefined;
-  }
-  if (_rejectionListener) {
-    window.removeEventListener("unhandledrejection", _rejectionListener);
-    _rejectionListener = undefined;
-  }
-  if (_visibilityListener) {
-    document.removeEventListener("visibilitychange", _visibilityListener);
-    _visibilityListener = undefined;
-  }
-  if (_navigateListener && typeof navigation !== "undefined") {
-    navigation.removeEventListener("navigate", _navigateListener);
-    _navigateListener = undefined;
-  }
-  endCurrentPageSpan();
-  await _tracerProvider?.shutdown();
-  await _loggerProvider?.shutdown();
+export async function shutdown(): Promise<Error | undefined> {
+  const error = await tryTelemetryAsync({
+    operation: "shutdown()",
+    run: async () => {
+      if (_errorListener) {
+        window.removeEventListener("error", _errorListener);
+        _errorListener = undefined;
+      }
+      if (_rejectionListener) {
+        window.removeEventListener("unhandledrejection", _rejectionListener);
+        _rejectionListener = undefined;
+      }
+      if (_visibilityListener) {
+        document.removeEventListener("visibilitychange", _visibilityListener);
+        _visibilityListener = undefined;
+      }
+      if (_navigateListener && typeof navigation !== "undefined") {
+        navigation.removeEventListener("navigate", _navigateListener);
+        _navigateListener = undefined;
+      }
+      endCurrentPageSpan();
+      await _tracerProvider?.shutdown();
+      await _loggerProvider?.shutdown();
+    },
+  });
+  // Reset even when shutdown failed, otherwise the SDK is left half alive.
   _tracerProvider = undefined;
   _loggerProvider = undefined;
   _logger = undefined;
   _options = undefined;
   _sessionId = undefined;
   resetContext();
+  return error;
 }

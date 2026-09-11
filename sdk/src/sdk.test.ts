@@ -22,6 +22,9 @@ import {
   resolveMetricReaderOptions,
   resolveReleaseAttributes,
   shouldExportTelemetry,
+  tryTelemetry,
+  tryTelemetryAsync,
+  createStradaLogger,
   resolveUserId,
   readCookie,
   writeUserIdCookie,
@@ -96,6 +99,42 @@ describe("normalizeError", () => {
     const err = normalizeError({ code: 500 });
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe('{"code":500}');
+  });
+
+  it("survives values that throw while being converted", () => {
+    const circular: Record<string, unknown> = { code: 500 };
+    circular.self = circular;
+
+    const throwingToString = {
+      toString() {
+        throw new Error("toString exploded");
+      },
+    };
+
+    const throwingProxy = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("get trap exploded");
+        },
+      },
+    );
+
+    expect([
+      normalizeError(circular).message,
+      normalizeError(throwingToString).message,
+      normalizeError(throwingProxy).message,
+      normalizeError(Symbol("sym")).message,
+      normalizeError(10n).message,
+    ]).toMatchInlineSnapshot(`
+      [
+        "[object Object]",
+        "{}",
+        "[unserializable object]",
+        "Symbol(sym)",
+        "10",
+      ]
+    `);
   });
 });
 
@@ -392,6 +431,157 @@ describe("resolveMetricReaderOptions", () => {
       {
         "exportIntervalMillis": 2500,
         "exportTimeoutMillis": 1500,
+      }
+    `);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// telemetry never throws
+// ---------------------------------------------------------------------------
+
+/** Collect console.warn output for the duration of `run`. */
+function recordWarnings(run: () => void): string[] {
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (message: string) => {
+    warnings.push(message);
+  };
+  try {
+    run();
+  } finally {
+    console.warn = original;
+  }
+  return warnings;
+}
+
+describe("tryTelemetry", () => {
+  it("returns undefined and stays quiet when nothing throws", () => {
+    const calls: string[] = [];
+    const warnings = recordWarnings(() => {
+      const error = tryTelemetry({
+        operation: "track()",
+        run: () => {
+          calls.push("ran");
+        },
+      });
+      calls.push(String(error));
+    });
+
+    expect({ calls, warnings }).toMatchInlineSnapshot(`
+      {
+        "calls": [
+          "ran",
+          "undefined",
+        ],
+        "warnings": [],
+      }
+    `);
+  });
+
+  it("returns the error instead of throwing, and warns once per message", () => {
+    const results: string[] = [];
+    const warnings = recordWarnings(() => {
+      for (let i = 0; i < 3; i++) {
+        const error = tryTelemetry({
+          operation: "captureException()",
+          run: () => {
+            throw new Error("exporter is down");
+          },
+        });
+        results.push(error instanceof Error ? error.message : "no error");
+      }
+    });
+
+    expect({ results, warnings }).toMatchInlineSnapshot(`
+      {
+        "results": [
+          "exporter is down",
+          "exporter is down",
+          "exporter is down",
+        ],
+        "warnings": [
+          "[@strada.sh/sdk] captureException() failed: exporter is down",
+        ],
+      }
+    `);
+  });
+
+  it("survives a run that throws a non-Error value", () => {
+    const warnings = recordWarnings(() => {
+      const error = tryTelemetry({
+        operation: "track()",
+        run: () => {
+          throw "just a string";
+        },
+      });
+      expect(error).toBeInstanceOf(Error);
+    });
+
+    expect(warnings).toMatchInlineSnapshot(`
+      [
+        "[@strada.sh/sdk] track() failed: just a string",
+      ]
+    `);
+  });
+});
+
+describe("tryTelemetryAsync", () => {
+  it("returns the rejection instead of rejecting", async () => {
+    const error = await tryTelemetryAsync({
+      operation: "flush()",
+      run: async () => {
+        throw new Error("flush timed out");
+      },
+    });
+
+    expect(error instanceof Error ? error.message : null).toMatchInlineSnapshot(`"flush timed out"`);
+  });
+});
+
+describe("createStradaLogger", () => {
+  it("does not throw when the underlying OTel logger throws", () => {
+    const logger = createStradaLogger(() => ({
+      emit: () => {
+        throw new Error("log pipeline exploded");
+      },
+    }));
+
+    const warnings = recordWarnings(() => {
+      logger.info({ message: "hello" });
+      logger.error("boom");
+      logger.emit({ body: "raw" });
+    });
+
+    expect(warnings).toMatchInlineSnapshot(`
+      [
+        "[@strada.sh/sdk] logger.info() failed: log pipeline exploded",
+        "[@strada.sh/sdk] logger.error() failed: log pipeline exploded",
+        "[@strada.sh/sdk] logger.emit() failed: log pipeline exploded",
+      ]
+    `);
+  });
+});
+
+describe("applyBeforeSend", () => {
+  it("keeps the original error when the hook throws", () => {
+    const original = new Error("real failure");
+    const results: Array<string | null> = [];
+    const warnings = recordWarnings(() => {
+      const prepared = applyBeforeSend(original, () => {
+        throw new Error("beforeSend exploded");
+      });
+      results.push(prepared === original ? "same error" : "replaced");
+    });
+
+    expect({ results, warnings }).toMatchInlineSnapshot(`
+      {
+        "results": [
+          "same error",
+        ],
+        "warnings": [
+          "[@strada.sh/sdk] beforeSend threw, sending the original error instead: beforeSend exploded",
+        ],
       }
     `);
   });
@@ -906,11 +1096,11 @@ describe("browser user id cookie writes", () => {
   });
 
   it("identifyUser sets browser cookie and runtime override", () => {
-    identifyUser({ id: "user_42" });
+    expect(identifyUser({ id: "user_42" })).toBeUndefined();
     expect(cookieValue).toBe("strada_uid=user_42; Path=/; SameSite=Lax; Max-Age=31536000");
     expect(resolveUserId({ projectId: "test", service: "web" })).toBe("user_42");
 
-    identifyUser(null);
+    expect(identifyUser(null)).toBeUndefined();
     expect(cookieValue).toBe("strada_uid=; Path=/; SameSite=Lax; Max-Age=0");
     expect(resolveUserId({ projectId: "test", service: "web", userId: "init_user" })).toBeUndefined();
   });
