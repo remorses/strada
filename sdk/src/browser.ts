@@ -12,7 +12,9 @@
  * - Pageviews = spans in otel_traces (SpanName = 'pageview')
  * - Custom events = log records in otel_logs (event.name attribute)
  * - Session = one session.id per tab, stored in sessionStorage
- * - Context (session.id, url.*, user.id) injected into every span and log
+ * - Visitor = one visitor.id per browser, cookie strada_vid
+ * - user.id = signed-in account, cookie strada_uid
+ * - Context (session.id, visitor.id, url.*, user.id) injected into every span and log
  */
 
 import { trace, context, propagation } from "@opentelemetry/api";
@@ -48,8 +50,10 @@ import {
   resetContext,
   resolveUserId,
   setRuntimeUserId,
+  readCookie,
   writeUserIdCookie,
   clearUserIdCookie,
+  writeVisitorCookie,
   resolveBatchOptions,
   resolveEndpoint,
   resolveReleaseAttributes,
@@ -60,6 +64,7 @@ import {
   createStradaBaggage,
   BAGGAGE_SESSION_ID,
   BAGGAGE_USER_ID,
+  DEFAULT_VISITOR_COOKIE,
   DEFAULT_USER_ID_COOKIE,
   DEFAULT_USER_ID_COOKIE_MAX_AGE,
   type StradaUserIdentity,
@@ -122,6 +127,17 @@ function getOrCreateSessionId(): string {
   }
 }
 
+export function getOrCreateVisitor(): { id: string; firstVisit: boolean } {
+  const existing = readCookie(DEFAULT_VISITOR_COOKIE);
+  if (existing) {
+    writeVisitorCookie({ value: existing });
+    return { id: existing, firstVisit: false };
+  }
+  const id = crypto.randomUUID();
+  writeVisitorCookie({ value: id });
+  return { id, firstVisit: true };
+}
+
 // ---------------------------------------------------------------------------
 // Filtering log processor
 // ---------------------------------------------------------------------------
@@ -170,15 +186,22 @@ class FilteringLogProcessor implements LogRecordProcessor {
 class StradaSpanProcessor implements SpanProcessor {
   constructor(
     private readonly getSessionId: () => string,
+    private readonly getVisitorId: () => string | undefined,
     private readonly getUserId: () => string | undefined,
   ) {}
 
   onStart(span: Span): void {
     const sessionId = this.getSessionId();
     span.setAttribute(ATTR["session.id"], sessionId);
+    const visitorId = this.getVisitorId();
+    if (visitorId) {
+      span.setAttribute(ATTR["visitor.id"], visitorId);
+    }
 
-    // Current page URL info
-    if (typeof window !== "undefined") {
+    // Pageview spans already have dest URL from startPageSpan(). Writing
+    // window.location here would overwrite /checkout with /pricing during
+    // a navigate event, before the browser commits the new URL.
+    if (typeof window !== "undefined" && span.name !== "pageview") {
       for (const [key, value] of Object.entries(getPageAttributes())) {
         if (value) {
           span.setAttribute(key, value);
@@ -218,6 +241,7 @@ class ContextLogProcessor implements LogRecordProcessor {
   constructor(
     private readonly inner: LogRecordProcessor,
     private readonly getSessionId: () => string,
+    private readonly getVisitorId: () => string | undefined,
     private readonly getUserId: () => string | undefined,
   ) {}
 
@@ -226,6 +250,10 @@ class ContextLogProcessor implements LogRecordProcessor {
 
     // Inject analytics context into the log record
     record.setAttribute(ATTR["session.id"], this.getSessionId());
+    const visitorId = this.getVisitorId();
+    if (visitorId) {
+      record.setAttribute(ATTR["visitor.id"], visitorId);
+    }
     if (typeof window !== "undefined") {
       record.setAttribute(ATTR["url.path"], window.location.pathname);
       record.setAttribute(ATTR["url.full"], window.location.href);
@@ -256,6 +284,8 @@ let _loggerProvider: LoggerProvider | undefined;
 let _logger: Logger | undefined;
 let _options: StradaOptions | undefined;
 let _sessionId: string | undefined;
+let _visitorId: string | undefined;
+let _firstVisit: boolean | undefined;
 let _currentPageviewSpan: ApiSpan | undefined;
 let _errorListener: ((event: ErrorEvent) => void) | undefined;
 let _rejectionListener: ((event: PromiseRejectionEvent) => void) | undefined;
@@ -371,11 +401,15 @@ function setupStrada(options: StradaOptions): void {
 
   _options = options;
   _sessionId = getOrCreateSessionId();
+  const visitor = getOrCreateVisitor();
+  _visitorId = visitor.id;
+  _firstVisit = visitor.firstVisit;
   if (options.token) {
     console.warn("[@strada.sh/sdk] token is ignored in browser builds. Browser ingest is anonymous and rate limited.");
   }
 
   const getUserId = () => resolveUserId(_options);
+  const getVisitorId = () => _visitorId;
 
   // Build resource with Strada attributes + browser detection.
   // Browser attributes are detected inline (navigator APIs are synchronous)
@@ -433,7 +467,7 @@ function setupStrada(options: StradaOptions): void {
   _tracerProvider = new WebTracerProvider({
     resource,
     spanProcessors: [
-      new StradaSpanProcessor(() => _sessionId!, getUserId),
+      new StradaSpanProcessor(() => _sessionId!, getVisitorId, getUserId),
       ...(exportTelemetry
         ? [
             new BatchSpanProcessor(
@@ -474,6 +508,7 @@ function setupStrada(options: StradaOptions): void {
               ),
             ),
             () => _sessionId!,
+            getVisitorId,
             getUserId,
           ),
         ]
@@ -512,39 +547,30 @@ function setupStrada(options: StradaOptions): void {
   window.addEventListener("error", _errorListener);
   window.addEventListener("unhandledrejection", _rejectionListener);
 
-  // End pageview span on tab hide/close
+  // End the current pageview on tab hide so duration is recorded. Do not start
+  // a new pageview on focus: that would count tab switches as extra hits.
   _visibilityListener = () => {
     if (document.visibilityState === "hidden") {
       endCurrentPageSpan();
-      return;
-    }
-
-    if (document.visibilityState === "visible" && !_currentPageviewSpan) {
-      startPageSpan();
     }
   };
   document.addEventListener("visibilitychange", _visibilityListener);
 
-  // SPA navigation detection via the Navigation API.
-  // Fires on every client-side navigation (pushState, replaceState, back/forward)
-  // regardless of framework (Next.js, React Router, Vue Router, etc.).
-  // Baseline across Chrome, Edge, Firefox, Safari since Jan 2026.
+  // SPA navigation via the Navigation API. intercepts history.pushState,
+  // replaceState, and back/forward. No History monkey-patch needed.
   if (typeof navigation !== "undefined") {
     _navigateListener = (event: NavigateEvent) => {
-      // Skip cross-origin navigations, downloads, form submissions
       if (!event.canIntercept) return;
-      // Skip reloads (same page, no URL change)
+      if (!event.destination.sameDocument) return;
       if (event.navigationType === "reload") return;
 
       const dest = new URL(event.destination.url);
       const currentPath = window.location.pathname + window.location.search;
       const newPath = dest.pathname + dest.search;
-      // Skip if path+query didn't actually change (e.g. hash-only change)
       if (newPath === currentPath) return;
 
-      endCurrentPageSpan();
       startPageSpan(dest, {
-        [ATTR["navigation.type"]]: event.navigationType, // "push" | "replace" | "traverse"
+        [ATTR["navigation.type"]]: event.navigationType,
         [ATTR["navigation.user_initiated"]]: event.userInitiated,
       }, window.location.href);
     };
@@ -573,9 +599,12 @@ export function startPageSpan(
 
   const pageUrl = typeof url === "string" ? new URL(url, window.location.href) : url;
   const tracer = trace.getTracer("strada-web");
+  const firstVisit = _firstVisit === true;
+  _firstVisit = false;
   _currentPageviewSpan = tracer.startSpan("pageview", {
     attributes: {
       [ATTR["session.id"]]: _sessionId ?? "",
+      ...(firstVisit ? { [ATTR["visitor.first_visit"]]: true } : {}),
       [ATTR["pageview.source"]]: "browser",
       ...getPageAttributes(pageUrl, referrer),
       ...extraAttributes,
@@ -658,12 +687,12 @@ export function track(
 // ---------------------------------------------------------------------------
 
 /**
- * Update browser user identity after login/logout.
+ * Update signed-in user identity after login/logout.
  *
- * The browser runtime only persists user.id in a JS-readable cookie so future
- * page loads can correlate telemetry. Rich profile fields are intentionally not
- * written to cookies; call identifyUser() from a trusted server runtime to emit
- * the profile event extracted into otel_users.
+ * The browser runtime persists user.id in cookie `strada_uid` so a refresh
+ * still has the account. Cookie `strada_vid` is the visitor and is not
+ * written or cleared here. Call identifyUser() from a trusted server
+ * runtime to emit the profile event extracted into otel_users.
  */
 export function identifyUser(user: StradaUserIdentity | null): Error | undefined {
   return tryTelemetry({
@@ -672,19 +701,11 @@ export function identifyUser(user: StradaUserIdentity | null): Error | undefined
       const cookieName = typeof _options?.userIdCookie === "string"
         ? _options.userIdCookie
         : DEFAULT_USER_ID_COOKIE;
-      const hadPageview = Boolean(_currentPageviewSpan);
-
-      if (hadPageview) {
-        endCurrentPageSpan();
-      }
 
       if (user === null) {
         setRuntimeUserId(null);
         if (_options?.userIdCookie !== false) {
           clearUserIdCookie(cookieName);
-        }
-        if (hadPageview) {
-          startPageSpan();
         }
         return;
       }
@@ -696,9 +717,6 @@ export function identifyUser(user: StradaUserIdentity | null): Error | undefined
           value: user.id,
           maxAge: DEFAULT_USER_ID_COOKIE_MAX_AGE,
         });
-      }
-      if (hadPageview) {
-        startPageSpan();
       }
     },
   });
@@ -804,6 +822,8 @@ export async function shutdown(): Promise<Error | undefined> {
   _logger = undefined;
   _options = undefined;
   _sessionId = undefined;
+  _visitorId = undefined;
+  _firstVisit = undefined;
   resetContext();
   return error;
 }

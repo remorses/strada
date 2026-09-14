@@ -145,7 +145,7 @@ export interface StradaOptions {
 }
 
 export interface StradaUserIdentity {
-  /** Stable application user id. This is the only identity field written to cookies. */
+  /** Stable application user id. Written to cookie `strada_uid` in the browser. */
   id: string;
   /** User email. PII, emitted only through explicit identifyUser profile events. */
   email?: string;
@@ -913,9 +913,12 @@ export function createStradaLogger(
 // Cookie reading
 // ---------------------------------------------------------------------------
 
-/** Default cookie name for user ID. */
+/** Default cookie name for the signed-in account. */
 export const DEFAULT_USER_ID_COOKIE = "strada_uid";
 export const DEFAULT_USER_ID_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+/** Default cookie name for the anonymous visitor. */
+export const DEFAULT_VISITOR_COOKIE = "strada_vid";
+export const DEFAULT_VISITOR_COOKIE_MAX_AGE = DEFAULT_USER_ID_COOKIE_MAX_AGE;
 export const USER_IDENTIFY_EVENT_NAME = ATTR["strada.user.identify"];
 
 let _runtimeUserId: string | null | undefined;
@@ -950,7 +953,7 @@ export function readCookie(name: string): string | undefined {
 /**
  * Writing `document.cookie` throws a SecurityError inside a sandboxed iframe
  * without `allow-same-origin`, which is how plugin and widget hosts embed
- * apps. Losing the user id cookie there is fine, crashing is not.
+ * apps. Losing the cookie there is fine, crashing is not.
  */
 function writeCookie(value: string): void {
   if (typeof document === "undefined") return;
@@ -979,6 +982,20 @@ export function clearUserIdCookie(name = DEFAULT_USER_ID_COOKIE): void {
   writeCookie(`${encodeURIComponent(name)}=; Path=/; SameSite=Lax; Max-Age=0`);
 }
 
+export function writeVisitorCookie({
+  name = DEFAULT_VISITOR_COOKIE,
+  value,
+  maxAge = DEFAULT_VISITOR_COOKIE_MAX_AGE,
+}: {
+  name?: string;
+  value: string;
+  maxAge?: number;
+}): void {
+  writeCookie(
+    `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+  );
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -991,28 +1008,25 @@ function escapeRegExp(s: string): string {
  * Resolve the userId from StradaOptions.userId or cookie.
  *
  * Priority chain:
- * 1. StradaOptions.userId (explicit override, static or dynamic)
- * 2. userIdCookie (persisted, set by backend) — browser only
- * 3. undefined
+ * 1. identifyUser() runtime override
+ * 2. StradaOptions.userId (explicit override, static or dynamic)
+ * 3. userIdCookie (persisted, set by backend) — browser only
+ * 4. undefined
  */
 export function resolveUserId(options: StradaOptions | undefined): string | undefined {
   if (_runtimeUserId !== undefined) {
     return _runtimeUserId ?? undefined;
   }
 
-  // 1. Explicit userId option (static string or dynamic resolver)
   if (options?.userId) {
     if (typeof options.userId === "function") {
       const fromFn = options.userId();
-      // Only fall through when the function returns undefined (not set).
-      // Empty string is a valid "no user" signal and should not fall back.
       if (fromFn !== undefined) return fromFn;
     } else {
       return options.userId;
     }
   }
 
-  // 2. Cookie fallback (browser only)
   if (options?.userIdCookie !== false) {
     const cookieName = typeof options?.userIdCookie === "string"
       ? options.userIdCookie

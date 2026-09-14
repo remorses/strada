@@ -296,7 +296,7 @@ These are thin wrappers over OTel APIs with Strada conventions baked in:
 
 The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of error tracking:
 
-**Session management.** A per-tab UUID stored in `sessionStorage` under the key `strada.session_id`. Survives page refreshes, new on tab close. Injected as `session.id` into every span and log record.
+**Session management.** A per-tab UUID stored in `sessionStorage` under the key `strada.session_id`. Survives page refreshes, new on tab close. Injected as `session.id` into every span and log record. Unique visitors use `visitor.id` from cookie `strada_vid`. Signed-in account uses `user.id` from cookie `strada_uid`.
 
 **Browser detection.** Inline detection (no external package) of `browser.platform`, `browser.brands`, `browser.mobile`, `browser.language`, `user_agent.original` from `navigator.userAgentData` and `navigator.userAgent`. Set as resource attributes.
 
@@ -309,7 +309,8 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 | `url.query` | `window.location.search` |
 | `url.full` | `window.location.href` |
 | `http.request.header.referer` | `document.referrer` |
-| `user.id` | From `strada_uid` cookie or `StradaOptions.userId` |
+| `visitor.id` | Cookie `strada_vid` |
+| `user.id` | Cookie `strada_uid` or `StradaOptions.userId` |
 
 **ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `user.id` into every log record.
 
@@ -467,7 +468,7 @@ Pre-aggregated pageview analytics by domain, pathname, referrer, device, browser
 
 **Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
 
-**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(session.id)`), `Hits` (`countState()`).
+**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(visitor.id)`, falls back to `session.id`), `Hits` (`countState()`).
 
 ### Browser analytics sessions — `otel_analytics_sessions`
 
@@ -699,7 +700,8 @@ These are injected into browser spans and log records so analytics, custom event
 | `url.query` | string | Current `window.location.search` |
 | `url.full` | string | Current `window.location.href` |
 | `http.request.header.referer` | string | `document.referrer`, useful for entry page and attribution analysis |
-| `user.id` | string | Signed-in user identity from `strada_uid` cookie / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
+| `visitor.id` | string | Anonymous browser identity from cookie `strada_vid`. Survives login and logout |
+| `user.id` | string | Signed-in account from cookie `strada_uid` / `identifyUser()` / `StradaOptions.userId`, injected into browser spans and logs and often mirrored on backend logs/spans too |
 
 ### Custom error-tracking attributes (set by Strada SDKs)
 

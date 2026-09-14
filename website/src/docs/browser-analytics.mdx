@@ -25,8 +25,10 @@ otel_traces                              otel_logs
 +-- span: pageview "/dashboard"
 ```
 
+- **Visitor** = one `visitor.id`, cookie `strada_vid`. Survives tabs, login, and logout. This is unique visitors.
 - **Session** = one `session.id`, stored in `sessionStorage` (per-tab, survives page refreshes, cleared on tab close)
 - **Pageview** = a span that starts on navigation and ends when the user navigates away or closes the tab
+- **First visit** = `visitor.first_visit=true` on the first pageview of a new `visitor.id`
 - **Custom event** = a log record in `otel_logs` with `event.name` set to the event name, correlated to the current pageview when one is active
 - **Auto-instrumented events** (fetch, XHR, clicks) = standard OTel spans in `otel_traces`, usually parented to the current pageview span when no other span is active
 
@@ -66,10 +68,12 @@ The Strada SDK is a thin wrapper around the standard OTel browser SDK. It adds:
 | Span attribute                  | How it's set                           | Example value                   |
 |---------------------------------|----------------------------------------|---------------------------------|
 | `session.id`                    | `sessionStorage` per-tab UUID          | `"f47ac10b-58cc-..."`           |
+| `visitor.id`                    | cookie `strada_vid`                    | `"f47ac10b-58cc-..."`           |
+| `visitor.first_visit`           | true on the first pageview of a new visitor | `"true"`                   |
 | `url.path`                      | `window.location.pathname`             | `"/pricing"`                    |
 | `url.query`                     | `window.location.search`               | `"?plan=pro"`                   |
 | `http.request.header.referer`   | `document.referrer`                    | `"https://google.com"`          |
-| `user.id`                       | Read from `strada_uid` cookie          | `"user_123"`                    |
+| `user.id`                       | cookie `strada_uid`                    | `"user_123"`                    |
 
 These are injected by a custom `SpanProcessor` that enriches every span before export.
 
@@ -123,8 +127,8 @@ const sessionId =
 ```
 
 - Per-tab, per-origin
-- No cookies, no consent banner needed
-- `session.id` is NOT a user identifier; it is a visit identifier
+- `session.id` lives in `sessionStorage`. No cookie
+- Unique visitors use `visitor.id`: first-party cookie `strada_vid`, 1 year. Login writes `strada_uid` for the account. Logout clears `strada_uid` and leaves `strada_vid`. Data stays in the project's own Tinybird/ClickHouse. No third-party tracker
 - When the user is logged in, `user.id` is set as a separate attribute
 
 ---
@@ -272,6 +276,7 @@ No framework plugins or manual calls needed. The listener:
 - Ends the current pageview span
 - Starts a new pageview span for the new path
 - Skips cross-origin navigations, reloads, and hash-only changes
+- Does **not** start a new pageview when the tab becomes visible again
 
 Each navigation span carries two extra attributes:
 
@@ -314,10 +319,8 @@ track('form_submit', {
   variant: 'hero-cta',
 })
 
-// Set the user cookie once after login.
-document.cookie = `strada_uid=${encodeURIComponent('user_123')}; Path=/; SameSite=Lax; Secure`
+identifyUser({ id: 'user_123' })
 
-// Later events automatically include user.id.
 track('billing_opened', {
   plan: 'pro',
 })

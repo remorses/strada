@@ -223,13 +223,13 @@ initStrada({
 })
 ```
 
-When login/logout happens after initialization, call **`identifyUser()`** in the browser. Browser calls only persist `user.id` in the JS-readable `strada_uid` cookie and update in-memory context. They do not store email/name/profile data.
+When login/logout happens after initialization, call **`identifyUser()`** in the browser. Browser calls persist `user.id` in cookie `strada_uid` and update in-memory context. Cookie `strada_vid` is the visitor and is left alone. They do not store email/name/profile data.
 
 ```ts
 import { identifyUser } from "@strada.sh/sdk/browser"
 
 identifyUser({ id: user.id })
-identifyUser(null) // logout: clear cookie and in-memory user id
+identifyUser(null) // logout: clear strada_uid, keep strada_vid
 ```
 
 Call **`identifyUser()` from trusted server code** to replace the latest profile snapshot in `otel_users`. This still uses OTLP logs: the SDK emits `event.name = "strada.user.identify"`, the collector stores the raw event in `otel_logs`, and extracts the latest profile row into `otel_users` for SQL joins.
@@ -624,7 +624,7 @@ try {
 
 ## Identify the current user
 
-The SDK reads the user ID from a **cookie** (`strada_uid` by default). Set this cookie when the user logs in. The browser SDK picks it up automatically on every span, log, error, and custom event.
+The SDK reads the user ID from cookie `strada_uid`. Unique visitors use a separate cookie `strada_vid`. Set `strada_uid` when the user logs in, or call `identifyUser({ id })`.
 
 ```ts
 initStrada({
@@ -632,18 +632,19 @@ initStrada({
   service: "frontend",
 })
 
-document.cookie = `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure`
+identifyUser({ id: user.id })
+identifyUser(null) // logout: clear strada_uid, keep strada_vid
 ```
 
 The cookie must be **JS-readable** (not `httpOnly`) so the browser SDK can access it via `document.cookie`.
 
 ### Setting the cookie from your backend
 
-Set the same cookie from your backend after login if you already have auth middleware. This keeps the user ID available before browser code runs and makes the value stable across page loads. Any auth library works, the SDK only reads the cookie:
+Set `strada_uid` from your backend after login if you already have auth middleware. This keeps the user ID available before browser code runs. Any auth library works, the SDK only reads the cookie:
 
 ```ts
 app.use(async (req, res, next) => {
-  const user = await getUserFromRequest(req) // your own session lookup
+  const user = await getUserFromRequest(req)
   if (user) {
     res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
   }
@@ -653,7 +654,7 @@ app.use(async (req, res, next) => {
 
 ### Better Auth
 
-With **Better Auth**, prefer the Strada plugin instead of writing cookie middleware manually. It sets the `strada_uid` cookie and tracks auth lifecycle events as custom events.
+With **Better Auth**, prefer the Strada plugin. It sets the `strada_uid` cookie and tracks auth lifecycle events. It does not touch `strada_vid`.
 
 ```ts
 import { betterAuth } from "better-auth/minimal"
@@ -681,7 +682,6 @@ app.use(async (req, res, next) => {
   const user = await getUserFromRequest(req) // session cookie, JWT, API key, anything
   if (!user) return next()
 
-  // Optional: lets the browser SDK tag frontend telemetry with the same id
   res.setHeader("Set-Cookie", `strada_uid=${encodeURIComponent(user.id)}; Path=/; SameSite=Lax; Secure; Max-Age=31536000`)
 
   const baggage = propagation.createBaggage({ "user.id": { value: user.id } })
@@ -898,9 +898,10 @@ browser / server code
 The browser runtime adds:
 
 - `session.id` from `sessionStorage`
+- `visitor.id` from cookie `strada_vid`
 - `url.path`, `url.query`, `url.full`
 - `http.request.header.referer`
-- `user.id` from `strada_uid` cookie or `StradaOptions.userId`
+- `user.id` from cookie `strada_uid` or `StradaOptions.userId`
 
 It also starts a `pageview` span and usually parents later browser work to that pageview when no other span is active.
 
@@ -1278,7 +1279,7 @@ ORDER BY Timestamp ASC
 - `BaggageSpanProcessor` reads the baggage and sets `session.id` / `user.id` as span attributes
 - `BaggageLogProcessor` does the same for log records
 
-Baggage updates live. When the `strada_uid` cookie changes, the next outgoing request will carry the updated `user.id`.
+Baggage updates live. When `identifyUser()` or cookie `strada_uid` changes, the next outgoing request carries the updated `user.id`. Cookie `strada_vid` is the visitor and is not in baggage.
 
 ## Browser runtime
 

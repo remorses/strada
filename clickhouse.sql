@@ -93,11 +93,11 @@ WITH source AS (
         lower(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), ResourceAttributes['user_agent.original'])) AS ua,
         coalesce(nullIf(SpanAttributes['geo.country'], ''), 'Unknown') AS Country,
         coalesce(nullIf(ResourceAttributes['browser.language'], ''), 'Unknown') AS Language,
-        SpanAttributes['session.id'] AS SessionId
+        coalesce(nullIf(SpanAttributes['visitor.id'], ''), SpanAttributes['session.id']) AS VisitorId
     FROM otel_traces
     WHERE
         SpanName = 'pageview'
-        AND SpanAttributes['session.id'] != ''
+        AND coalesce(nullIf(SpanAttributes['visitor.id'], ''), SpanAttributes['session.id']) != ''
         AND SpanAttributes['url.path'] != ''
         AND SpanAttributes['url.full'] != ''
 )
@@ -136,7 +136,7 @@ SELECT
     END AS BotName,
     Country,
     Language,
-    uniqState(SessionId) AS Visits,
+    uniqState(VisitorId) AS Visits,
     countState() AS Hits
 FROM source
 GROUP BY ProjectId, Date, ServiceName, Domain, Pathname, Referrer, Device, Browser, BotName, Country, Language;

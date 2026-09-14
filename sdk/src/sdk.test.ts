@@ -45,7 +45,7 @@ import {
   BAGGAGE_USER_ID,
   createUserIdentifyAttributes,
 } from "./shared.ts";
-import { getBrowserWorkContext, identifyUser } from "./browser.ts";
+import { getBrowserWorkContext, identifyUser, getOrCreateVisitor } from "./browser.ts";
 import {
   MAX_LOG_STRING_LENGTH,
   formatLogValue as formatJsonLogValue,
@@ -982,6 +982,37 @@ describe("formatJsonLogValue", () => {
 // ---------------------------------------------------------------------------
 // browser trace context
 // ---------------------------------------------------------------------------
+
+describe("getOrCreateVisitor", () => {
+  let cookieValue = "";
+  const originalDocument = globalThis.document;
+  const hadDocument = originalDocument !== undefined;
+
+  beforeEach(() => {
+    cookieValue = "";
+    (globalThis as any).document = {
+      get cookie() { return cookieValue; },
+      set cookie(value: string) { cookieValue = value; },
+    };
+  });
+
+  afterEach(() => {
+    if (hadDocument) (globalThis as any).document = originalDocument;
+    else delete (globalThis as any).document;
+  });
+
+  it("creates a visitor id on first visit and reuses it after", () => {
+    const first = getOrCreateVisitor();
+    expect(first.firstVisit).toBe(true);
+    expect(first.id.length).toBeGreaterThan(10);
+    expect(cookieValue).toContain("strada_vid=");
+    expect(cookieValue).toContain(first.id);
+
+    const second = getOrCreateVisitor();
+    expect(second.firstVisit).toBe(false);
+    expect(second.id).toBe(first.id);
+  });
+});
 
 describe("getBrowserWorkContext", () => {
   it("injects the pageview span when no active span exists", () => {
