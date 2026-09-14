@@ -45,13 +45,57 @@ async function queryAllProjects(options: AnalyticsOptions, sql: string) {
   return { slugs, rows: results.flatMap((data) => data.data ?? []) };
 }
 
+function pagesKpiSql(conditions: string[]): string {
+  return dedent`
+    SELECT
+        uniqMerge(Visits) AS unique_visitors,
+        countMerge(Hits) AS total_pageviews
+    FROM otel_analytics_pages
+    WHERE ${conditions.join("\n  AND ")}
+  `.trim();
+}
+
+function sessionsKpiSql(conditions: string[]): string {
+  return dedent`
+    SELECT
+        count() AS total_sessions,
+        sumIf(1, latest_ms = first_ms) / greatest(count(), 1) AS bounce_rate,
+        avg(latest_ms - first_ms) / 1000 AS avg_session_duration_sec
+    FROM (
+        SELECT
+            SessionId,
+            toUnixTimestamp64Milli(max(LatestHit)) AS latest_ms,
+            toUnixTimestamp64Milli(min(FirstHit)) AS first_ms
+        FROM otel_analytics_sessions
+        WHERE ${conditions.join("\n      AND ")}
+        GROUP BY SessionId
+    )
+  `.trim();
+}
+
+function firstVisitsSql(options: AnalyticsOptions): string {
+  const since = parseDuration(options.since || "7d");
+  const conditions = [
+    `SpanName = 'pageview'`,
+    `toDate(Timestamp) >= today() - INTERVAL ${since}`,
+    `SpanAttributes['visitor.first_visit'] = 'true'`,
+  ];
+  if (options.service) conditions.push(`ServiceName = '${options.service}'`);
+  if (options.domain) conditions.push(`domainWithoutWWW(SpanAttributes['url.full']) = '${options.domain}'`);
+  return dedent`
+    SELECT uniq(SpanAttributes['visitor.id']) AS first_visits
+    FROM otel_traces
+    WHERE ${conditions.join("\n  AND ")}
+  `.trim();
+}
+
 // ── Shared option factory ─────────────────────────────────────────
 
 /** Create an analytics subcommand with the standard project/org/time/domain options pre-attached. */
 function analyticsCommand(name: string, description: string) {
   return analyticsCli
     .command(name, description)
-    .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+    .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
     .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
     .option("-s, --service [name]", "Filter by service name")
     .option("--since [duration]", "Time range, e.g. 1h, 24h, 7d (default: 7d)")
@@ -357,40 +401,16 @@ analyticsCommand(
     Summary KPIs: unique visitors, pageviews, sessions, bounce rate, and
     average session duration.
 
-    Queries both otel_analytics_pages and otel_analytics_sessions MVs.
-    This gives a quick health check of browser analytics data.
+    Unique visitors come from \`visitor.id\` (cookie \`strada_vid\`, survives tabs and logout). Sessions
+    come from \`session.id\` (one tab). Query both MVs. Use this as a health
+    check of browser analytics. Same numbers as \`strada analytics overview\`.
   `,
 )
   .example('strada analytics kpis -p my-app --since 30d')
   .action(async (options: AnalyticsOptions, { console: output, process: proc }: GokeExecutionContext) => {
-    const pagesConditions = buildMvConditions(options);
-    const sessionsConditions = buildMvConditions(options);
-
-    const pagesSql = dedent`
-      SELECT
-          uniqMerge(Visits) AS unique_visitors,
-          countMerge(Hits) AS total_pageviews
-      FROM otel_analytics_pages
-      WHERE ${pagesConditions.join("\n  AND ")}
-    `.trim();
-
-    // SimpleAggregateFunction(max/min, DateTime64) columns can't be subtracted
-    // directly. Convert to milliseconds via toUnixTimestamp64Milli, then diff.
-    const sessionsSql = dedent`
-      SELECT
-          count() AS total_sessions,
-          sumIf(1, latest_ms = first_ms) / greatest(count(), 1) AS bounce_rate,
-          avg(latest_ms - first_ms) / 1000 AS avg_session_duration_sec
-      FROM (
-          SELECT
-              SessionId,
-              toUnixTimestamp64Milli(max(LatestHit)) AS latest_ms,
-              toUnixTimestamp64Milli(min(FirstHit)) AS first_ms
-          FROM otel_analytics_sessions
-          WHERE ${sessionsConditions.join("\n      AND ")}
-          GROUP BY SessionId
-      )
-    `.trim();
+    const conditions = buildMvConditions(options);
+    const pagesSql = pagesKpiSql(conditions);
+    const sessionsSql = sessionsKpiSql(conditions);
 
     const { slugs, projects } = await resolveProjects({ project: options.project, org: options.org });
 
@@ -429,7 +449,7 @@ analyticsCommand(
     const kv = (label: string, value: string) =>
       `  ${dim(label.padEnd(labelWidth))}${bold(value)}`;
 
-    output.log(kv("Visitors", formatCount(visitors)));
+    output.log(kv("Unique visitors", formatCount(visitors)));
     output.log(kv("Pageviews", formatCount(pageviews)));
     output.log(kv("Sessions", formatCount(sessions)));
     output.log(kv("Bounce rate", `${(bounceRate * 100).toFixed(1)}%`));
@@ -437,10 +457,218 @@ analyticsCommand(
     output.log("");
   });
 
+analyticsCommand(
+  "analytics overview",
+  dedent`
+    One-screen browser analytics: unique visitors, pageviews, sessions,
+    bounce rate, top pages, and top referrers.
+
+    Same numbers as \`strada analytics kpis\` plus the first few rows of
+    \`strada analytics pages\` and \`strada analytics referrers\`. Use this
+    instead of writing SQL for a daily traffic check.
+  `,
+)
+  .example("strada analytics overview -p my-app --since 7d")
+  .action(async (options: AnalyticsOptions, { console: output }: GokeExecutionContext) => {
+    const conditions = buildMvConditions(options);
+    const sinceLabel = options.since || "7d";
+    const pagesSql = pagesKpiSql(conditions);
+    const sessionsSql = sessionsKpiSql(conditions);
+    const topPagesSql = dedent`
+      SELECT
+          Pathname,
+          countMerge(Hits) AS pageviews,
+          uniqMerge(Visits) AS visitors
+      FROM otel_analytics_pages
+      WHERE ${conditions.join("\n  AND ")}
+      GROUP BY Pathname
+      ORDER BY pageviews DESC
+      LIMIT 8
+    `.trim();
+    const referrerConditions = [...conditions, `Referrer != ''`];
+    if (options.domain) referrerConditions.push(`Referrer != '${options.domain}'`);
+    const topReferrersSql = dedent`
+      SELECT
+          Referrer,
+          uniqMerge(Visits) AS visitors,
+          countMerge(Hits) AS pageviews
+      FROM otel_analytics_pages
+      WHERE ${referrerConditions.join("\n  AND ")}
+      GROUP BY Referrer
+      ORDER BY visitors DESC
+      LIMIT 8
+    `.trim();
+    const firstVisitSql = firstVisitsSql(options);
+
+    const { slugs, projects } = await resolveProjects({ project: options.project, org: options.org });
+    const [pagesResults, sessionsResults, topPagesResults, referrerResults, firstVisitResults] = await Promise.all([
+      Promise.all(projects.map((p) => queryProject(p.id, pagesSql))),
+      Promise.all(projects.map((p) => queryProject(p.id, sessionsSql))),
+      Promise.all(projects.map((p) => queryProject(p.id, topPagesSql))),
+      Promise.all(projects.map((p) => queryProject(p.id, topReferrersSql))),
+      Promise.all(projects.map((p) => queryProject(p.id, firstVisitSql))),
+    ]);
+
+    let visitors = 0;
+    let pageviews = 0;
+    for (const r of pagesResults.flatMap((d) => d.data ?? [])) {
+      visitors += Number(r.unique_visitors ?? 0);
+      pageviews += Number(r.total_pageviews ?? 0);
+    }
+    let sessions = 0;
+    let bounceRate = 0;
+    let avgDuration = 0;
+    for (const r of sessionsResults.flatMap((d) => d.data ?? [])) {
+      sessions += Number(r.total_sessions ?? 0);
+      bounceRate = Number(r.bounce_rate ?? 0);
+      avgDuration = Number(r.avg_session_duration_sec ?? 0);
+    }
+    let firstVisits = 0;
+    for (const r of firstVisitResults.flatMap((d) => d.data ?? [])) {
+      firstVisits += Number(r.first_visits ?? 0);
+    }
+
+    output.log("");
+    output.log(bold(`Overview for ${cyan(slugs.join(", "))}`) + dim(` (last ${sinceLabel})`));
+    output.log("");
+    const labelWidth = 16;
+    const kv = (label: string, value: string) =>
+      `  ${dim(label.padEnd(labelWidth))}${bold(value)}`;
+    output.log(kv("Unique visitors", formatCount(visitors)));
+    output.log(kv("First visits", formatCount(firstVisits)));
+    output.log(kv("Pageviews", formatCount(pageviews)));
+    output.log(kv("Sessions", formatCount(sessions)));
+    output.log(kv("Bounce rate", `${(bounceRate * 100).toFixed(1)}%`));
+    output.log(kv("Avg duration", formatDuration(avgDuration)));
+
+    const pageRows = topPagesResults.flatMap((d) => d.data ?? []);
+    if (pageRows.length > 0) {
+      output.log("");
+      output.log(bold("Top pages"));
+      output.log("");
+      printTable(output, {
+        columns: [
+          { key: "pathname", label: "PATHNAME", color: cyan },
+          { key: "pageviews", label: "PAGEVIEWS", align: "right", color: bold },
+          { key: "visitors", label: "VISITORS", align: "right" },
+        ],
+        rows: pageRows.map((r) => ({
+          pathname: String(r.Pathname ?? ""),
+          pageviews: formatCount(Number(r.pageviews ?? 0)),
+          visitors: formatCount(Number(r.visitors ?? 0)),
+        })),
+      });
+    }
+
+    const referrerRows = referrerResults.flatMap((d) => d.data ?? []);
+    if (referrerRows.length > 0) {
+      output.log("");
+      output.log(bold("Top referrers"));
+      output.log("");
+      printTable(output, {
+        columns: [
+          { key: "referrer", label: "REFERRER", color: cyan },
+          { key: "visitors", label: "VISITORS", align: "right", color: bold },
+          { key: "pageviews", label: "PAGEVIEWS", align: "right" },
+        ],
+        rows: referrerRows.map((r) => ({
+          referrer: String(r.Referrer ?? ""),
+          visitors: formatCount(Number(r.visitors ?? 0)),
+          pageviews: formatCount(Number(r.pageviews ?? 0)),
+        })),
+      });
+    }
+    output.log("");
+  });
+
+analyticsCommand(
+  "analytics timeseries",
+  dedent`
+    Daily unique visitors and pageviews.
+
+    Reads \`otel_analytics_pages\` grouped by Date. Use this for growth
+    charts without writing SQL. \`--since 30d\` is the usual window.
+  `,
+)
+  .example("strada analytics timeseries -p my-app --since 30d")
+  .action(async (options: AnalyticsOptions, { console: output }: GokeExecutionContext) => {
+    const conditions = buildMvConditions(options);
+    const sql = dedent`
+      SELECT
+          Date,
+          uniqMerge(Visits) AS visitors,
+          countMerge(Hits) AS pageviews
+      FROM otel_analytics_pages
+      WHERE ${conditions.join("\n  AND ")}
+      GROUP BY Date
+      ORDER BY Date ASC
+      LIMIT 90
+    `.trim();
+    const { slugs, rows } = await queryAllProjects(options, sql);
+    if (rows.length === 0) {
+      output.log(dim(`No pageview data in ${cyan(slugs.join(", "))} (last ${options.since || "7d"})`));
+      return;
+    }
+    output.log("");
+    output.log(bold(`Daily traffic in ${cyan(slugs.join(", "))}`) + dim(` (last ${options.since || "7d"})`));
+    output.log("");
+    printTable(output, {
+      columns: [
+        { key: "date", label: "DATE", color: cyan },
+        { key: "visitors", label: "VISITORS", align: "right", color: bold },
+        { key: "pageviews", label: "PAGEVIEWS", align: "right" },
+      ],
+      rows: rows.map((r) => ({
+        date: String(r.Date ?? ""),
+        visitors: formatCount(Number(r.visitors ?? 0)),
+        pageviews: formatCount(Number(r.pageviews ?? 0)),
+      })),
+    });
+    output.log("");
+  });
+
+analyticsCommand(
+  "analytics visitors",
+  dedent`
+    Unique visitors, first visits, and returning visitors.
+
+    Unique visitors are \`visitor.id\` (cookie \`strada_vid\`). First visits are unique
+    visitors whose first pageview is in the same date window as the KPIs.
+    Returning = unique minus first. Older data without \`visitor.id\` still
+    counts via \`session.id\` fallback in the pages MV.
+  `,
+)
+  .example("strada analytics visitors -p my-app --since 7d")
+  .action(async (options: AnalyticsOptions, { console: output }: GokeExecutionContext) => {
+    const conditions = buildMvConditions(options);
+    const uniqueSql = pagesKpiSql(conditions);
+    const firstSql = firstVisitsSql(options);
+    const { slugs, projects } = await resolveProjects({ project: options.project, org: options.org });
+    const [uniqueResults, firstResults] = await Promise.all([
+      Promise.all(projects.map((p) => queryProject(p.id, uniqueSql))),
+      Promise.all(projects.map((p) => queryProject(p.id, firstSql))),
+    ]);
+    let unique = 0;
+    let first = 0;
+    for (const r of uniqueResults.flatMap((d) => d.data ?? [])) unique += Number(r.unique_visitors ?? 0);
+    for (const r of firstResults.flatMap((d) => d.data ?? [])) first += Number(r.first_visits ?? 0);
+    const returning = Math.max(unique - first, 0);
+    output.log("");
+    output.log(bold(`Visitors in ${cyan(slugs.join(", "))}`) + dim(` (last ${options.since || "7d"})`));
+    output.log("");
+    const labelWidth = 16;
+    const kv = (label: string, value: string) =>
+      `  ${dim(label.padEnd(labelWidth))}${bold(value)}`;
+    output.log(kv("Unique", formatCount(unique)));
+    output.log(kv("First visits", formatCount(first)));
+    output.log(kv("Returning", formatCount(returning)));
+    output.log("");
+  });
+
 // ── analytics events ──────────────────────────────────────────────
 
 analyticsCommand("analytics events", "Top custom events by occurrence count")
-  .option("-w, --where <expr>", z.array(z.string()).describe("Raw SQL WHERE condition (repeatable, ANDed)"))
+  .option("-w, --where [expr]", z.array(z.string()).describe("Raw SQL WHERE condition (repeatable, ANDed)"))
   .action(async (options: AnalyticsOptions & { where?: string[] }, { console: output, process: proc }: GokeExecutionContext) => {
     const since = parseDuration(options.since || "7d");
     const limit = Number(options.limit) || 20;
@@ -500,7 +728,7 @@ analyticsCli
       values. This is a real-time metric, not from the materialized views.
     `,
   )
-  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+  .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by service name")
   .option("--domain [domain]", "Filter by domain")

@@ -485,7 +485,7 @@ strada query "
 
 ## Browser analytics
 
-Browser analytics in Strada is just **OTel data sent from the browser**. Pageviews are spans. Custom events are log records. Sessions are grouped by a `session.id` UUID stored in `sessionStorage`.
+Browser analytics in Strada is just **OTel data sent from the browser**. Pageviews are spans. Custom events are log records. Unique visitors use `visitor.id` (cookie `strada_vid`). Sessions use `session.id` in `sessionStorage`.
 
 ```ts
 import { initStrada, track } from "@strada.sh/sdk"
@@ -501,13 +501,14 @@ track("signup_started", { plan: "pro", source: "pricing-page" })
 track("purchase_completed", { amount: 49 })
 ```
 
-**User identification** works via a cookie called `strada_uid`. Set it when the user logs in:
+**User identification** uses cookie `strada_uid`. Unique visitors use cookie `strada_vid`. Set the account cookie when the user logs in, or call `identifyUser({ id })`:
 
 ```ts
-document.cookie = `strada_uid=${user.id}; Path=/; SameSite=Lax; Secure`
+identifyUser({ id: user.id })
+identifyUser(null) // logout: clear strada_uid, keep strada_vid
 ```
 
-The SDK reads this cookie automatically and injects `user.id` into every span, log, error, and custom event. It also propagates `user.id` to your backend via [W3C Baggage](https://www.w3.org/TR/baggage/), so backend traces within a browser request carry the same user identity.
+The SDK injects `user.id` into every span, log, error, and custom event, and propagates it to the backend via [W3C Baggage](https://www.w3.org/TR/baggage/).
 
 ### Why analytics + errors together matters
 
@@ -595,7 +596,7 @@ After `initStrada()`, all standard OTel APIs work: `trace.getTracer()`, `logs.ge
 
 The SDK automatically propagates request context so errors always show **where** they happened, without any app code.
 
-**Browser:** every span and log record gets `url.path`, `session.id`, and `user.id` from `window.location`, `sessionStorage`, and the `strada_uid` cookie.
+**Browser:** every span and log record gets `url.path`, `session.id`, `visitor.id`, and `user.id` from `window.location`, `sessionStorage`, cookie `strada_vid` (visitor), and cookie `strada_uid` (account).
 
 **Server (Node.js, Workers):** `captureException()` inside an HTTP handler automatically includes the handler's `url.path`, `http.route`, and `http.method`. This works even in **nested spans** (e.g., a DB query inside an Express handler) because the SDK propagates context from parent to child spans.
 

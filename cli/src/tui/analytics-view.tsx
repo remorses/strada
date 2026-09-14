@@ -98,7 +98,7 @@ export function AnalyticsView({ projectId, projects, services, servicesLoading, 
         <List.Item.Detail
           metadata={
             <List.Item.Detail.Metadata>
-              <List.Item.Detail.Metadata.Label title="Visitors" text={kpis.data ? formatCount(kpis.data.visitors) : "…"} />
+              <List.Item.Detail.Metadata.Label title="Unique visitors" text={kpis.data ? formatCount(kpis.data.visitors) : "…"} />
               <List.Item.Detail.Metadata.Label title="Pageviews" text={kpis.data ? formatCount(kpis.data.pageviews) : "…"} />
               <List.Item.Detail.Metadata.Label title="Sessions" text={kpis.data ? formatCount(kpis.data.sessions) : "…"} />
               <List.Item.Detail.Metadata.Label title="Bounce Rate" text={kpis.data ? `${(kpis.data.bounceRate * 100).toFixed(1)}%` : "…"} />
