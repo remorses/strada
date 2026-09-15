@@ -96,43 +96,53 @@ export async function resolveProjects(options: { project?: string[]; org?: strin
 
 // ── Project commands ──────────────────────────────────────────────
 
-const retentionDaysOption = z.coerce.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS)
+const retentionDaysOption = z.union([
+  z.literal("keep"),
+  z.coerce.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS),
+])
+
+function parseRetentionDays(value: "keep" | number | undefined): number | null | undefined {
+  if (value == null) return undefined
+  if (value === "keep") return null
+  return value
+}
 
 type RetentionOptions = {
-  tracesDays?: number
-  logsDays?: number
-  errorsDays?: number
-  metricsDays?: number
-  allDays?: number
+  tracesDays?: "keep" | number
+  logsDays?: "keep" | number
+  errorsDays?: "keep" | number
+  metricsDays?: "keep" | number
+  allDays?: "keep" | number
 }
 
 export function buildRetentionUpdate(options: RetentionOptions): Error | undefined | {
-  tracesDays?: number
-  logsDays?: number
-  errorsDays?: number
-  metricsDays?: number
+  tracesDays?: number | null
+  logsDays?: number | null
+  errorsDays?: number | null
+  metricsDays?: number | null
 } {
   const individual = {
-    tracesDays: options.tracesDays,
-    logsDays: options.logsDays,
-    errorsDays: options.errorsDays,
-    metricsDays: options.metricsDays,
+    tracesDays: parseRetentionDays(options.tracesDays),
+    logsDays: parseRetentionDays(options.logsDays),
+    errorsDays: parseRetentionDays(options.errorsDays),
+    metricsDays: parseRetentionDays(options.metricsDays),
   }
-  const hasIndividual = Object.values(individual).some((value) => value != null)
-  if (options.allDays != null && hasIndividual) {
+  const hasIndividual = Object.values(individual).some((value) => value !== undefined)
+  const allDays = parseRetentionDays(options.allDays)
+  if (allDays !== undefined && hasIndividual) {
     return new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags.")
   }
-  if (options.allDays != null) {
+  if (allDays !== undefined) {
     return {
-      tracesDays: options.allDays,
-      logsDays: options.allDays,
-      errorsDays: options.allDays,
-      metricsDays: options.allDays,
+      tracesDays: allDays,
+      logsDays: allDays,
+      errorsDays: allDays,
+      metricsDays: allDays,
     }
   }
   if (!hasIndividual) return undefined
   return Object.fromEntries(
-    Object.entries(individual).filter(([, value]) => value != null),
+    Object.entries(individual).filter(([, value]) => value !== undefined),
   )
 }
 
@@ -180,11 +190,11 @@ projectsCli
   .example('strada projects create my-app-prod')
   .example('strada projects create staging --all-days 7')
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .option("--traces-days [days]", retentionDaysOption.describe("Trace retention in days"))
-  .option("--logs-days [days]", retentionDaysOption.describe("Log and custom-event retention in days"))
-  .option("--errors-days [days]", retentionDaysOption.describe("Error retention in days"))
-  .option("--metrics-days [days]", retentionDaysOption.describe("Metrics retention in days"))
-  .option("--all-days [days]", retentionDaysOption.describe("Set all four signals to the same number of days"))
+  .option("--traces-days <days>", retentionDaysOption.describe("Trace retention in days, or keep"))
+  .option("--logs-days <days>", retentionDaysOption.describe("Log and custom-event retention in days, or keep"))
+  .option("--errors-days <days>", retentionDaysOption.describe("Error retention in days, or keep"))
+  .option("--metrics-days <days>", retentionDaysOption.describe("Metrics retention in days, or keep"))
+  .option("--all-days <days>", retentionDaysOption.describe("Set all four signals to the same number of days, or keep"))
   .action(async (slug, options, { console: output, process: proc }) => {
     const retentionBody = buildRetentionUpdate(options)
     if (retentionBody instanceof Error) {
@@ -226,8 +236,7 @@ projectsCli
 
     if (!retentionBody) {
       output.log("");
-      output.log(dim("Default retention is 14d traces, 30d logs, 90d errors, 90d metrics."));
-      output.log(dim("Change it with `strada projects retention update`."));
+      output.log(dim("Raw telemetry is kept. Set a TTL with `strada projects retention update`."));
       return
     }
 
@@ -290,7 +299,7 @@ projectsCli
     }
     output.log(`Project ${id} deleted.`);
     if (res.retention?.deployment === "in_progress") {
-      output.log(dim("Tinybird is still applying default TTL to leftover rows. Re-run `strada database upgrade` later if needed."));
+      output.log(dim("Tinybird is still removing the deleted project's TTL rule. Re-run `strada database upgrade` later if needed."));
     }
     if (res.retention?.deployment === "failed") {
       output.error(`Tinybird retention reconciliation failed: ${res.retention.error}`);
@@ -298,11 +307,15 @@ projectsCli
     }
   });
 
+function formatRetentionDays(days: number | null): string {
+  return days == null ? "keep" : String(days)
+}
+
 function printRetention(output: { log: (msg: string) => void }, retention: {
-  tracesDays: number
-  logsDays: number
-  errorsDays: number
-  metricsDays: number
+  tracesDays: number | null
+  logsDays: number | null
+  errorsDays: number | null
+  metricsDays: number | null
 }) {
   printTable(output, {
     columns: [
@@ -310,10 +323,10 @@ function printRetention(output: { log: (msg: string) => void }, retention: {
       { key: "days", label: "DAYS", color: cyan },
     ],
     rows: [
-      { signal: "traces", days: String(retention.tracesDays) },
-      { signal: "logs", days: String(retention.logsDays) },
-      { signal: "errors", days: String(retention.errorsDays) },
-      { signal: "metrics", days: String(retention.metricsDays) },
+      { signal: "traces", days: formatRetentionDays(retention.tracesDays) },
+      { signal: "logs", days: formatRetentionDays(retention.logsDays) },
+      { signal: "errors", days: formatRetentionDays(retention.errorsDays) },
+      { signal: "metrics", days: formatRetentionDays(retention.metricsDays) },
     ],
   })
 }
@@ -324,13 +337,14 @@ projectsCli
     dedent`
       Show raw telemetry retention for a project.
 
-      Traces default to 14 days, logs to 30 days, errors and metrics to 90 days.
-      \`--logs-days\` also controls custom product events stored in \`otel_logs\`.
-      Aggregated browser analytics and health-check results stay at a fixed 90 days.
-      Issue state and identified users are kept.
+      Raw traces, logs, errors, and metrics are kept unless a project sets a
+      custom TTL. \`--logs-days\` also controls custom product events stored in
+      \`otel_logs\`. Aggregated browser analytics and health-check results stay
+      at a fixed 90 days. Issue state and identified users are kept.
 
-      Per-project custom values require a Tinybird backend. Self-hosted ClickHouse
-      uses the static defaults in \`clickhouse.sql\`.
+      This shows the configured policy. Tinybird may still be applying it.
+      Per-project custom values require a Tinybird backend. Self-hosted
+      ClickHouse keeps all raw telemetry unless you add table TTL yourself.
     `,
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
@@ -344,7 +358,7 @@ projectsCli
       params: { id: project.id },
     })
     if (res instanceof Error) throw res
-    output.log(bold(`Retention for ${project.slug}:`))
+    output.log(bold(`Configured retention for ${project.slug}:`))
     output.log("")
     printRetention(output, res)
   })
@@ -355,9 +369,10 @@ projectsCli
     dedent`
       Update raw telemetry retention for a project.
 
-      Lowering a value can delete existing Tinybird rows after the schema
-      promotion. TTL deletion is asynchronous and can take a few hours.
-      Custom values require Tinybird. Analytics stay at 90 days.
+      Raw telemetry is kept by default. Setting a day count can delete existing
+      Tinybird rows after promotion. Pass \`keep\` to remove a custom TTL.
+      TTL deletion is asynchronous and can take a few hours. Custom values
+      require Tinybird. Analytics stay at 90 days.
 
       Pass either \`--all-days\` or individual signal flags. Do not mix them.
       If Tinybird is still applying the change, run \`strada database upgrade\` later.
@@ -365,13 +380,14 @@ projectsCli
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .option("--traces-days [days]", retentionDaysOption.describe("Trace retention in days"))
-  .option("--logs-days [days]", retentionDaysOption.describe("Log and custom-event retention in days"))
-  .option("--errors-days [days]", retentionDaysOption.describe("Error retention in days"))
-  .option("--metrics-days [days]", retentionDaysOption.describe("Metrics retention in days"))
-  .option("--all-days [days]", retentionDaysOption.describe("Set all four signals to the same number of days"))
+  .option("--traces-days <days>", retentionDaysOption.describe("Trace retention in days, or keep"))
+  .option("--logs-days <days>", retentionDaysOption.describe("Log and custom-event retention in days, or keep"))
+  .option("--errors-days <days>", retentionDaysOption.describe("Error retention in days, or keep"))
+  .option("--metrics-days <days>", retentionDaysOption.describe("Metrics retention in days, or keep"))
+  .option("--all-days <days>", retentionDaysOption.describe("Set all four signals to the same number of days, or keep"))
   .example("strada projects retention update --traces-days 7")
   .example("strada projects retention update -p staging --all-days 14")
+  .example("strada projects retention update --traces-days keep")
   .action(async (options, { console: output, process: proc }) => {
     const body = buildRetentionUpdate(options)
     if (body instanceof Error) {

@@ -613,9 +613,9 @@ Analytics aggregate tables use:
 
 ### Per-project retention
 
-Raw Tinybird retention is stored on each D1 `project` row and rendered into conditional `ENGINE_TTL` rules by `cli/src/tinybird-retention.ts`. Defaults are 14 days for traces, 30 days for logs, and 90 days for errors and metrics. Custom values are limited to 1 through 365 days.
+Raw Tinybird retention is stored on each D1 `project` row and rendered into conditional `ENGINE_TTL` rules by `cli/src/tinybird-retention.ts`. Raw traces, logs, errors, and metrics are kept unless a project sets a custom day count. Custom values are limited to 1 through 365 days.
 
-Keep a valid static default `ENGINE_TTL` in every raw datasource. The renderer replaces that line only when an org has custom project values. Never add `FORWARD_QUERY` for a TTL-only change because it forces a rewrite. Never enable `ttl_only_drop_parts=1`; projects with different retention share date partitions, so short-retention rows must be removable before the whole part expires.
+Do not put a static default `ENGINE_TTL` on raw datasources. The renderer inserts that line only for custom project values. Never add `FORWARD_QUERY` for a TTL-only change because it forces a rewrite. Never enable `ttl_only_drop_parts=1`; projects with different retention share date partitions, so short-retention rows must be removable before the whole part expires.
 
 `ENGINE_TTL` on `DateTime64` columns must use `toDateTime(column)`. See the DateTime64 TTL lesson under Cheap Tinybird schema evolution.
 

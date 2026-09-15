@@ -69,42 +69,87 @@
           },
           "tracesDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 365,
-            "description": "Trace retention in days"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
+            "description": "Trace retention in days, or keep"
           },
           "logsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 365,
-            "description": "Log and custom-event retention in days"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
+            "description": "Log and custom-event retention in days, or keep"
           },
           "errorsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 365,
-            "description": "Error retention in days"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
+            "description": "Error retention in days, or keep"
           },
           "metricsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 365,
-            "description": "Metrics retention in days"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
+            "description": "Metrics retention in days, or keep"
           },
           "allDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 365,
-            "description": "Set all four signals to the same number of days"
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
+            "description": "Set all four signals to the same number of days, or keep"
           }
         },
         "required": [
-          "slug"
+          "slug",
+          "tracesDays",
+          "logsDays",
+          "errorsDays",
+          "metricsDays",
+          "allDays"
         ]
       }
     },
@@ -126,7 +171,7 @@
     },
     {
       "name": "projects_retention",
-      "description": "Show raw telemetry retention for a project.\n\nTraces default to 14 days, logs to 30 days, errors and metrics to 90 days.\n`--logs-days` also controls custom product events stored in `otel_logs`.\nAggregated browser analytics and health-check results stay at a fixed 90 days.\nIssue state and identified users are kept.\n\nPer-project custom values require a Tinybird backend. Self-hosted ClickHouse\nuses the static defaults in `clickhouse.sql`.",
+      "description": "Show raw telemetry retention for a project.\n\nRaw traces, logs, errors, and metrics are kept unless a project sets a\ncustom TTL. `--logs-days` also controls custom product events stored in\n`otel_logs`. Aggregated browser analytics and health-check results stay\nat a fixed 90 days. Issue state and identified users are kept.\n\nThis shows the configured policy. Tinybird may still be applying it.\nPer-project custom values require a Tinybird backend. Self-hosted\nClickHouse keeps all raw telemetry unless you add table TTL yourself.",
       "inputSchema": {
         "type": "object",
         "properties": {

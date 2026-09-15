@@ -10,7 +10,8 @@ import { env } from 'cloudflare:workers'
 import { trace, getLogger } from '@strada.sh/sdk'
 import { deployTinybirdResources, getDeploymentManagedReadToken, TinybirdClient, TINYBIRD_DATASOURCES } from 'strada/src/tinybird'
 import {
-  isDefaultRetention,
+  hasCustomRetention,
+  mergeProjectRetention,
   renderTinybirdRetention,
   RETENTION_MAX_DAYS,
   RETENTION_MIN_DAYS,
@@ -66,7 +67,7 @@ const createProjectRequestSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
 })
 
-const retentionDaysSchema = z.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS)
+const retentionDaysSchema = z.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS).nullable()
 
 const updateProjectRetentionRequestSchema = z.object({
   tracesDays: retentionDaysSchema.optional(),
@@ -74,7 +75,7 @@ const updateProjectRetentionRequestSchema = z.object({
   errorsDays: retentionDaysSchema.optional(),
   metricsDays: retentionDaysSchema.optional(),
 }).refine(
-  (body) => body.tracesDays != null || body.logsDays != null || body.errorsDays != null || body.metricsDays != null,
+  (body) => Object.values(body).some((value) => value !== undefined),
   { message: 'pass at least one retention field' },
 )
 
@@ -253,10 +254,10 @@ async function writeIssueState(ctx: { dbConfig: DbConfig; row: IssueStateRow }):
 
 function toProjectRetention(project: {
   id: string
-  tracesRetentionDays: number
-  logsRetentionDays: number
-  errorsRetentionDays: number
-  metricsRetentionDays: number
+  tracesRetentionDays: number | null
+  logsRetentionDays: number | null
+  errorsRetentionDays: number | null
+  metricsRetentionDays: number | null
 }): ProjectRetention {
   return {
     id: project.id,
@@ -600,7 +601,7 @@ export const api = new Spiceflow({ tracer })
           throw json({ error: 'forbidden' }, { status: 403 })
         }
         const db = getDb()
-        const needsRetentionReconcile = proj.database?.backend === 'tinybird' && !isDefaultRetention(toProjectRetention(proj))
+        const needsRetentionReconcile = proj.database?.backend === 'tinybird' && hasCustomRetention(toProjectRetention(proj))
         await db.delete(schema.project).where(orm.eq(schema.project.id, params.id)).limit(1)
         if (!needsRetentionReconcile || !proj.database) {
           return { ok: true, retention: { deployment: 'applied' as const } }
@@ -647,18 +648,15 @@ export const api = new Spiceflow({ tracer })
         }
         if (proj.database?.backend !== 'tinybird') {
           throw json({
-            error: 'Per-project retention updates require a Tinybird backend. Self-hosted ClickHouse currently uses static default TTLs.',
+            error: 'Per-project retention updates require a Tinybird backend. Self-hosted ClickHouse keeps all raw telemetry unless you add table TTL yourself.',
           }, { status: 400 })
         }
 
         const body = await request.json()
-        const nextRetention: ProjectRetention = {
-          id: proj.id,
-          tracesRetentionDays: body.tracesDays ?? proj.tracesRetentionDays,
-          logsRetentionDays: body.logsDays ?? proj.logsRetentionDays,
-          errorsRetentionDays: body.errorsDays ?? proj.errorsRetentionDays,
-          metricsRetentionDays: body.metricsDays ?? proj.metricsRetentionDays,
-        }
+        const nextRetention = mergeProjectRetention({
+          current: toProjectRetention(proj),
+          update: body,
+        })
         const db = getDb()
         await db.update(schema.project)
           .set({

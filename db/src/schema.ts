@@ -239,22 +239,10 @@ export const project = s.sqliteTable(
     // Comma-joined datasource names the JWT was created with. If TINYBIRD_DATASOURCES
     // changes (new table added), this won't match and the JWT gets regenerated.
     tinybirdJwtDatasources: s.text("tinybird_jwt_datasources"),
-    tracesRetentionDays: s
-      .integer("traces_retention_days", { mode: "number" })
-      .notNull()
-      .default(14),
-    logsRetentionDays: s
-      .integer("logs_retention_days", { mode: "number" })
-      .notNull()
-      .default(30),
-    errorsRetentionDays: s
-      .integer("errors_retention_days", { mode: "number" })
-      .notNull()
-      .default(90),
-    metricsRetentionDays: s
-      .integer("metrics_retention_days", { mode: "number" })
-      .notNull()
-      .default(90),
+    tracesRetentionDays: s.integer("traces_retention_days", { mode: "number" }),
+    logsRetentionDays: s.integer("logs_retention_days", { mode: "number" }),
+    errorsRetentionDays: s.integer("errors_retention_days", { mode: "number" }),
+    metricsRetentionDays: s.integer("metrics_retention_days", { mode: "number" }),
     createdAt: epochMs("created_at")
       .notNull()
       .$defaultFn(() => Date.now()),
@@ -268,19 +256,19 @@ export const project = s.sqliteTable(
     s.uniqueIndex("project_org_id_slug_unique").on(table.orgId, table.slug),
     s.check(
       "project_traces_retention_days_check",
-      orm.sql`${table.tracesRetentionDays} BETWEEN 1 AND 365`,
+      orm.sql`${table.tracesRetentionDays} IS NULL OR ${table.tracesRetentionDays} BETWEEN 1 AND 365`,
     ),
     s.check(
       "project_logs_retention_days_check",
-      orm.sql`${table.logsRetentionDays} BETWEEN 1 AND 365`,
+      orm.sql`${table.logsRetentionDays} IS NULL OR ${table.logsRetentionDays} BETWEEN 1 AND 365`,
     ),
     s.check(
       "project_errors_retention_days_check",
-      orm.sql`${table.errorsRetentionDays} BETWEEN 1 AND 365`,
+      orm.sql`${table.errorsRetentionDays} IS NULL OR ${table.errorsRetentionDays} BETWEEN 1 AND 365`,
     ),
     s.check(
       "project_metrics_retention_days_check",
-      orm.sql`${table.metricsRetentionDays} BETWEEN 1 AND 365`,
+      orm.sql`${table.metricsRetentionDays} IS NULL OR ${table.metricsRetentionDays} BETWEEN 1 AND 365`,
     ),
   ],
 );

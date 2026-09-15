@@ -6,8 +6,9 @@
 -- Database: create your own or use `default`. The worker's CLICKHOUSE_DATABASE
 -- env var controls which database it writes to.
 --
--- TTL clauses apply only to new tables. CREATE TABLE IF NOT EXISTS does not
--- change an existing table. Per-project retention is Tinybird-only.
+-- Raw traces, logs, errors, and metrics keep all rows by default.
+-- Per-project custom TTL is Tinybird-only. Analytics and health checks keep
+-- a fixed 90-day TTL. CREATE TABLE IF NOT EXISTS does not change existing tables.
 
 -- ============================================================================
 -- TRACES
@@ -53,7 +54,6 @@ CREATE TABLE IF NOT EXISTS otel_traces
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
 ORDER BY (ProjectId, ServiceName, SpanName, toDateTime(Timestamp))
-TTL toDateTime(Timestamp) + toIntervalDay(14)
 SETTINGS index_granularity = 8192;
 
 
@@ -246,7 +246,6 @@ CREATE TABLE IF NOT EXISTS otel_logs
 ENGINE = MergeTree
 PARTITION BY toDate(TimestampTime)
 ORDER BY (ProjectId, ServiceName, TimestampTime, Timestamp)
-TTL TimestampTime + toIntervalDay(30)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================
@@ -288,7 +287,6 @@ CREATE TABLE IF NOT EXISTS otel_errors
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
 ORDER BY (ProjectId, ServiceName, FingerprintHash, toDateTime(Timestamp))
-TTL toDateTime(Timestamp) + toIntervalDay(90)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================
@@ -362,7 +360,6 @@ CREATE TABLE IF NOT EXISTS otel_metrics_gauge
 ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
 ORDER BY (ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================
@@ -406,7 +403,6 @@ CREATE TABLE IF NOT EXISTS otel_metrics_sum
 ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
 ORDER BY (ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================
@@ -454,7 +450,6 @@ CREATE TABLE IF NOT EXISTS otel_metrics_histogram
 ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
 ORDER BY (ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================
@@ -506,7 +501,6 @@ CREATE TABLE IF NOT EXISTS otel_metrics_exponential_histogram
 ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
 ORDER BY (ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
-TTL toDateTime(TimeUnix) + toIntervalDay(90)
 SETTINGS index_granularity = 8192;
 
 -- ============================================================================

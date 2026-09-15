@@ -72,10 +72,10 @@ describe("project retention API", () => {
     expect({ status: response.status, body: await response.json() }).toMatchInlineSnapshot(`
       {
         "body": {
-          "errorsDays": 90,
-          "logsDays": 30,
-          "metricsDays": 90,
-          "tracesDays": 14,
+          "errorsDays": null,
+          "logsDays": null,
+          "metricsDays": null,
+          "tracesDays": null,
         },
         "status": 200,
       }
@@ -112,7 +112,21 @@ describe("project retention API", () => {
       method: "PUT",
       body: { tracesDays: 0 },
     });
-    expect([emptyResponse.status, invalidResponse.status]).toEqual([400, 400]);
+    const keepResponse = await requestProjectRetention({
+      token: "admin-token",
+      method: "PUT",
+      body: { tracesDays: null },
+    });
+    const keepAllResponse = await requestProjectRetention({
+      token: "admin-token",
+      method: "PUT",
+      body: { tracesDays: null, logsDays: null, errorsDays: null, metricsDays: null },
+    });
+    expect([emptyResponse.status, invalidResponse.status, keepResponse.status, keepAllResponse.status]).toEqual([400, 400, 400, 400]);
+    const keepBody = await keepResponse.json() as { error?: string }
+    const keepAllBody = await keepAllResponse.json() as { error?: string }
+    expect(keepBody.error).not.toBe('pass at least one retention field')
+    expect(keepAllBody.error).not.toBe('pass at least one retention field')
   });
 
   test("does not store inert custom values for ClickHouse", async () => {
@@ -126,7 +140,8 @@ describe("project retention API", () => {
     ).bind("project-one").first<{ traces_retention_days: number }>();
     expect({ status: response.status, tracesDays: row?.traces_retention_days }).toEqual({
       status: 400,
-      tracesDays: 14,
+      tracesDays: null,
     });
   });
+
 });

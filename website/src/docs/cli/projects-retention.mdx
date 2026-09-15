@@ -12,13 +12,14 @@ prompt: |
 
 Show raw telemetry retention for a project.
 
-Traces default to 14 days, logs to 30 days, errors and metrics to 90 days.
-`--logs-days` also controls custom product events stored in `otel_logs`.
-Aggregated browser analytics and health-check results stay at a fixed 90 days.
-Issue state and identified users are kept.
+Raw traces, logs, errors, and metrics are kept unless a project sets a
+custom TTL. `--logs-days` also controls custom product events stored in
+`otel_logs`. Aggregated browser analytics and health-check results stay
+at a fixed 90 days. Issue state and identified users are kept.
 
-Per-project custom values require a Tinybird backend. Self-hosted ClickHouse
-uses the static defaults in `clickhouse.sql`.
+This shows the configured policy. Tinybird may still be applying it.
+Per-project custom values require a Tinybird backend. Self-hosted
+ClickHouse keeps all raw telemetry unless you add table TTL yourself.
 
 ## Usage
 

@@ -13,15 +13,15 @@ describe("renderTinybirdRetention", () => {
   test("casts DateTime64 columns to DateTime in TTL expressions", () => {
     const rendered = renderTinybirdRetention({
       datasources: [
-        { name: "otel_traces", content: 'ENGINE_TTL "Timestamp + toIntervalDay(14)"' },
-        { name: "otel_logs", content: 'ENGINE_TTL "TimestampTime + toIntervalDay(30)"' },
-        { name: "otel_metrics_gauge", content: 'ENGINE_TTL "TimeUnix + toIntervalDay(90)"' },
+        { name: "otel_traces", content: 'ENGINE_SORTING_KEY "ProjectId"\nENGINE_SETTINGS index_granularity=8192' },
+        { name: "otel_logs", content: 'ENGINE_SORTING_KEY "ProjectId"\nENGINE_SETTINGS index_granularity=8192' },
+        { name: "otel_metrics_gauge", content: 'ENGINE_SORTING_KEY "ProjectId"\nENGINE_SETTINGS index_granularity=8192' },
       ],
       projects: [{
         id: "project-a",
         tracesRetentionDays: 7,
-        logsRetentionDays: 30,
-        errorsRetentionDays: 90,
+        logsRetentionDays: null,
+        errorsRetentionDays: null,
         metricsRetentionDays: 60,
       }],
     });
@@ -33,15 +33,15 @@ describe("renderTinybirdRetention", () => {
       [
         [
           "otel_traces",
-          "toDateTime(Timestamp) + toIntervalDay(7) DELETE WHERE ProjectId IN ('project-a'), toDateTime(Timestamp) + toIntervalDay(14) DELETE WHERE ProjectId NOT IN ('project-a')",
+          "toDateTime(Timestamp) + toIntervalDay(7) DELETE WHERE ProjectId IN ('project-a')",
         ],
         [
           "otel_logs",
-          "TimestampTime + toIntervalDay(30)",
+          null,
         ],
         [
           "otel_metrics_gauge",
-          "toDateTime(TimeUnix) + toIntervalDay(60) DELETE WHERE ProjectId IN ('project-a'), toDateTime(TimeUnix) + toIntervalDay(90) DELETE WHERE ProjectId NOT IN ('project-a')",
+          "toDateTime(TimeUnix) + toIntervalDay(60) DELETE WHERE ProjectId IN ('project-a')",
         ],
       ]
     `);

@@ -101,11 +101,11 @@ Tinybird supports ClickHouse's native **TTL** (Time To Live) per data source. Yo
 
 | Data | Default | Notes |
 |------|---------|-------|
-| Traces | 14 days | High-volume spans and raw browser pageviews expire first |
-| Logs | 30 days | This also controls custom product events stored in `otel_logs` |
-| Errors | 90 days | Keeps issue history after related traces and logs expire |
-| Metrics | 90 days | Applies to gauge, sum, histogram, and exponential histogram rows |
-| Browser analytics | 90 days | Fixed aggregates that can outlive raw pageview traces |
+| Traces | Kept | Set a custom TTL only if you want spans to expire |
+| Logs | Kept | This also controls custom product events stored in `otel_logs` |
+| Errors | Kept | Set a custom TTL only if you want extracted exceptions to expire |
+| Metrics | Kept | Applies to gauge, sum, histogram, and exponential histogram rows |
+| Browser analytics | 90 days | Fixed aggregates, independent from raw traces |
 | Health checks | 90 days | Fixed result history |
 | Issue state and users | Kept | Small mutable tables are not expired |
 
@@ -115,13 +115,24 @@ Change a Tinybird project's raw telemetry retention from the CLI:
 strada projects retention -p api
 strada projects retention update -p api --traces-days 7 --logs-days 14
 strada projects retention update -p staging --all-days 7
+strada projects retention update --traces-days keep
 ```
 
-Strada generates conditional `ENGINE_TTL` rules for each `ProjectId`. Tinybird applies TTL-only changes as an in-place `ALTER` after promotion. Expired rows are removed during background merges, so deletion is not immediate.
+Strada generates conditional `ENGINE_TTL` rules only for projects that set a custom day count. Tinybird applies TTL-only changes as an in-place `ALTER` after promotion. Expired rows are removed during background merges, so deletion is not immediate.
 
-Lowering retention affects existing data. Increasing it cannot restore rows that Tinybird already deleted. Values must be between 1 and 365 days.
+Setting a custom TTL can delete existing data. Pass `keep` to remove that custom TTL. Values must be between 1 and 365 days.
 
-Per-project custom retention currently requires Tinybird. `clickhouse.sql` sets the same static defaults for new self-hosted ClickHouse tables, but `CREATE TABLE IF NOT EXISTS` does not update TTL on existing tables.
+Per-project custom retention currently requires Tinybird. Self-hosted ClickHouse keeps all raw telemetry unless you add table TTL yourself. Existing ClickHouse tables created with the earlier default TTLs need this SQL:
+
+```sql
+ALTER TABLE otel_traces REMOVE TTL;
+ALTER TABLE otel_logs REMOVE TTL;
+ALTER TABLE otel_errors REMOVE TTL;
+ALTER TABLE otel_metrics_gauge REMOVE TTL;
+ALTER TABLE otel_metrics_sum REMOVE TTL;
+ALTER TABLE otel_metrics_histogram REMOVE TTL;
+ALTER TABLE otel_metrics_exponential_histogram REMOVE TTL;
+```
 
 ## Key takeaways
 

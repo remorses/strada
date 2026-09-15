@@ -95,6 +95,16 @@ describe("mcp command", () => {
       new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags."),
     );
     expect(buildRetentionUpdate({ logsDays: 14 })).toEqual({ logsDays: 14 });
+    expect(buildRetentionUpdate({ tracesDays: "keep" })).toEqual({ tracesDays: null });
+    expect(buildRetentionUpdate({ allDays: "keep" })).toEqual({
+      tracesDays: null,
+      logsDays: null,
+      errorsDays: null,
+      metricsDays: null,
+    });
+    expect(buildRetentionUpdate({ allDays: "keep", tracesDays: 7 })).toEqual(
+      new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags."),
+    );
   });
 
   test("optional CLI flags are optional in MCP schemas", async () => {

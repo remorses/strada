@@ -27,7 +27,6 @@ SCHEMA >
 ENGINE "MergeTree"
 ENGINE_PARTITION_KEY "toDate(TimestampTime)"
 ENGINE_SORTING_KEY "ProjectId, ServiceName, TimestampTime, Timestamp"
-ENGINE_TTL "TimestampTime + toIntervalDay(30)"
 ENGINE_SETTINGS index_granularity=8192
 
 INDEXES >

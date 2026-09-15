@@ -3,9 +3,9 @@ export { cli, isMcpCommand } from "./cli.ts";
 export { loadTinybirdResources } from "./tinybird-resources.ts";
 export { createApiClient } from "./api-client.ts";
 export {
-  DEFAULT_RETENTION_DAYS,
   extractEngineTtl,
-  isDefaultRetention,
+  hasCustomRetention,
+  mergeProjectRetention,
   renderTinybirdRetention,
   RETENTION_MAX_DAYS,
   RETENTION_MIN_DAYS,
