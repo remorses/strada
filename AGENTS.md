@@ -171,6 +171,23 @@ The `database upgrade` command hits the **production** website by default (`http
 
 For self-hosted ClickHouse, add the `CREATE TABLE` DDL to `clickhouse.sql`. Users run it manually against their database.
 
+### Cheap Tinybird schema evolution only
+
+For existing Tinybird resources, only ship changes that `tb deploy --check` reports as in-place `ALTER`. Stop if the plan reports a rewrite, populate, or backfill unless a slow historical rebuild was explicitly accepted. A successful check is not enough; read its migration strategy.
+
+Automatic Data Source `ALTER` changes are limited to adding or removing columns, making columns nullable, adding/modifying/removing TTLs, and adding or dropping indexes. These changes appear only after promotion to live, not in staging. Never add a `FORWARD_QUERY` to an ALTER-class change because it forces a full rewrite.
+
+For an existing Materialized View that must write a new column:
+
+1. Deploy and promote the target Data Source column by itself as an automatic `ALTER`.
+2. In a separate deployment, update the pipe SQL with `DEPLOYMENT_METHOD alter`.
+
+`DEPLOYMENT_METHOD alter` changes only the existing MV query through `ALTER TABLE ... MODIFY QUERY`. It does not add target columns or backfill old rows. Existing rows keep their old values, and only new origin inserts use the new computation. Never combine a target schema change and an MV query change in one deployment.
+
+Do not change sorting, partition, sampling, or primary keys, engine type, or engine settings. Do not use `FORWARD_QUERY` unless a full target rewrite is explicitly required and accepted.
+
+Lesson from `FirstVisits`: adding `AggregateFunction(uniq, String)` to `otel_analytics_pages` **and** changing `otel_analytics_pages_mv` in the same deploy made Tinybird re-run the MV over all historical `otel_traces`. `strada database upgrade` waited 45 minutes and timed out. The Tinybird job keeps running server-side. Do not start another schema deploy while one is in progress.
+
 ## Architecture
 
 Four packages in a pnpm monorepo, sharing a single D1 database:
