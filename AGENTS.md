@@ -140,6 +140,14 @@ Migrations are hand-written SQL files in `db/drizzle/`. Drizzle-orm does not rea
 
 D1 splits statements on **semicolons**. The `--> statement-breakpoint` comments in drizzle-kit output are just visual separators; you can keep or remove them.
 
+SQLite/D1 does not support `ALTER TABLE ... ADD CONSTRAINT`. Put `CHECK` on the new column in the same `ADD COLUMN` statement:
+
+```sql
+ALTER TABLE `project` ADD COLUMN `traces_retention_days` integer DEFAULT 14 NOT NULL CHECK (`traces_retention_days` BETWEEN 1 AND 365);
+```
+
+Lesson from `0012_add-project-retention.sql`: drizzle-kit emitted `ADD CONSTRAINT` after `ADD COLUMN`. Preview D1 rejected it, and `strada database upgrade` then failed because the worker `SELECT` included those columns.
+
 See the `drizzle` skill's `cloudflare.md` for the full D1 migration workflow.
 
 ## Upgrading ClickHouse/Tinybird schema
@@ -169,6 +177,16 @@ Tinybird deployment API
 
 The `database upgrade` command hits the **production** website by default (`https://strada.sh`). If you only deployed to preview, upgrade won't see the new schema. Always deploy prod before running upgrade.
 
+Tinybird **Staging** is not Cloudflare preview. `strada database upgrade` always deploys the **org Tinybird workspace** (Personal → Tinybird org `strada.sh`, workspace `strada`, `api.eu-west-1.aws.tinybird.co`). Inside that workspace a deploy is:
+
+```
+POST /v1/deploy  ►  Staging candidate  ►  wait data_ready  ►  POST .../set-live  ►  Live
+```
+
+Tinybird keeps the **previous Live** as Staging after promotion, for rollback. Do not Discard or Promote that leftover. `deployTinybirdResources()` ignores `status === 'staging'`. Only `calculating` and `data_ready` are an in-flight deploy. Tinybird allows **one** in-flight staging candidate. Do not start another schema deploy while one is in progress.
+
+Git push does nothing on Tinybird. The UI only changes after website **prod** deploy plus `strada database upgrade`.
+
 For self-hosted ClickHouse, add the `CREATE TABLE` DDL to `clickhouse.sql`. Users run it manually against their database.
 
 ### Cheap Tinybird schema evolution only
@@ -191,6 +209,8 @@ Do not change sorting, partition, sampling, or primary keys, engine type, or eng
 Lesson from `FirstVisits`: adding `AggregateFunction(uniq, String)` to `otel_analytics_pages` and changing `otel_analytics_pages_mv` without `DEPLOYMENT_METHOD alter` made Tinybird re-run the MV over all historical `otel_traces`. Adding the column alone also failed because Tinybird requires exact target/query column matching. The valid cheap deployment combines the automatic Data Source `ALTER` with the MV query change and `DEPLOYMENT_METHOD alter`.
 
 Lesson from `BotName`: putting a new column in `ENGINE_SORTING_KEY` is not an `ALTER`. Tinybird rewrites the table. Live `otel_analytics_pages` has no `BotName`. Do not add it. Keep the live sorting key.
+
+Lesson from DateTime64 TTL: ClickHouse rejects `DateTime64 + INTERVAL`. Cast with `toDateTime(Timestamp)` / `toDateTime(TimeUnix)`. `otel_logs.TimestampTime` is already `DateTime`, so leave it uncast. Tinybird reports this as `UNKNOWN_FUNCTION` / `ILLEGAL_TYPE_OF_ARGUMENT` during `createDeployment`, before promotion.
 
 ## Architecture
 
@@ -596,6 +616,8 @@ Analytics aggregate tables use:
 Raw Tinybird retention is stored on each D1 `project` row and rendered into conditional `ENGINE_TTL` rules by `cli/src/tinybird-retention.ts`. Defaults are 14 days for traces, 30 days for logs, and 90 days for errors and metrics. Custom values are limited to 1 through 365 days.
 
 Keep a valid static default `ENGINE_TTL` in every raw datasource. The renderer replaces that line only when an org has custom project values. Never add `FORWARD_QUERY` for a TTL-only change because it forces a rewrite. Never enable `ttl_only_drop_parts=1`; projects with different retention share date partitions, so short-retention rows must be removable before the whole part expires.
+
+`ENGINE_TTL` on `DateTime64` columns must use `toDateTime(column)`. See the DateTime64 TTL lesson under Cheap Tinybird schema evolution.
 
 Analytics and health checks keep their fixed 90-day TTL. `otel_issue_state` and `otel_users` have no TTL.
 
