@@ -80,6 +80,7 @@
             "icon": "lucide:terminal",
             "pages": [
               "docs/cli/index",
+              "docs/cli/mcp",
               "docs/cli/login",
               "docs/cli/logout",
               "docs/cli/whoami",
@@ -134,6 +135,9 @@
               "docs/cli/analytics-referrers",
               "docs/cli/analytics-languages",
               "docs/cli/analytics-kpis",
+              "docs/cli/analytics-overview",
+              "docs/cli/analytics-timeseries",
+              "docs/cli/analytics-visitors",
               "docs/cli/analytics-events",
               "docs/cli/analytics-realtime"
             ]
@@ -183,6 +187,23 @@
             "group": "Organizations",
             "icon": "lucide:building-2",
             "pages": ["docs/cli/orgs-list"]
+          }
+        ]
+      },
+      {
+        "tab": "MCP",
+        "icon": "lucide:plug",
+        "mcp": "mcp-tools.json",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "icon": "lucide:rocket",
+            "pages": ["docs/mcp/index", "docs/mcp/install"]
+          },
+          {
+            "group": "Tools",
+            "icon": "lucide:wrench",
+            "pages": ["..."]
           }
         ]
       }

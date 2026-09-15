@@ -53,10 +53,17 @@ export interface TinybirdDeployment {
   live?: boolean;
 }
 
+export interface TinybirdDeploymentFeedback {
+  resource: string | null;
+  level: string;
+  message: string;
+}
+
 export interface TinybirdDeploymentDetails extends TinybirdDeployment {
   new_datasource_names?: string[];
   new_pipe_names?: string[];
   errors?: TinybirdDeploymentError[];
+  feedback?: TinybirdDeploymentFeedback[];
 }
 
 export interface TinybirdDeployResponse {
@@ -174,6 +181,14 @@ function optionalString({ record, key }: { record: Record<string, unknown>; key:
   return typeof value === "string" ? value : undefined;
 }
 
+// Tinybird list/status payloads use numeric ids (`8`), while /v1/deploy uses strings (`"8"`).
+function optionalId({ record, key }: { record: Record<string, unknown>; key: string }) {
+  const value = record[key];
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
 function optionalBoolean({ record, key }: { record: Record<string, unknown>; key: string }) {
   const value = record[key];
   return typeof value === "boolean" ? value : undefined;
@@ -273,7 +288,7 @@ function parseDeployment({ value }: { value: unknown }) {
   const record = expectObject({ value, operation: "deployment" });
   if (record instanceof Error) return record;
 
-  const id = optionalString({ record, key: "id" });
+  const id = optionalId({ record, key: "id" });
   const status = optionalString({ record, key: "status" });
   if (!id || !status) {
     return new TinybirdResponseShapeError({
@@ -289,6 +304,37 @@ function parseDeployment({ value }: { value: unknown }) {
   } satisfies TinybirdDeployment;
 }
 
+function parseDeploymentFeedback({ value }: { value: unknown }) {
+  const record = expectObject({ value, operation: "deployment feedback item" });
+  if (record instanceof Error) return record;
+  const message = optionalString({ record, key: "message" });
+  if (!message) return null;
+  const resource = record.resource;
+  return {
+    resource: typeof resource === "string" ? resource : null,
+    level: optionalString({ record, key: "level" }) || "INFO",
+    message,
+  } satisfies TinybirdDeploymentFeedback;
+}
+
+function parseDeploymentFeedbackList({ record }: { record: Record<string, unknown> }) {
+  const value = record.feedback;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    return new TinybirdResponseShapeError({
+      operation: "deployment details.feedback",
+      details: `Expected feedback to be an array but received ${JSON.stringify(value)}. Response body: ${JSON.stringify(record).slice(0, 1200)}`,
+    })
+  }
+  const feedback: TinybirdDeploymentFeedback[] = [];
+  for (const item of value) {
+    const parsed = parseDeploymentFeedback({ value: item });
+    if (parsed instanceof Error) return parsed;
+    if (parsed) feedback.push(parsed);
+  }
+  return feedback;
+}
+
 function parseDeploymentDetails({ value }: { value: unknown }) {
   const deployment = parseDeployment({ value });
   if (deployment instanceof Error) return deployment;
@@ -298,12 +344,15 @@ function parseDeploymentDetails({ value }: { value: unknown }) {
 
   const errors = parseDeploymentErrors({ record, key: "errors" });
   if (errors instanceof Error) return errors;
+  const feedback = parseDeploymentFeedbackList({ record });
+  if (feedback instanceof Error) return feedback;
 
   return {
     ...deployment,
     new_datasource_names: optionalStringArray({ record, key: "new_datasource_names" }),
     new_pipe_names: optionalStringArray({ record, key: "new_pipe_names" }),
     errors,
+    feedback,
   } satisfies TinybirdDeploymentDetails;
 }
 
@@ -539,11 +588,49 @@ export class TinybirdClient {
     }
 
     const query = allowDestructive ? "?allow_destructive_operations=true" : "";
-    return this.requestJson({
-      path: `/v1/deploy${query}`,
-      parser: parseDeployResponse,
-      init: { method: "POST", body: formData },
-    });
+    const path = `/v1/deploy${query}`;
+    const response = await this.request({ path, init: { method: "POST", body: formData } });
+    if (response instanceof Error) return response;
+
+    const text = await response.text().catch((cause: unknown) => new TinybirdRequestError({
+      operation: path,
+      baseUrl: response.url || `${this.baseUrl}${path}`,
+      details: "Failed to read the Tinybird deploy response body.",
+      cause,
+    }));
+    if (text instanceof Error) return text;
+
+    let value: unknown
+    try {
+      value = JSON.parse(text)
+    } catch (cause) {
+      if (!response.ok) {
+        return new TinybirdRequestError({
+          operation: path,
+          baseUrl: response.url || `${this.baseUrl}${path}`,
+          details: `HTTP ${response.status} ${response.statusText}. ${formatBodyForError(text)}`,
+          cause: new Error(`HTTP ${response.status} ${response.statusText}: ${text}`),
+        })
+      }
+      return new TinybirdRequestError({
+        operation: `${path} json`,
+        baseUrl: response.url || `${this.baseUrl}${path}`,
+        details: "Tinybird returned a non-JSON response for a JSON endpoint.",
+        cause,
+      })
+    }
+
+    const parsed = parseDeployResponse({ value })
+    if (!(parsed instanceof Error)) return parsed
+    if (!response.ok) {
+      return new TinybirdRequestError({
+        operation: path,
+        baseUrl: response.url || `${this.baseUrl}${path}`,
+        details: `HTTP ${response.status} ${response.statusText}. ${formatBodyForError(text)}`,
+        cause: new Error(`HTTP ${response.status} ${response.statusText}: ${text}`),
+      })
+    }
+    return parsed
   }
 
   async getDeploymentStatus({ deploymentId }: { deploymentId: string }) {
@@ -687,7 +774,15 @@ export async function deployTinybirdResources({
   const deployResponse = await client.createDeployment({ datasources, pipes, allowDestructive })
   if (deployResponse instanceof Error) return deployResponse
   if (deployResponse.result === 'failed') {
-    return new Error(deployResponse.error || deployResponse.errors?.map((error) => error.error).join('\n') || 'Tinybird deployment failed')
+    const feedbackText = deployResponse.deployment?.feedback?.map((item) => item.message).join('\n') || ''
+    const errorText = [deployResponse.error, feedbackText, ...(deployResponse.errors ?? []).map((error) => error.error)].filter(Boolean).join('\n')
+    // Tinybird's failed create body includes a phantom next-id, not the live
+    // in-flight one. GET /v1/deployments/{that id} 404s. Return in_progress so
+    // the CLI retries until Tinybird finishes the real deploy.
+    if (/already a deployment in progress/i.test(errorText)) {
+      return { result: 'in_progress' }
+    }
+    return new Error(errorText || 'Tinybird deployment failed')
   }
   if (deployResponse.result === 'no_changes') {
     return { result: 'no_changes' }
