@@ -725,8 +725,12 @@ export async function deployTinybirdResources({
       if (statusResponse instanceof Error) return statusResponse
       const status = statusResponse.deployment.status
       if (status === 'data_ready') break
+      if (status === 'live') return { result: 'updated', deploymentId }
       if (status === 'failed' || status === 'error') {
         return new Error(`Deployment ${deploymentId} failed with status ${status}`)
+      }
+      if (status !== 'calculating') {
+        return new Error(`Deployment ${deploymentId} has unsupported status "${status}"`)
       }
       if (Date.now() >= deadline) {
         return { result: 'in_progress', deploymentId }
@@ -739,34 +743,29 @@ export async function deployTinybirdResources({
     return { result: 'updated', deploymentId }
   }
 
-  // Tinybird allows only one staged deployment at a time. Delete failed ones,
-  // adopt in-flight ones (see file-top comment for why deleting them is wrong).
+  // Tinybird keeps the previous live deployment as `staging` for rollback.
+  // Ignore it. Only `calculating` and `data_ready` identify an active deploy.
   const deployments = await client.listDeployments()
   if (deployments instanceof Error) {
     console.warn('Failed to list existing deployments before deploy:', deployments.message)
   } else {
     for (const deployment of deployments) {
-      if (deployment.live || deployment.status === 'live') continue
-      if (deployment.status === 'deleting' || deployment.status === 'deleted') continue
-      if (deployment.status === 'failed' || deployment.status === 'error') {
+      const status = deployment.status
+      if (deployment.live || status === 'live' || status === 'staging') continue
+      if (status === 'deleting' || status === 'deleted') continue
+      if (status === 'failed' || status === 'error') {
         const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id })
         if (deleteResult instanceof Error) {
           console.warn(`Failed to delete failed deployment ${deployment.id}:`, deleteResult.message)
         }
         continue
+      }
+      if (status !== 'calculating' && status !== 'data_ready') {
+        return new Error(`Deployment ${deployment.id} has unsupported status "${status}"`)
       }
 
       const adopted = await waitAndPromote(deployment.id)
-      if (adopted instanceof Error) {
-        // The in-flight deployment failed while we waited. Clean it up so the
-        // fresh createDeployment below is not blocked by a staged deployment.
-        console.warn(`Adopted deployment ${deployment.id} failed, deleting it:`, adopted.message)
-        const deleteResult = await client.deleteDeployment({ deploymentId: deployment.id })
-        if (deleteResult instanceof Error) {
-          console.warn(`Failed to delete failed deployment ${deployment.id}:`, deleteResult.message)
-        }
-        continue
-      }
+      if (adopted instanceof Error) return adopted
       if (adopted.result === 'in_progress') return adopted
     }
   }

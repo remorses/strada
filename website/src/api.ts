@@ -9,6 +9,13 @@ import { ulid } from 'ulid'
 import { env } from 'cloudflare:workers'
 import { trace, getLogger } from '@strada.sh/sdk'
 import { deployTinybirdResources, getDeploymentManagedReadToken, TinybirdClient, TINYBIRD_DATASOURCES } from 'strada/src/tinybird'
+import {
+  isDefaultRetention,
+  renderTinybirdRetention,
+  RETENTION_MAX_DAYS,
+  RETENTION_MIN_DAYS,
+  type ProjectRetention,
+} from 'strada/src/tinybird-retention'
 import { bundledTinybirdResources } from './tinybird-bundled-resources.ts'
 import {
   getAccessibleOrgDatabase,
@@ -58,6 +65,18 @@ const updateDatabaseRequestSchema = z.discriminatedUnion('backend', [
 const createProjectRequestSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
 })
+
+const retentionDaysSchema = z.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS)
+
+const updateProjectRetentionRequestSchema = z.object({
+  tracesDays: retentionDaysSchema.optional(),
+  logsDays: retentionDaysSchema.optional(),
+  errorsDays: retentionDaysSchema.optional(),
+  metricsDays: retentionDaysSchema.optional(),
+}).refine(
+  (body) => body.tracesDays != null || body.logsDays != null || body.errorsDays != null || body.metricsDays != null,
+  { message: 'pass at least one retention field' },
+)
 
 const createOrgTokenRequestSchema = z.object({
   name: z.string().min(1),
@@ -232,6 +251,103 @@ async function writeIssueState(ctx: { dbConfig: DbConfig; row: IssueStateRow }):
   }
 }
 
+function toProjectRetention(project: {
+  id: string
+  tracesRetentionDays: number
+  logsRetentionDays: number
+  errorsRetentionDays: number
+  metricsRetentionDays: number
+}): ProjectRetention {
+  return {
+    id: project.id,
+    tracesRetentionDays: project.tracesRetentionDays,
+    logsRetentionDays: project.logsRetentionDays,
+    errorsRetentionDays: project.errorsRetentionDays,
+    metricsRetentionDays: project.metricsRetentionDays,
+  }
+}
+
+function retentionResponse(project: ProjectRetention) {
+  return {
+    tracesDays: project.tracesRetentionDays,
+    logsDays: project.logsRetentionDays,
+    errorsDays: project.errorsRetentionDays,
+    metricsDays: project.metricsRetentionDays,
+  }
+}
+
+async function loadOrgProjectRetention(orgId: string): Promise<ProjectRetention[]> {
+  const db = getDb()
+  const projects = await db.query.project.findMany({
+    where: { orgId },
+  })
+  return projects.map(toProjectRetention)
+}
+
+async function deployOrgTinybirdRetention(ctx: {
+  orgId: string
+  database: {
+    id: string
+    tinybirdEndpoint: string | null
+    tinybirdAdminToken: string | null
+  }
+}) {
+  const existing = ctx.database
+  if (!existing.tinybirdEndpoint || !existing.tinybirdAdminToken) {
+    return new Error('missing Tinybird endpoint or admin token for this org')
+  }
+
+  const db = getDb()
+  const client = new TinybirdClient({
+    baseUrl: existing.tinybirdEndpoint,
+    token: existing.tinybirdAdminToken,
+  })
+  const datasources = renderTinybirdRetention({
+    datasources: [...bundledTinybirdResources.datasources],
+    projects: await loadOrgProjectRetention(ctx.orgId),
+  })
+
+  const deployment = await deployTinybirdResources({
+    client,
+    datasources,
+    pipes: [...bundledTinybirdResources.pipes],
+    allowDestructive: true,
+    pollIntervalMs: 3000,
+    waitTimeoutMs: 60_000,
+  })
+  if (deployment instanceof Error) return deployment
+  if (deployment.result === 'in_progress') {
+    return {
+      ok: false as const,
+      result: deployment.result,
+      backend: 'tinybird' as const,
+      tinybirdEndpoint: existing.tinybirdEndpoint,
+    }
+  }
+
+  const readToken = await getDeploymentManagedReadToken(client)
+  if (readToken instanceof Error) return readToken
+
+  const updatedAt = Date.now()
+  const currentDatasources = TINYBIRD_DATASOURCES.join(',')
+  await db.batch([
+    db.update(schema.database)
+      .set({ tinybirdReadToken: readToken.token, updatedAt })
+      .where(orm.eq(schema.database.id, existing.id))
+      .limit(1),
+    db.update(schema.project)
+      .set({ tinybirdJwt: null, tinybirdJwtDatasources: currentDatasources, updatedAt })
+      .where(orm.eq(schema.project.orgId, ctx.orgId)),
+  ])
+
+  return {
+    ok: true as const,
+    result: deployment.result,
+    backend: 'tinybird' as const,
+    tinybirdEndpoint: existing.tinybirdEndpoint,
+  }
+}
+
 async function createOrgForUser(userId: string, name: string) {
   const db = getDb()
   const orgId = ulid()
@@ -392,7 +508,6 @@ export const api = new Spiceflow({ tracer })
           throw json({ error: 'forbidden' }, { status: 403 })
         }
 
-        const db = getDb()
         const existing = access.database
         if (!existing) {
           throw json({ error: 'no database config for this org' }, { status: 404 })
@@ -400,65 +515,15 @@ export const api = new Spiceflow({ tracer })
         if (existing.backend !== 'tinybird') {
           throw json({ error: 'database upgrade only supports Tinybird backends' }, { status: 400 })
         }
-        if (!existing.tinybirdEndpoint || !existing.tinybirdAdminToken) {
-          throw json({ error: 'missing Tinybird endpoint or admin token for this org' }, { status: 400 })
-        }
 
-        const client = new TinybirdClient({
-          baseUrl: existing.tinybirdEndpoint,
-          token: existing.tinybirdAdminToken,
-        })
-
-        // Short server-side wait budget: Tinybird data migrations can take
-        // many minutes, far longer than an HTTP request should stay open
-        // (undici aborts if response headers take > 5 min). On timeout the
-        // deploy returns `in_progress` and the CLI retries this endpoint;
-        // deployTinybirdResources adopts the in-flight deployment instead of
-        // deleting it, so retries resume the same migration.
-        const deployment = await deployTinybirdResources({
-          client,
-          datasources: [...bundledTinybirdResources.datasources],
-          pipes: [...bundledTinybirdResources.pipes],
-          allowDestructive: true,
-          pollIntervalMs: 3000,
-          waitTimeoutMs: 60_000,
+        const deployment = await deployOrgTinybirdRetention({
+          orgId: params.orgId,
+          database: existing,
         })
         if (deployment instanceof Error) {
           throw json({ error: deployment.message }, { status: 502 })
         }
-        if (deployment.result === 'in_progress') {
-          return {
-            ok: false,
-            result: deployment.result,
-            backend: existing.backend,
-            tinybirdEndpoint: existing.tinybirdEndpoint,
-          }
-        }
-
-        const readToken = await getDeploymentManagedReadToken(client)
-        if (readToken instanceof Error) {
-          throw json({ error: readToken.message }, { status: 502 })
-        }
-
-        // Clear cached JWTs and update the datasource list so the next query
-        // creates a fresh JWT with the full set of deployed tables.
-        const updatedAt = Date.now()
-        const currentDatasources = TINYBIRD_DATASOURCES.join(',')
-        await db.batch([
-          db.update(schema.database)
-            .set({ tinybirdReadToken: readToken.token, updatedAt })
-            .where(orm.eq(schema.database.id, existing.id)),
-          db.update(schema.project)
-            .set({ tinybirdJwt: null, tinybirdJwtDatasources: currentDatasources, updatedAt })
-            .where(orm.eq(schema.project.orgId, params.orgId)),
-        ])
-
-        return {
-          ok: true,
-          result: deployment.result,
-          backend: existing.backend,
-          tinybirdEndpoint: existing.tinybirdEndpoint,
-        }
+        return deployment
       },
     })
     .route({
@@ -500,6 +565,7 @@ export const api = new Spiceflow({ tracer })
           slug: proj.slug,
           ingestEndpoint: `https://${proj.id}-ingest.strada.sh`,
           token: fullKey,
+          retention: retentionResponse(toProjectRetention(proj)),
         }
       },
     })
@@ -517,6 +583,7 @@ export const api = new Spiceflow({ tracer })
           slug: p.slug,
           ingestEndpoint: `https://${p.id}-ingest.strada.sh`,
           createdAt: p.createdAt,
+          retention: retentionResponse(toProjectRetention(p)),
         })),
       }
     })
@@ -533,8 +600,93 @@ export const api = new Spiceflow({ tracer })
           throw json({ error: 'forbidden' }, { status: 403 })
         }
         const db = getDb()
-        await db.delete(schema.project).where(orm.eq(schema.project.id, params.id))
-        return { ok: true }
+        const needsRetentionReconcile = proj.database?.backend === 'tinybird' && !isDefaultRetention(toProjectRetention(proj))
+        await db.delete(schema.project).where(orm.eq(schema.project.id, params.id)).limit(1)
+        if (!needsRetentionReconcile || !proj.database) {
+          return { ok: true, retention: { deployment: 'applied' as const } }
+        }
+        const deployment = await deployOrgTinybirdRetention({
+          orgId: proj.orgId,
+          database: proj.database,
+        })
+        if (deployment instanceof Error) {
+          logger.error({ message: 'project deleted but retention reconciliation failed', error: deployment.message })
+          return {
+            ok: true,
+            retention: { deployment: 'failed' as const, error: deployment.message },
+          }
+        }
+        return {
+          ok: true,
+          retention: {
+            deployment: deployment.result === 'in_progress' ? 'in_progress' as const : 'applied' as const,
+          },
+        }
+      },
+    })
+    .get('/api/v0/projects/:id/retention', async ({ request, params }) => {
+      const session = await requireSession(request)
+      const proj = await getAccessibleProject({ userId: session.userId, projectId: params.id })
+      if (!proj) {
+        throw json({ error: 'project not found' }, { status: 404 })
+      }
+      return retentionResponse(toProjectRetention(proj))
+    })
+    .route({
+      method: 'PUT',
+      path: '/api/v0/projects/:id/retention',
+      request: updateProjectRetentionRequestSchema,
+      async handler({ request, params }) {
+        const session = await requireSession(request)
+        const proj = await getAccessibleProject({ userId: session.userId, projectId: params.id })
+        if (!proj) {
+          throw json({ error: 'project not found' }, { status: 404 })
+        }
+        if (proj.accessRole !== 'admin') {
+          throw json({ error: 'forbidden' }, { status: 403 })
+        }
+        if (proj.database?.backend !== 'tinybird') {
+          throw json({
+            error: 'Per-project retention updates require a Tinybird backend. Self-hosted ClickHouse currently uses static default TTLs.',
+          }, { status: 400 })
+        }
+
+        const body = await request.json()
+        const nextRetention: ProjectRetention = {
+          id: proj.id,
+          tracesRetentionDays: body.tracesDays ?? proj.tracesRetentionDays,
+          logsRetentionDays: body.logsDays ?? proj.logsRetentionDays,
+          errorsRetentionDays: body.errorsDays ?? proj.errorsRetentionDays,
+          metricsRetentionDays: body.metricsDays ?? proj.metricsRetentionDays,
+        }
+        const db = getDb()
+        await db.update(schema.project)
+          .set({
+            tracesRetentionDays: nextRetention.tracesRetentionDays,
+            logsRetentionDays: nextRetention.logsRetentionDays,
+            errorsRetentionDays: nextRetention.errorsRetentionDays,
+            metricsRetentionDays: nextRetention.metricsRetentionDays,
+            updatedAt: Date.now(),
+          })
+          .where(orm.eq(schema.project.id, params.id))
+          .limit(1)
+
+        const deployment = await deployOrgTinybirdRetention({
+          orgId: proj.orgId,
+          database: proj.database,
+        })
+        if (deployment instanceof Error) {
+          logger.error({ message: 'retention settings saved but Tinybird deployment failed', error: deployment.message })
+          return {
+            retention: retentionResponse(nextRetention),
+            deployment: 'failed' as const,
+            error: deployment.message,
+          }
+        }
+        return {
+          retention: retentionResponse(nextRetention),
+          deployment: deployment.result === 'in_progress' ? 'in_progress' as const : 'applied' as const,
+        }
       },
     })
     .route({

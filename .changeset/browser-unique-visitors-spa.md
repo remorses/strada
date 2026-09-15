@@ -18,4 +18,4 @@ strada analytics timeseries -p my-app --since 30d
 strada analytics visitors -p my-app --since 7d
 ```
 
-`overview` prints unique visitors, first visits, pageviews, sessions, bounce rate, top pages, and top referrers. Run `strada database upgrade` so the pages MV unique-counts `visitor.id`.
+`overview` prints unique visitors, first visits, pageviews, sessions, bounce rate, top pages, and top referrers. The pages target adds `FirstVisits` with an automatic Tinybird `ALTER`, and the existing MV starts writing it with `DEPLOYMENT_METHOD alter`. Existing analytics rows are not backfilled.

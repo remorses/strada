@@ -179,14 +179,18 @@ Automatic Data Source `ALTER` changes are limited to adding or removing columns,
 
 For an existing Materialized View that must write a new column:
 
-1. Deploy and promote the target Data Source column by itself as an automatic `ALTER`.
-2. In a separate deployment, update the pipe SQL with `DEPLOYMENT_METHOD alter`.
+1. Add the target Data Source column as an automatic `ALTER`.
+2. Update the pipe SQL in the same deployment so its output exactly matches the target columns.
+3. Add `DEPLOYMENT_METHOD alter` to the pipe for that deployment.
+4. Remove `DEPLOYMENT_METHOD alter` after promotion. Tinybird rejects later deployments when the directive remains but the MV query has no change.
 
-`DEPLOYMENT_METHOD alter` changes only the existing MV query through `ALTER TABLE ... MODIFY QUERY`. It does not add target columns or backfill old rows. Existing rows keep their old values, and only new origin inserts use the new computation. Never combine a target schema change and an MV query change in one deployment.
+Tinybird rejects a target schema whose columns do not match the Materialized View query. `DEPLOYMENT_METHOD alter` changes only the existing MV query through `ALTER TABLE ... MODIFY QUERY`, while the target column uses its independent automatic `ALTER`. This combination does not backfill old rows. Existing rows keep the column default, and only new origin inserts use the new computation.
 
 Do not change sorting, partition, sampling, or primary keys, engine type, or engine settings. Do not use `FORWARD_QUERY` unless a full target rewrite is explicitly required and accepted.
 
-Lesson from `FirstVisits`: adding `AggregateFunction(uniq, String)` to `otel_analytics_pages` **and** changing `otel_analytics_pages_mv` in the same deploy made Tinybird re-run the MV over all historical `otel_traces`. `strada database upgrade` waited 45 minutes and timed out. The Tinybird job keeps running server-side. Do not start another schema deploy while one is in progress.
+Lesson from `FirstVisits`: adding `AggregateFunction(uniq, String)` to `otel_analytics_pages` and changing `otel_analytics_pages_mv` without `DEPLOYMENT_METHOD alter` made Tinybird re-run the MV over all historical `otel_traces`. Adding the column alone also failed because Tinybird requires exact target/query column matching. The valid cheap deployment combines the automatic Data Source `ALTER` with the MV query change and `DEPLOYMENT_METHOD alter`.
+
+Lesson from `BotName`: putting a new column in `ENGINE_SORTING_KEY` is not an `ALTER`. Tinybird rewrites the table. Live `otel_analytics_pages` has no `BotName`. Do not add it. Keep the live sorting key.
 
 ## Architecture
 
@@ -496,9 +500,9 @@ A **span** is one unit of work (HTTP request, DB query, function call). Spans li
 
 Pre-aggregated pageview analytics by domain, pathname, referrer, device, browser, country, and language. Powers top pages, top browsers, countries, referrers, and pageview/visitor timeseries without scanning raw traces.
 
-**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer`
+**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
 
-**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(visitor.id)`, falls back to `session.id`), `FirstVisits` (`uniqStateIf` first visit), `Hits` (`countState()`).
+**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(visitor.id)` with `session.id` fallback), `FirstVisits` (`uniqStateIf` first visit), `Hits` (`countState()`).
 
 ### Browser analytics sessions — `otel_analytics_sessions`
 
@@ -586,6 +590,14 @@ Analytics aggregate tables use:
 - `AggregatingMergeTree`
 - Daily partitions by `Date`
 - 90-day TTL independent from raw trace retention
+
+### Per-project retention
+
+Raw Tinybird retention is stored on each D1 `project` row and rendered into conditional `ENGINE_TTL` rules by `cli/src/tinybird-retention.ts`. Defaults are 14 days for traces, 30 days for logs, and 90 days for errors and metrics. Custom values are limited to 1 through 365 days.
+
+Keep a valid static default `ENGINE_TTL` in every raw datasource. The renderer replaces that line only when an org has custom project values. Never add `FORWARD_QUERY` for a TTL-only change because it forces a rewrite. Never enable `ttl_only_drop_parts=1`; projects with different retention share date partitions, so short-retention rows must be removable before the whole part expires.
+
+Analytics and health checks keep their fixed 90-day TTL. `otel_issue_state` and `otel_users` have no TTL.
 
 ### Errors — `otel_errors`
 

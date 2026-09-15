@@ -9,7 +9,6 @@ SCHEMA >
     `SessionId` String,
     `Device` SimpleAggregateFunction(any, LowCardinality(String)),
     `Browser` SimpleAggregateFunction(any, LowCardinality(String)),
-    `BotName` SimpleAggregateFunction(any, LowCardinality(String)),
     `Country` SimpleAggregateFunction(any, LowCardinality(String)),
     `FirstHit` SimpleAggregateFunction(min, DateTime64(9)),
     `LatestHit` SimpleAggregateFunction(max, DateTime64(9)),

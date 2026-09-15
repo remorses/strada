@@ -97,36 +97,31 @@ Datadog charges **$0.10/GB ingested** for logs plus **$1.70/million events** for
 
 Tinybird supports ClickHouse's native **TTL** (Time To Live) per data source. You set `ENGINE_TTL` in each `.datasource` file independently. ClickHouse enforces the TTL during background merges automatically. No cron jobs needed.
 
-### Per-table TTL example
+### Strada defaults
 
+| Data | Default | Notes |
+|------|---------|-------|
+| Traces | 14 days | High-volume spans and raw browser pageviews expire first |
+| Logs | 30 days | This also controls custom product events stored in `otel_logs` |
+| Errors | 90 days | Keeps issue history after related traces and logs expire |
+| Metrics | 90 days | Applies to gauge, sum, histogram, and exponential histogram rows |
+| Browser analytics | 90 days | Fixed aggregates that can outlive raw pageview traces |
+| Health checks | 90 days | Fixed result history |
+| Issue state and users | Kept | Small mutable tables are not expired |
+
+Change a Tinybird project's raw telemetry retention from the CLI:
+
+```sh
+strada projects retention -p api
+strada projects retention update -p api --traces-days 7 --logs-days 14
+strada projects retention update -p staging --all-days 7
 ```
-# otel_logs.datasource — delete logs after 30 days
-ENGINE_TTL "Timestamp + toIntervalDay(30)"
 
-# otel_traces.datasource — keep traces for 90 days  
-ENGINE_TTL "Timestamp + toIntervalDay(90)"
+Strada generates conditional `ENGINE_TTL` rules for each `ProjectId`. Tinybird applies TTL-only changes as an in-place `ALTER` after promotion. Expired rows are removed during background merges, so deletion is not immediate.
 
-# otel_errors.datasource — keep errors for 180 days
-ENGINE_TTL "Timestamp + toIntervalDay(180)"
+Lowering retention affects existing data. Increasing it cannot restore rows that Tinybird already deleted. Values must be between 1 and 365 days.
 
-# otel_metrics_gauge.datasource — keep metrics for 90 days
-ENGINE_TTL "TimeUnix + toIntervalDay(90)"
-```
-
-Each table has its own TTL. This lets you delete bulky logs sooner (30 days) while keeping lightweight error summaries and traces longer (90-180 days).
-
-You can modify TTL on an existing datasource by updating the `.datasource` file and running `tb deploy`. Tinybird treats TTL changes as automatic `ALTER` operations (no full data rewrite needed).
-
-### Recommended retention strategy for Strada
-
-| Table | Data size | Suggested TTL | Rationale |
-|-------|-----------|--------------|-----------|
-| `otel_logs` | Large (big Body strings, attribute maps) | 30 days | Logs are the bulk of storage; rarely needed after a month |
-| `otel_traces` | Medium | 90 days | Traces are useful for debugging recent issues |
-| `otel_errors` | Small (denormalized summaries) | 180 days | Error trends matter over longer periods |
-| `otel_metrics_*` | Small per row, high volume | 90 days | Metrics are compact; 90 days covers most trend analysis |
-
-With 30-day log retention and 90-day everything else, a mid-size SaaS backend would use roughly **400-500 GB total**, costing about **$23-29/mo in storage** plus the base plan fee.
+Per-project custom retention currently requires Tinybird. `clickhouse.sql` sets the same static defaults for new self-hosted ClickHouse tables, but `CREATE TABLE IF NOT EXISTS` does not update TTL on existing tables.
 
 ## Key takeaways
 

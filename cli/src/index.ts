@@ -1,4 +1,12 @@
 // Public API for programmatic usage
-export { cli } from "./cli.ts";
+export { cli, isMcpCommand } from "./cli.ts";
 export { loadTinybirdResources } from "./tinybird-resources.ts";
 export { createApiClient } from "./api-client.ts";
+export {
+  DEFAULT_RETENTION_DAYS,
+  extractEngineTtl,
+  isDefaultRetention,
+  renderTinybirdRetention,
+  RETENTION_MAX_DAYS,
+  RETENTION_MIN_DAYS,
+} from "./tinybird-retention.ts";

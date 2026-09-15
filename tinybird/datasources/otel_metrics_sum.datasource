@@ -33,6 +33,7 @@ SCHEMA >
 ENGINE "MergeTree"
 ENGINE_PARTITION_KEY "toDate(TimeUnix)"
 ENGINE_SORTING_KEY "ProjectId, ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix)"
+ENGINE_TTL "toDateTime(TimeUnix) + toIntervalDay(90)"
 ENGINE_SETTINGS index_granularity=8192
 
 INDEXES >

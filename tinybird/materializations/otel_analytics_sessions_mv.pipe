@@ -43,20 +43,6 @@ SQL >
                 ELSE 'Unknown'
             END
         ) AS Browser,
-        anySimpleState(
-            CASE
-                WHEN match(ua, 'gptbot|chatgpt|oai-searchbot|chatgpt-user') THEN 'ChatGPT'
-                WHEN match(ua, 'claudebot|claude-searchbot|claude-user|anthropic') THEN 'Claude'
-                WHEN match(ua, 'perplexitybot|perplexity-user|perplexity') THEN 'Perplexity'
-                WHEN match(ua, 'google-extended|google-agent|gemini') THEN 'Gemini'
-                WHEN match(ua, 'copilot') THEN 'Copilot'
-                WHEN match(ua, 'meta-externalagent|facebookexternalhit') THEN 'Meta'
-                WHEN match(ua, 'applebot') THEN 'Applebot'
-                WHEN match(ua, 'amazonbot') THEN 'Amazonbot'
-                WHEN match(ua, 'bot[^a-z]|crawl|spider|wget|curl|urllib|semrushbot|ahrefsbot|mj12bot|dotbot|bingbot|googlebot|yandex|baidu|bytespider|petalbot|twitterbot|linkedinbot|whatsapp|telegrambot|discordbot|slackbot|lighthouse|headless|phantom|puppeteer|python|java/|go-http|node-fetch|pingdom|uptimerobot|httrack|scrapy|feedfetcher|bitdiscovery') THEN 'other-bot'
-                ELSE ''
-            END
-        ) AS BotName,
         anySimpleState(Country) AS Country,
         minSimpleState(Timestamp) AS FirstHit,
         maxSimpleState(Timestamp) AS LatestHit,

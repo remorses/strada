@@ -36,6 +36,7 @@ SCHEMA >
 ENGINE "MergeTree"
 ENGINE_PARTITION_KEY "toDate(Timestamp)"
 ENGINE_SORTING_KEY "ProjectId, ServiceName, SpanName, toDateTime(Timestamp)"
+ENGINE_TTL "toDateTime(Timestamp) + toIntervalDay(14)"
 ENGINE_SETTINGS index_granularity=8192
 
 INDEXES >
@@ -45,6 +46,3 @@ INDEXES >
     idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     idx_duration Duration TYPE minmax GRANULARITY 1
-
-FORWARD_QUERY >
-    SELECT ProjectId, Timestamp, TraceId, SpanId, ParentSpanId, TraceState, defaultValueOfTypeName('UInt8') AS TraceFlags, SpanName, SpanKind, ServiceName, ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, Duration, StatusCode, StatusMessage, SpanAttributes, EventsTimestamp, EventsName, EventsAttributes, LinksTraceId, LinksSpanId, LinksTraceState, LinksAttributes

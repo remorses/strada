@@ -5,12 +5,17 @@
 // the API and updates the cache. This avoids an API call on every command.
 
 import { goke } from "goke";
+import * as clack from "@clack/prompts";
 import dedent from "string-dedent";
-import { bold, cyan, dim } from "./colors.ts";
+import { z } from "zod";
+import { bold, cyan, dim, green } from "./colors.ts";
 import { getResolvedConfig, loadConfig, updateConfig } from "./config.ts";
 import type { CachedProject } from "./config.ts";
 import { getApiClient } from "./api-client.ts";
+import { waitForTinybirdMigration } from "./database.ts";
 import { resolveCurrentOrg } from "./orgs.ts";
+import { printTable } from "./table.ts";
+import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "./tinybird-retention.ts";
 
 export { resolveCurrentOrg } from "./orgs.ts";
 
@@ -91,6 +96,46 @@ export async function resolveProjects(options: { project?: string[]; org?: strin
 
 // ── Project commands ──────────────────────────────────────────────
 
+const retentionDaysOption = z.coerce.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS)
+
+type RetentionOptions = {
+  tracesDays?: number
+  logsDays?: number
+  errorsDays?: number
+  metricsDays?: number
+  allDays?: number
+}
+
+export function buildRetentionUpdate(options: RetentionOptions): Error | undefined | {
+  tracesDays?: number
+  logsDays?: number
+  errorsDays?: number
+  metricsDays?: number
+} {
+  const individual = {
+    tracesDays: options.tracesDays,
+    logsDays: options.logsDays,
+    errorsDays: options.errorsDays,
+    metricsDays: options.metricsDays,
+  }
+  const hasIndividual = Object.values(individual).some((value) => value != null)
+  if (options.allDays != null && hasIndividual) {
+    return new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags.")
+  }
+  if (options.allDays != null) {
+    return {
+      tracesDays: options.allDays,
+      logsDays: options.allDays,
+      errorsDays: options.allDays,
+      metricsDays: options.allDays,
+    }
+  }
+  if (!hasIndividual) return undefined
+  return Object.fromEntries(
+    Object.entries(individual).filter(([, value]) => value != null),
+  )
+}
+
 projectsCli
   .command(
     "projects list",
@@ -133,8 +178,20 @@ projectsCli
   )
   .example('strada projects create my-app')
   .example('strada projects create my-app-prod')
+  .example('strada projects create staging --all-days 7')
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .action(async (slug, options, { console: output }) => {
+  .option("--traces-days [days]", retentionDaysOption.describe("Trace retention in days"))
+  .option("--logs-days [days]", retentionDaysOption.describe("Log and custom-event retention in days"))
+  .option("--errors-days [days]", retentionDaysOption.describe("Error retention in days"))
+  .option("--metrics-days [days]", retentionDaysOption.describe("Metrics retention in days"))
+  .option("--all-days [days]", retentionDaysOption.describe("Set all four signals to the same number of days"))
+  .action(async (slug, options, { console: output, process: proc }) => {
+    const retentionBody = buildRetentionUpdate(options)
+    if (retentionBody instanceof Error) {
+      output.error(retentionBody.message)
+      return proc.exit(1)
+    }
+
     const { safeFetch } = getApiClient();
     const org = await ensureDefaultOrg({ org: options.org || undefined });
     const res = await safeFetch("/api/v0/orgs/:orgId/projects", {
@@ -166,6 +223,42 @@ projectsCli
     output.log("");
     output.log(dim("The token is shown only once. If lost, create a new one with `strada tokens create --scope ingest <name>`."));
     output.log(dim("Manage tokens with `strada tokens list` and `strada tokens create <name>`."));
+
+    if (!retentionBody) {
+      output.log("");
+      output.log(dim("Default retention is 14d traces, 30d logs, 90d errors, 90d metrics."));
+      output.log(dim("Change it with `strada projects retention update`."));
+      return
+    }
+
+    output.log("")
+    const retention = await safeFetch("/api/v0/projects/:id/retention", {
+      method: "PUT",
+      params: { id: res.id },
+      body: retentionBody,
+    })
+    if (retention instanceof Error) {
+      output.error(`Project created, but custom retention was not applied: ${retention.message}`)
+      output.error("The ingest token above remains valid. Run `strada projects retention update` to retry.")
+      return proc.exit(1)
+    }
+    if (retention.deployment === "failed") {
+      output.error(`Custom retention was saved but not applied: ${retention.error}`)
+      output.error("The ingest token above remains valid. Run `strada database upgrade` to retry.")
+      return proc.exit(1)
+    }
+    if (retention.deployment === "in_progress") {
+      const spinner = clack.spinner()
+      spinner.start("Waiting for Tinybird to apply TTL...")
+      const migrated = await waitForTinybirdMigration({ orgId: org.id, spinner })
+      if (migrated instanceof Error) {
+        spinner.stop("Custom retention is still pending")
+        output.error(migrated.message)
+        return proc.exit(1)
+      }
+      spinner.stop("Tinybird applied TTL")
+    }
+    output.log(green("Custom retention was applied."));
   });
 
 projectsCli
@@ -196,7 +289,142 @@ projectsCli
       updateConfig({ projectCacheByOrg });
     }
     output.log(`Project ${id} deleted.`);
+    if (res.retention?.deployment === "in_progress") {
+      output.log(dim("Tinybird is still applying default TTL to leftover rows. Re-run `strada database upgrade` later if needed."));
+    }
+    if (res.retention?.deployment === "failed") {
+      output.error(`Tinybird retention reconciliation failed: ${res.retention.error}`);
+      output.error("The project was deleted. Run `strada database upgrade` to retry the TTL change.");
+    }
   });
+
+function printRetention(output: { log: (msg: string) => void }, retention: {
+  tracesDays: number
+  logsDays: number
+  errorsDays: number
+  metricsDays: number
+}) {
+  printTable(output, {
+    columns: [
+      { key: "signal", label: "SIGNAL" },
+      { key: "days", label: "DAYS", color: cyan },
+    ],
+    rows: [
+      { signal: "traces", days: String(retention.tracesDays) },
+      { signal: "logs", days: String(retention.logsDays) },
+      { signal: "errors", days: String(retention.errorsDays) },
+      { signal: "metrics", days: String(retention.metricsDays) },
+    ],
+  })
+}
+
+projectsCli
+  .command(
+    "projects retention",
+    dedent`
+      Show raw telemetry retention for a project.
+
+      Traces default to 14 days, logs to 30 days, errors and metrics to 90 days.
+      \`--logs-days\` also controls custom product events stored in \`otel_logs\`.
+      Aggregated browser analytics and health-check results stay at a fixed 90 days.
+      Issue state and identified users are kept.
+
+      Per-project custom values require a Tinybird backend. Self-hosted ClickHouse
+      uses the static defaults in \`clickhouse.sql\`.
+    `,
+  )
+  .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
+  .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
+  .example("strada projects retention")
+  .example("strada projects retention -p api")
+  .action(async (options, { console: output }) => {
+    const { project } = await resolveProject({ project: options.project, org: options.org })
+    const { safeFetch } = getApiClient()
+    const res = await safeFetch("/api/v0/projects/:id/retention", {
+      params: { id: project.id },
+    })
+    if (res instanceof Error) throw res
+    output.log(bold(`Retention for ${project.slug}:`))
+    output.log("")
+    printRetention(output, res)
+  })
+
+projectsCli
+  .command(
+    "projects retention update",
+    dedent`
+      Update raw telemetry retention for a project.
+
+      Lowering a value can delete existing Tinybird rows after the schema
+      promotion. TTL deletion is asynchronous and can take a few hours.
+      Custom values require Tinybird. Analytics stay at 90 days.
+
+      Pass either \`--all-days\` or individual signal flags. Do not mix them.
+      If Tinybird is still applying the change, run \`strada database upgrade\` later.
+    `,
+  )
+  .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
+  .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
+  .option("--traces-days [days]", retentionDaysOption.describe("Trace retention in days"))
+  .option("--logs-days [days]", retentionDaysOption.describe("Log and custom-event retention in days"))
+  .option("--errors-days [days]", retentionDaysOption.describe("Error retention in days"))
+  .option("--metrics-days [days]", retentionDaysOption.describe("Metrics retention in days"))
+  .option("--all-days [days]", retentionDaysOption.describe("Set all four signals to the same number of days"))
+  .example("strada projects retention update --traces-days 7")
+  .example("strada projects retention update -p staging --all-days 14")
+  .action(async (options, { console: output, process: proc }) => {
+    const body = buildRetentionUpdate(options)
+    if (body instanceof Error) {
+      output.error(body.message)
+      return proc.exit(1)
+    }
+    if (!body) {
+      output.log(dim("Nothing to update. Pass --all-days or a signal flag such as --traces-days."))
+      return
+    }
+
+    const { org, project } = await resolveProject({ project: options.project, org: options.org })
+    const { safeFetch } = getApiClient()
+    const current = await safeFetch("/api/v0/projects/:id/retention", {
+      params: { id: project.id },
+    })
+    if (current instanceof Error) throw current
+
+    const res = await safeFetch("/api/v0/projects/:id/retention", {
+      method: "PUT",
+      params: { id: project.id },
+      body,
+    })
+    if (res instanceof Error) throw res
+
+    output.log(bold(`Updated retention for ${project.slug}`))
+    output.log("")
+    output.log(dim("Previous:"))
+    printRetention(output, current)
+    output.log("")
+    output.log(dim("New:"))
+    printRetention(output, res.retention)
+
+    if (res.deployment === "failed") {
+      output.error(`Retention settings were saved but Tinybird rejected the deployment: ${res.error}`)
+      output.error("Run `strada database upgrade` after fixing the Tinybird deployment error.")
+      return proc.exit(1)
+    }
+    if (res.deployment === "in_progress") {
+      const spinner = clack.spinner()
+      spinner.start("Waiting for Tinybird to apply TTL...")
+      const migrated = await waitForTinybirdMigration({ orgId: org.id, spinner })
+      if (migrated instanceof Error) {
+        spinner.stop("Tinybird is still applying TTL")
+        output.log(migrated.message)
+        return proc.exit(1)
+      }
+      spinner.stop("Tinybird applied TTL")
+    }
+
+    output.log("")
+    output.log(green("Retention settings were saved."))
+  })
 
 // Legacy query command removed. Use the top-level `strada query` from query.ts
 // which renders tables, supports FORMAT clauses, and has better help output.

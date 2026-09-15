@@ -448,7 +448,7 @@ ClickHouse AggregatingMergeTree sorting keys determine which rows merge together
 
 | MV | Powers | Sorting key |
 |---|---|---|
-| `otel_analytics_pages` | Top pages, browsers, bots, devices, countries, languages, referrers, pageview histogram | `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer` |
+| `otel_analytics_pages` | Top pages, browsers, bots, devices, countries, languages, referrers, pageview histogram | `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer` |
 | `otel_analytics_sessions` | Bounce rate, avg session duration | `ProjectId, ServiceName, Domain, Date, SessionId` |
 
 ### `otel_analytics_pages`
@@ -465,7 +465,6 @@ Pathname        String
 Referrer        String                     -- domainWithoutWWW(http.request.header.referer)
 Device          LowCardinality(String)     -- 'desktop', 'mobile-android', 'mobile-ios', 'bot'
 Browser         LowCardinality(String)     -- 'chrome', 'firefox', 'safari', 'opera', 'ie', 'Unknown'
-BotName         LowCardinality(String)     -- 'ChatGPT', 'Claude', 'Perplexity', 'Gemini', 'Copilot', 'Meta', 'other-bot', or '' for humans
 Country         LowCardinality(String)     -- ISO 3166-1 alpha-2 from geo.country
 Language        LowCardinality(String)     -- from browser.language
 Visits          AggregateFunction(uniq, String)    -- uniqState(visitor.id), session.id fallback
@@ -473,7 +472,7 @@ FirstVisits     AggregateFunction(uniq, String)    -- uniqStateIf(visitor.id, fi
 Hits            AggregateFunction(count, UInt64)   -- countState()
 ```
 
-**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer`
+**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
 
 `Domain` is early in the sorting key because multi-domain projects (e.g. `acme.com` + `docs.acme.com`) always filter by domain first. Extracted from `url.full` using `domainWithoutWWW()` in the MV pipe, so the SDK doesn't need to set it explicitly.
 
