@@ -14,6 +14,7 @@ SCHEMA >
     `Country` LowCardinality(String),
     `Language` LowCardinality(String),
     `Visits` AggregateFunction(uniq, String),
+    `FirstVisits` AggregateFunction(uniq, String),
     `Hits` AggregateFunction(count, UInt64)
 
 ENGINE "AggregatingMergeTree"

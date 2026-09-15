@@ -214,7 +214,7 @@ strada query "SELECT count() FROM otel_errors WHERE ExceptionType = 'TypeError'"
 
 # browser analytics
 strada analytics pages --since 7d
-strada analytics sessions --since 24h
+strada analytics overview --since 7d
 
 # custom events with attribute filters
 strada analytics events -w "LogAttributes['custom.plan'] = 'pro'"    # events from pro users
@@ -273,6 +273,7 @@ Strada is **100% OpenTelemetry**. The SDK is a thin wrapper around the official 
 | Attribute | Purpose |
 |-----------|---------|
 | `session.id` | Per-tab browser session UUID for grouping pageviews |
+| `visitor.id` | Anonymous browser identity from `strada_vid`; powers unique visitor counts |
 | `user.id` | Signed-in user identity, propagated via W3C Baggage |
 | `event.name` | Distinguishes custom events from ordinary logs |
 | `exception.mechanism.type` | How an error was captured (onerror, unhandledrejection, etc.) |

@@ -223,7 +223,7 @@ initStrada({
 })
 ```
 
-When login/logout happens after initialization, call **`identifyUser()`** in the browser. Browser calls persist `user.id` in cookie `strada_uid` and update in-memory context. Cookie `strada_vid` is the visitor and is left alone. They do not store email/name/profile data.
+When login/logout happens after initialization, call **`identifyUser()`** in the browser. Browser calls persist `user.id` in cookie `strada_uid` and update in-memory context. Cookie `strada_vid` is the visitor and is left alone. `identifyUser()` does not end or restart the current pageview. They do not store email/name/profile data.
 
 ```ts
 import { identifyUser } from "@strada.sh/sdk/browser"
@@ -769,7 +769,7 @@ initStrada({
 **How it works:**
 
 - On `initStrada()`, a span named `"pageview"` starts for the current URL
-- Every span gets `session.id`, `url.path`, `url.query`, `url.full`, `user.id` injected automatically
+- Every span gets `session.id`, `visitor.id`, `url.path`, `url.query`, `url.full`, `user.id` injected automatically
 - Manual spans, custom events, and optional auto-instrumentation are parented to the active pageview when no other span is active
 - On SPA navigation (detected via the Navigation API), the old span ends and a new one starts
 - On tab close (`visibilitychange: hidden`), the current span ends and flushes
@@ -781,6 +781,7 @@ initStrada({
   "name": "pageview",
   "attributes": {
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "visitor.id": "c0a80123-58cc-4372-a567-0e02b2c3d479",
     "url.path": "/pricing",
     "url.query": "?plan=pro",
     "url.full": "https://app.example.com/pricing",
@@ -823,7 +824,7 @@ track("purchase", {
 })
 ```
 
-In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`user_id`, `org_id`, ...). Use the same key names on both sides so one query covers them.
+In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `visitor.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`user_id`, `org_id`, ...). Use the same key names on both sides so one query covers them.
 
 Call `track()` on the **server at mutation success** (project created, deploy finished, subscription started). Those events are the ones you trust, because they cannot fire from a click that later failed. Browser `track()` is for intent and UI interaction (button clicked, form started). Pageviews need no call at all, they are automatic from `initStrada()`.
 
@@ -918,6 +919,7 @@ It also starts a `pageview` span and usually parents later browser work to that 
   "attributes": {
     "event.name": "signup_started",
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "visitor.id": "c0a80123-58cc-4372-a567-0e02b2c3d479",
     "url.path": "/pricing",
     "url.full": "https://app.example.com/pricing",
     "user.id": "user_123",

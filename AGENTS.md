@@ -66,7 +66,13 @@ Never do `options.project.split(",")`. The user passes `-p frontend -p api` inst
 
 **Use `.example()` for usage examples, not the description string.** goke's `generateDocs()` auto-wraps `.example()` strings in fenced `` ```sh `` code blocks. Examples embedded in the description string render as plain text without syntax highlighting. Use backtick formatting in descriptions for flags and command references (e.g. `` `--status` ``, `` `strada issues list` ``).
 
-**Regenerate CLI docs after updating commands.** When you add, rename, or change CLI commands, descriptions, options, or examples, regenerate the docs markdown using goke's `generateDocs()`. Import the CLI instance and write the pages to `docs/cli/`. This keeps the published documentation in sync with the CLI source.
+**Regenerate CLI docs after updating commands, and always on publish.** When you add, rename, or change CLI commands, descriptions, options, or examples, regenerate the Holocron pages from goke:
+
+```bash
+pnpm --dir website generate:cli-docs
+```
+
+That runs `website/scripts/generate-cli-docs.ts` and writes `website/src/docs/cli/*.mdx`. Do not edit those files by hand. **Always run this before npm publish** so strada.sh CLI pages match the version that is about to ship. Then publish, then deploy the website (see [Deployments](#deployments)).
 
 ## Spiceflow version
 
@@ -100,14 +106,21 @@ If the preview migration or deploy fails, **stop**. Do not continue to productio
 
 The website `deploy` and `deploy:prod` scripts run the D1 migration before building and deploying. If migration fails, the `&&` chain stops and the deploy never happens.
 
-**After publishing npm packages** (`strada`, `@strada.sh/*`), deploy the website to production so the live docs and control plane match the published versions:
+**Publish order.** CLI docs must be regenerated before the npm release, and the website must go out after it:
 
 ```bash
-# after pnpm publish finishes
+# 1. CLI source changed? regenerate Holocron pages first
+pnpm --dir website generate:cli-docs
+
+# 2. publish npm packages (strada, @strada.sh/*)
+
+# 3. then deploy the website so live docs match the published CLI
+pnpm --dir website deploy
+# verify preview, then:
 pnpm --dir website deploy:prod
 ```
 
-Do this after publish, not before. If website code also changed in the same release, still deploy preview first, verify, then prod.
+Do not skip step 1 on publish. Do not deploy the website before npm publish finishes. If website code also changed in the same release, still deploy preview first, verify, then prod.
 
 ## D1 migrations (manual SQL, no drizzle-kit generate)
 
@@ -249,7 +262,7 @@ The SDK is a **configuration and convenience layer**, not a replacement for OTel
 1. Configures OTel providers, exporters, and processors for the Strada endpoint
 2. Installs global error handlers (uncaughtException, unhandledrejection, window.error)
 3. Provides convenience helpers (`captureException`, `track`, `setTags`)
-4. Injects Strada-specific context (session.id, url.*, user.id) into every span and log
+4. Injects Strada-specific context (session.id, visitor.id, url.*, user.id) into every span and log
 
 Users migrating from raw OTel code only need to replace their provider setup with `initStrada()`. Their existing `tracer.startSpan()`, `logger.emit()`, `meter.createCounter()` code works unchanged.
 
@@ -312,11 +325,11 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 | `visitor.id` | Cookie `strada_vid` |
 | `user.id` | Cookie `strada_uid` or `StradaOptions.userId` |
 
-**ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `url.path`, `url.full`, `user.id` into every log record.
+**ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `visitor.id`, `url.path`, `url.full`, `user.id` into every log record.
 
 **FilteringLogProcessor.** Drops known browser noise at the processor level: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
 
-**Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. SPA router plugins call these on navigation.
+**Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. A Navigation API `navigate` listener cycles pageviews only for `destination.sameDocument`.
 
 **track() API.** Custom events as OTel log records with `event.name` attribute and `custom.*` prefixed properties. Correlated to the active pageview span via OTel context propagation (TraceId/SpanId set automatically).
 
@@ -466,15 +479,15 @@ A **span** is one unit of work (HTTP request, DB query, function call). Spans li
 
 Pre-aggregated pageview analytics by domain, pathname, referrer, device, browser, country, and language. Powers top pages, top browsers, countries, referrers, and pageview/visitor timeseries without scanning raw traces.
 
-**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
+**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer`
 
-**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(visitor.id)`, falls back to `session.id`), `Hits` (`countState()`).
+**Key columns:** `Date`, `Domain`, `Pathname`, `Referrer`, `Device`, `Browser`, `Country`, `Language`, `Visits` (`uniqState(visitor.id)`, falls back to `session.id`), `FirstVisits` (`uniqStateIf` first visit), `Hits` (`countState()`).
 
 ### Browser analytics sessions — `otel_analytics_sessions`
 
 **Populated by:** `otel_analytics_sessions_mv` from `otel_traces` pageview spans only.
 
-Pre-aggregated per-session rows for bounce rate, average session duration, and unique visitor calculations.
+Pre-aggregated per-session rows for bounce rate and average session duration.
 
 **Sorting key:** `ProjectId, ServiceName, Domain, Date, SessionId`
 
@@ -639,7 +652,7 @@ The rule is simple:
 - keep using standard OTel APIs and standard semantic attributes where they already exist
 - add a few **custom attributes** only when OTel does not standardize the concept yet
 - keep those attributes stable so they can be queried directly from SQL later
-- **always use `ATTR.*` constants** from `sdk/src/shared.ts` instead of raw strings. Never write `"session.id"` or `"service.name"` directly; use `ATTR.SESSION_ID` or `ATTR.SERVICE_NAME`. This prevents typos, makes renaming safe, and keeps all attribute names discoverable in one place. If a new attribute is needed, add it to the `ATTR` object first.
+- **always use `ATTR.*` constants** from `sdk/src/attrs.ts` instead of raw strings. Never write `"session.id"` or `"service.name"` directly; use `ATTR["session.id"]` or `ATTR["service.name"]`. This prevents typos, makes renaming safe, and keeps all attribute names discoverable in one place. If a new attribute is needed, add it to the `ATTR` object first.
 
 Any OTel SDK can set these as normal string attributes on spans, span events, or log records.
 
@@ -650,6 +663,7 @@ Any OTel SDK can set these as normal string attributes on spans, span events, or
 | `exception.*` extensions | OTel gives us the basics of exceptions, but not issue fingerprinting, capture mechanism metadata, or source-map oriented structured frames |
 | `event.name` + `custom.*` | OTel logs are flexible, but product analytics events need a stable way to distinguish events from ordinary logs and store event-specific properties |
 | `session.id` | Browser analytics and user journeys need a stable per-tab session key that survives page refreshes without forcing one giant browser trace |
+| `visitor.id` | Unique visitors need a durable anonymous browser id that survives tabs, login, and logout |
 | `url.path`, `url.query`, `url.full`, `http.request.header.referer` on browser telemetry | These make page, funnel, and session analysis easy without requiring each app to add the attributes manually |
 | `user.id` on spans and logs | Correlates traces, logs, errors, and analytics events to the same signed-in user across browser and backend |
 

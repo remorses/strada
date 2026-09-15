@@ -13,9 +13,9 @@ prompt: |
 Unique visitors, first visits, and returning visitors.
 
 Unique visitors are `visitor.id` (cookie `strada_vid`). First visits are unique
-visitors whose first pageview is in the same date window as the KPIs.
-Returning = unique minus first. Older data without `visitor.id` still
-counts via `session.id` fallback in the pages MV.
+visitors whose first pageview is in the same date window, from the pages MV
+`FirstVisits` column. Returning = unique minus first. Older data without
+`visitor.id` still counts via `session.id` fallback.
 
 ## Usage
 
@@ -31,7 +31,6 @@ strada analytics visitors
 | `--org [name-or-id]` | - | Organization override (defaults to folder setup) |
 | `-s, --service [name]` | - | Filter by service name |
 | `--since [duration]` | - | Time range, e.g. 1h, 24h, 7d (default: 7d) |
-| `-n, --limit [count]` | - | Max number of rows (default: 20) |
 | `--domain [domain]` | - | Filter by domain |
 
 ## Global Options

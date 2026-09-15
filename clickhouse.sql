@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS otel_analytics_pages
     `Country`      LowCardinality(String) CODEC(ZSTD(1)),
     `Language`     LowCardinality(String) CODEC(ZSTD(1)),
     `Visits`       AggregateFunction(uniq, String),
+    `FirstVisits`  AggregateFunction(uniq, String),
     `Hits`         AggregateFunction(count, UInt64)
 )
 ENGINE = AggregatingMergeTree
@@ -93,7 +94,8 @@ WITH source AS (
         lower(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), ResourceAttributes['user_agent.original'])) AS ua,
         coalesce(nullIf(SpanAttributes['geo.country'], ''), 'Unknown') AS Country,
         coalesce(nullIf(ResourceAttributes['browser.language'], ''), 'Unknown') AS Language,
-        coalesce(nullIf(SpanAttributes['visitor.id'], ''), SpanAttributes['session.id']) AS VisitorId
+        coalesce(nullIf(SpanAttributes['visitor.id'], ''), SpanAttributes['session.id']) AS VisitorId,
+        SpanAttributes['visitor.first_visit'] AS FirstVisit
     FROM otel_traces
     WHERE
         SpanName = 'pageview'
@@ -137,6 +139,7 @@ SELECT
     Country,
     Language,
     uniqState(VisitorId) AS Visits,
+    uniqStateIf(VisitorId, FirstVisit = 'true') AS FirstVisits,
     countState() AS Hits
 FROM source
 GROUP BY ProjectId, Date, ServiceName, Domain, Pathname, Referrer, Device, Browser, BotName, Country, Language;

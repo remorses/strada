@@ -44,7 +44,7 @@ Every field needed for analytics comes from standard OTel attributes. Here's the
 
 ### What the OTel browser SDK provides (no Strada code needed)
 
-The `@opentelemetry/opentelemetry-browser-detector` package detects browser info from `navigator.userAgentData` and `navigator.language` automatically and sets these **resource attributes**:
+Strada reads `navigator.userAgentData`, `navigator.language`, and `navigator.userAgent` during `initStrada()` and sets these **resource attributes**:
 
 | Resource attribute    | Source                       | Example value          |
 |-----------------------|------------------------------|------------------------|
@@ -102,6 +102,7 @@ Browser (OTel SDK)                     Collector (Cloudflare Worker)
 |                               |      |  of every row                    |
 | Span attributes:              |      |                                  |
 |   session.id                  |      |  Writes to otel_traces           |
+|   visitor.id                  |      |         |                        |
 |   url.path                    |      |         |                        |
 |   url.query                   |      |         v                        |
 |   url.full                    |      |  MV fires automatically          |
@@ -150,7 +151,7 @@ const sessionId =
 }
 ```
 
-These come from `@opentelemetry/opentelemetry-browser-detector` automatically. No Strada code needed.
+These come from Strada's inline browser detection in `initStrada()`.
 
 ### Pageview span
 
@@ -165,6 +166,7 @@ These come from `@opentelemetry/opentelemetry-browser-detector` automatically. N
   "endTimeUnixNano": "1711541871000000000",
   "attributes": {
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "visitor.id": "c0a80123-58cc-4372-a567-0e02b2c3d479",
     "url.full": "https://app.acme.com/pricing",
     "url.path": "/pricing",
     "url.query": "?plan=pro",
@@ -197,6 +199,7 @@ Custom events are **log records** in `otel_logs`, not spans. They are correlated
   "attributes": {
     "event.name": "button_click",
     "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "visitor.id": "c0a80123-58cc-4372-a567-0e02b2c3d479",
     "url.path": "/pricing",
     "url.full": "https://app.acme.com/pricing",
     "user.id": "user_123",
@@ -215,7 +218,7 @@ Custom events are **log records** in `otel_logs`, not spans. They are correlated
 - `TraceId` and `SpanId` point to the active pageview span when the event is emitted during an open pageview
 - `event.name` is the structured event name for filtering/grouping
 - `custom.*` prefix isolates user-defined properties from standard OTel attributes
-- `session.id`, `url.path`, `user.id` are injected automatically by the SDK's log processor
+- `session.id`, `visitor.id`, `url.path`, `user.id` are injected automatically by the SDK's log processor
 - The log record lands in `otel_logs` via `POST /v1/logs` (same collector endpoint used for backend logs)
 
 ### Auto-instrumented fetch span
@@ -233,18 +236,19 @@ Custom events are **log records** in `otel_logs`, not spans. They are correlated
     "http.request.method": "GET",
     "url.full": "https://api.acme.com/api/plans",
     "http.response.status_code": 200,
-    "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+    "session.id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "visitor.id": "c0a80123-58cc-4372-a567-0e02b2c3d479"
   }
 }
 ```
 
-This span is created automatically by `@opentelemetry/instrumentation-fetch`. The `session.id` is injected by the custom span processor.
+This span is created automatically by `@opentelemetry/instrumentation-fetch` when that optional package is installed. The `session.id` and `visitor.id` are injected by the custom span processor.
 
 ---
 
 ## Auto-instrumentation
 
-The Strada browser SDK wraps `@opentelemetry/auto-instrumentations-web`, which instruments 4 things automatically with zero code changes:
+Pageviews are automatic. Optional `@opentelemetry/auto-instrumentations-web` can add fetch, XHR, document-load, and click spans when you install that package:
 
 | Package | What it captures |
 |---|---|
@@ -326,7 +330,7 @@ track('billing_opened', {
 })
 ```
 
-`strada.track()` emits a log record via the OTel Logs API. The log record lands in `otel_logs` with `event.name` set to the event name. Context (`session.id`, `url.full`, `user.id`) is injected automatically. If a pageview span is currently open, `TraceId` and `SpanId` are attached too. Browser auto-instrumented spans also inherit that pageview as parent unless some other span is already active. Developers only pass event-specific properties.
+`strada.track()` emits a log record via the OTel Logs API. The log record lands in `otel_logs` with `event.name` set to the event name. Context (`session.id`, `visitor.id`, `url.full`, `user.id`) is injected automatically. If a pageview span is currently open, `TraceId` and `SpanId` are attached too. Browser auto-instrumented spans also inherit that pageview as parent unless some other span is already active. Developers only pass event-specific properties.
 
 Under the hood:
 
@@ -421,9 +425,9 @@ initStrada({
 
 The SDK:
 1. Generates or restores `session.id` from `sessionStorage`
-2. Initializes `WebTracerProvider` with `BatchSpanProcessor`
-3. Registers `@opentelemetry/auto-instrumentations-web`
-4. Attaches a span processor that injects `session.id` and `user.id` onto every span
+2. Generates or restores `visitor.id` from cookie `strada_vid`
+3. Initializes `WebTracerProvider` with `BatchSpanProcessor`
+4. Attaches a span processor that injects `session.id`, `visitor.id`, and `user.id` onto every span
 5. Starts the first pageview span
 
 ---
@@ -436,7 +440,7 @@ Two materialized views fire automatically on every insert to `otel_traces` and p
 
 ### Why AggregatingMergeTree
 
-A flat MergeTree storing one row per pageview would save some storage (no Map columns, no Events arrays). But an `AggregatingMergeTree` that pre-computes `uniqState(session_id)` and `countState()` is **~100x more compact**. For a site with 1M pageviews/day, the pages MV might store ~5k-50k aggregated rows per day (one per unique combination of date + pathname + device + browser + country). The sessions MV stores one row per session per day (~100k rows for 100k daily sessions), still way less than 1M raw pageview rows.
+A flat MergeTree storing one row per pageview would save some storage (no Map columns, no Events arrays). But an `AggregatingMergeTree` that pre-computes `uniqState(visitor_id)` and `countState()` is **~100x more compact**. For a site with 1M pageviews/day, the pages MV might store ~5k-50k aggregated rows per day (one per unique combination of date + pathname + device + browser + country). The sessions MV stores one row per session per day (~100k rows for 100k daily sessions), still way less than 1M raw pageview rows.
 
 ### Why two MVs instead of one
 
@@ -445,11 +449,11 @@ ClickHouse AggregatingMergeTree sorting keys determine which rows merge together
 | MV | Powers | Sorting key |
 |---|---|---|
 | `otel_analytics_pages` | Top pages, browsers, bots, devices, countries, languages, referrers, pageview histogram | `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer` |
-| `otel_analytics_sessions` | Bounce rate, avg session duration, unique visitors, realtime visitors | `ProjectId, ServiceName, Domain, Date, SessionId` |
+| `otel_analytics_sessions` | Bounce rate, avg session duration | `ProjectId, ServiceName, Domain, Date, SessionId` |
 
 ### `otel_analytics_pages`
 
-Pre-aggregates pageview counts and unique sessions by page, device, browser, country, language, referrer, and **domain** (the host the user is visiting).
+Pre-aggregates pageview counts and unique visitors by page, device, browser, country, language, referrer, and **domain** (the host the user is visiting).
 
 ```sql
 -- Schema (AggregatingMergeTree)
@@ -464,11 +468,12 @@ Browser         LowCardinality(String)     -- 'chrome', 'firefox', 'safari', 'op
 BotName         LowCardinality(String)     -- 'ChatGPT', 'Claude', 'Perplexity', 'Gemini', 'Copilot', 'Meta', 'other-bot', or '' for humans
 Country         LowCardinality(String)     -- ISO 3166-1 alpha-2 from geo.country
 Language        LowCardinality(String)     -- from browser.language
-Visits          AggregateFunction(uniq, String)    -- uniqState(session_id)
+Visits          AggregateFunction(uniq, String)    -- uniqState(visitor.id), session.id fallback
+FirstVisits     AggregateFunction(uniq, String)    -- uniqStateIf(visitor.id, first_visit)
 Hits            AggregateFunction(count, UInt64)   -- countState()
 ```
 
-**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, Country, Language, Pathname, Referrer`
+**Sorting key:** `ProjectId, ServiceName, Domain, Date, Device, Browser, BotName, Country, Language, Pathname, Referrer`
 
 `Domain` is early in the sorting key because multi-domain projects (e.g. `acme.com` + `docs.acme.com`) always filter by domain first. Extracted from `url.full` using `domainWithoutWWW()` in the MV pipe, so the SDK doesn't need to set it explicitly.
 
@@ -1137,4 +1142,4 @@ OTel is **deprecating `span.addEvent()`** (targeted March 2026) in favor of the 
 
 ### JWT scopes
 
-- [ ] Add `otel_analytics_pages` and `otel_analytics_sessions` to the JWT `scopes` array with `ProjectId` filter (same pattern as other tables)
+- [x] Add `otel_analytics_pages` and `otel_analytics_sessions` to the JWT `scopes` array with `ProjectId` filter (same pattern as other tables)
