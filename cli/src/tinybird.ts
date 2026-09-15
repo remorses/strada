@@ -51,6 +51,7 @@ export interface TinybirdDeployment {
   id: string;
   status: string;
   live?: boolean;
+  createdAt?: string;
 }
 
 export interface TinybirdDeploymentFeedback {
@@ -301,6 +302,7 @@ function parseDeployment({ value }: { value: unknown }) {
     id,
     status,
     live: optionalBoolean({ record, key: "live" }),
+    createdAt: optionalString({ record, key: "created_at" }),
   } satisfies TinybirdDeployment;
 }
 
@@ -729,7 +731,7 @@ export async function deployTinybirdResources({
       if (status === 'failed' || status === 'error') {
         return new Error(`Deployment ${deploymentId} failed with status ${status}`)
       }
-      if (status !== 'calculating') {
+      if (status !== 'calculating' && status !== 'creating_schema') {
         return new Error(`Deployment ${deploymentId} has unsupported status "${status}"`)
       }
       if (Date.now() >= deadline) {
@@ -743,12 +745,14 @@ export async function deployTinybirdResources({
     return { result: 'updated', deploymentId }
   }
 
-  // Tinybird keeps the previous live deployment as `staging` for rollback.
-  // Ignore it. Only `calculating` and `data_ready` identify an active deploy.
+  // Tinybird keeps the previous live as Staging for rollback. Ignore that leftover.
+  // Only `creating_schema`, `calculating`, and a newer `data_ready` are in-flight.
+  // An older `data_ready` is the previous live, even when Tinybird still labels it that way.
   const deployments = await client.listDeployments()
   if (deployments instanceof Error) {
     console.warn('Failed to list existing deployments before deploy:', deployments.message)
   } else {
+    const liveCreatedAt = deployments.find((deployment) => deployment.live || deployment.status === 'live')?.createdAt
     for (const deployment of deployments) {
       const status = deployment.status
       if (deployment.live || status === 'live' || status === 'staging') continue
@@ -760,7 +764,10 @@ export async function deployTinybirdResources({
         }
         continue
       }
-      if (status !== 'calculating' && status !== 'data_ready') {
+      if (status === 'data_ready' && liveCreatedAt && deployment.createdAt && deployment.createdAt < liveCreatedAt) {
+        continue
+      }
+      if (status !== 'calculating' && status !== 'creating_schema' && status !== 'data_ready') {
         return new Error(`Deployment ${deployment.id} has unsupported status "${status}"`)
       }
 

@@ -115,12 +115,12 @@ Change a Tinybird project's raw telemetry retention from the CLI:
 strada projects retention -p api
 strada projects retention update -p api --traces-days 7 --logs-days 14
 strada projects retention update -p staging --all-days 7
-strada projects retention update --traces-days keep
+strada projects retention update --traces-days -1
 ```
 
 Strada generates conditional `ENGINE_TTL` rules only for projects that set a custom day count. Tinybird applies TTL-only changes as an in-place `ALTER` after promotion. Expired rows are removed during background merges, so deletion is not immediate.
 
-Setting a custom TTL can delete existing data. Pass `keep` to remove that custom TTL. Values must be between 1 and 365 days.
+Setting a custom TTL can delete existing data. Pass `-1` to remove that custom TTL. Values must be between 1 and 365 days.
 
 Per-project custom retention currently requires Tinybird. Self-hosted ClickHouse keeps all raw telemetry unless you add table TTL yourself. Existing ClickHouse tables created with the earlier default TTLs need this SQL:
 

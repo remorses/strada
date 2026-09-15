@@ -13,7 +13,7 @@ prompt: |
 Update raw telemetry retention for a project.
 
 Raw telemetry is kept by default. Setting a day count can delete existing
-Tinybird rows after promotion. Pass `keep` to remove a custom TTL.
+Tinybird rows after promotion. Pass `-1` to remove a custom TTL.
 TTL deletion is asynchronous and can take a few hours. Custom values
 require Tinybird. Analytics stay at 90 days.
 
@@ -32,11 +32,11 @@ strada projects retention update
 |--------|---------|-------------|
 | `-p, --project [slug]` | - | Project slug override (defaults to folder setup) |
 | `--org [name-or-id]` | - | Organization override (defaults to folder setup) |
-| `--traces-days <days>` | - | Trace retention in days, or keep |
-| `--logs-days <days>` | - | Log and custom-event retention in days, or keep |
-| `--errors-days <days>` | - | Error retention in days, or keep |
-| `--metrics-days <days>` | - | Metrics retention in days, or keep |
-| `--all-days <days>` | - | Set all four signals to the same number of days, or keep |
+| `--traces-days [days]` | - | Trace retention in days, or -1 to keep forever |
+| `--logs-days [days]` | - | Log and custom-event retention in days, or -1 to keep forever |
+| `--errors-days [days]` | - | Error retention in days, or -1 to keep forever |
+| `--metrics-days [days]` | - | Metrics retention in days, or -1 to keep forever |
+| `--all-days [days]` | - | Set all four signals to the same number of days, or -1 to keep forever |
 
 ## Global Options
 
@@ -56,5 +56,5 @@ strada projects retention update -p staging --all-days 14
 ```
 
 ```sh
-strada projects retention update --traces-days keep
+strada projects retention update --traces-days -1
 ```

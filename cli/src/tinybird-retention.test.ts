@@ -191,7 +191,7 @@ describe("renderTinybirdRetention", () => {
     })).toEqual(retention())
   })
 
-  test.each([0, 366, 1.5, Number.NaN])("rejects invalid retention %s", (days) => {
+  test.each([0, -2, 366, 1.5, Number.NaN])("rejects invalid retention %s", (days) => {
     expect(() => validateRetentionDays(days, "traces")).toThrow(
       "traces retention must be an integer between 1 and 365 days",
     );

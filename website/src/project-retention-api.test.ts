@@ -123,8 +123,8 @@ describe("project retention API", () => {
       body: { tracesDays: null, logsDays: null, errorsDays: null, metricsDays: null },
     });
     expect([emptyResponse.status, invalidResponse.status, keepResponse.status, keepAllResponse.status]).toEqual([400, 400, 400, 400]);
-    const keepBody = await keepResponse.json() as { error?: string }
-    const keepAllBody = await keepAllResponse.json() as { error?: string }
+    const keepBody: { error?: string } = await keepResponse.json()
+    const keepAllBody: { error?: string } = await keepAllResponse.json()
     expect(keepBody.error).not.toBe('pass at least one retention field')
     expect(keepAllBody.error).not.toBe('pass at least one retention field')
   });

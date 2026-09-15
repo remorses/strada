@@ -33,11 +33,11 @@ strada projects create <slug>
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--org [name-or-id]` | - | Organization override (defaults to folder setup) |
-| `--traces-days <days>` | - | Trace retention in days, or keep |
-| `--logs-days <days>` | - | Log and custom-event retention in days, or keep |
-| `--errors-days <days>` | - | Error retention in days, or keep |
-| `--metrics-days <days>` | - | Metrics retention in days, or keep |
-| `--all-days <days>` | - | Set all four signals to the same number of days, or keep |
+| `--traces-days [days]` | - | Trace retention in days, or -1 to keep forever |
+| `--logs-days [days]` | - | Log and custom-event retention in days, or -1 to keep forever |
+| `--errors-days [days]` | - | Error retention in days, or -1 to keep forever |
+| `--metrics-days [days]` | - | Metrics retention in days, or -1 to keep forever |
+| `--all-days [days]` | - | Set all four signals to the same number of days, or -1 to keep forever |
 
 ## Global Options
 

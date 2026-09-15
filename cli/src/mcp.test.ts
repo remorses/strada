@@ -95,14 +95,14 @@ describe("mcp command", () => {
       new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags."),
     );
     expect(buildRetentionUpdate({ logsDays: 14 })).toEqual({ logsDays: 14 });
-    expect(buildRetentionUpdate({ tracesDays: "keep" })).toEqual({ tracesDays: null });
-    expect(buildRetentionUpdate({ allDays: "keep" })).toEqual({
+    expect(buildRetentionUpdate({ tracesDays: -1 })).toEqual({ tracesDays: null });
+    expect(buildRetentionUpdate({ allDays: -1 })).toEqual({
       tracesDays: null,
       logsDays: null,
       errorsDays: null,
       metricsDays: null,
     });
-    expect(buildRetentionUpdate({ allDays: "keep", tracesDays: 7 })).toEqual(
+    expect(buildRetentionUpdate({ allDays: -1, tracesDays: 7 })).toEqual(
       new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags."),
     );
   });
@@ -113,6 +113,7 @@ describe("mcp command", () => {
 
     expect(byName.logs.inputSchema.required).toBeUndefined();
     expect(byName.issues_list.inputSchema.required).toBeUndefined();
+    expect(byName.projects_create.inputSchema.required).toEqual(["slug"]);
     expect(byName.alerts_create.inputSchema.required).toEqual(["name"]);
     expect(byName.checks_create.inputSchema.required).toEqual(["url", "name"]);
     expect(byName.traces_view.inputSchema.required).toEqual(["traceId"]);

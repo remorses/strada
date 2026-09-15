@@ -183,7 +183,7 @@ Tinybird **Staging** is not Cloudflare preview. `strada database upgrade` always
 POST /v1/deploy  ►  Staging candidate  ►  wait data_ready  ►  POST .../set-live  ►  Live
 ```
 
-Tinybird keeps the **previous Live** as Staging after promotion, for rollback. Do not Discard or Promote that leftover. `deployTinybirdResources()` ignores `status === 'staging'`. Only `calculating` and `data_ready` are an in-flight deploy. Tinybird allows **one** in-flight staging candidate. Do not start another schema deploy while one is in progress.
+Tinybird keeps the **previous Live** as Staging after promotion, for rollback. Do not Discard or Promote that leftover. `deployTinybirdResources()` ignores `status === 'staging'` and an older leftover `data_ready`. In-flight statuses are `creating_schema`, `calculating`, and a newer `data_ready`. Tinybird allows **one** in-flight staging candidate. Do not start another schema deploy while one is in progress.
 
 Git push does nothing on Tinybird. The UI only changes after website **prod** deploy plus `strada database upgrade`.
 
