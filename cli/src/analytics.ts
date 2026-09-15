@@ -59,8 +59,8 @@ function sessionsKpiSql(conditions: string[]): string {
   return dedent`
     SELECT
         count() AS total_sessions,
-        sumIf(1, latest_ms = first_ms) / greatest(count(), 1) AS bounce_rate,
-        avg(latest_ms - first_ms) / 1000 AS avg_session_duration_sec
+        sumIf(1, latest_ms = first_ms) AS bounced_sessions,
+        sum(latest_ms - first_ms) / 1000 AS total_duration_sec
     FROM (
         SELECT
             SessionId,
@@ -71,6 +71,45 @@ function sessionsKpiSql(conditions: string[]): string {
         GROUP BY SessionId
     )
   `.trim();
+}
+
+function sumSessionKpis(rows: Array<Record<string, unknown>>): {
+  sessions: number
+  bounceRate: number
+  avgDuration: number
+} {
+  let sessions = 0;
+  let bounced = 0;
+  let duration = 0;
+  for (const r of rows) {
+    sessions += Number(r.total_sessions ?? 0);
+    bounced += Number(r.bounced_sessions ?? 0);
+    duration += Number(r.total_duration_sec ?? 0);
+  }
+  return {
+    sessions,
+    bounceRate: sessions > 0 ? bounced / sessions : 0,
+    avgDuration: sessions > 0 ? duration / sessions : 0,
+  };
+}
+
+function mergeNamedRows(
+  rows: Array<Record<string, unknown>>,
+  key: string,
+  limit: number,
+): Array<{ name: string; visitors: number; pageviews: number }> {
+  const totals = new Map<string, { visitors: number; pageviews: number }>();
+  for (const r of rows) {
+    const name = String(r[key] ?? "");
+    const current = totals.get(name) ?? { visitors: 0, pageviews: 0 };
+    current.visitors += Number(r.visitors ?? 0);
+    current.pageviews += Number(r.pageviews ?? 0);
+    totals.set(name, current);
+  }
+  return [...totals.entries()]
+    .map(([name, value]) => ({ name, ...value }))
+    .sort((a, b) => b.pageviews - a.pageviews || b.visitors - a.visitors)
+    .slice(0, limit);
 }
 
 function firstVisitsSql(options: AnalyticsOptions): string {
@@ -431,14 +470,7 @@ analyticsCommand(
       pageviews += Number(r.total_pageviews ?? 0);
     }
 
-    let sessions = 0;
-    let bounceRate = 0;
-    let avgDuration = 0;
-    for (const r of sessionsRows) {
-      sessions += Number(r.total_sessions ?? 0);
-      bounceRate = Number(r.bounce_rate ?? 0); // last project wins (usually single project)
-      avgDuration = Number(r.avg_session_duration_sec ?? 0);
-    }
+    const { sessions, bounceRate, avgDuration } = sumSessionKpis(sessionsRows);
 
     const sinceLabel = options.since || "7d";
     output.log("");
@@ -472,6 +504,7 @@ analyticsCommand(
   .action(async (options: AnalyticsOptions, { console: output }: GokeExecutionContext) => {
     const conditions = buildMvConditions(options);
     const sinceLabel = options.since || "7d";
+    const limit = Number(options.limit) || 8;
     const pagesSql = pagesKpiSql(conditions);
     const sessionsSql = sessionsKpiSql(conditions);
     const topPagesSql = dedent`
@@ -483,7 +516,7 @@ analyticsCommand(
       WHERE ${conditions.join("\n  AND ")}
       GROUP BY Pathname
       ORDER BY pageviews DESC
-      LIMIT 8
+      LIMIT ${limit}
     `.trim();
     const referrerConditions = [...conditions, `Referrer != ''`];
     if (options.domain) referrerConditions.push(`Referrer != '${options.domain}'`);
@@ -496,7 +529,7 @@ analyticsCommand(
       WHERE ${referrerConditions.join("\n  AND ")}
       GROUP BY Referrer
       ORDER BY visitors DESC
-      LIMIT 8
+      LIMIT ${limit}
     `.trim();
     const firstVisitSql = firstVisitsSql(options);
 
@@ -515,14 +548,9 @@ analyticsCommand(
       visitors += Number(r.unique_visitors ?? 0);
       pageviews += Number(r.total_pageviews ?? 0);
     }
-    let sessions = 0;
-    let bounceRate = 0;
-    let avgDuration = 0;
-    for (const r of sessionsResults.flatMap((d) => d.data ?? [])) {
-      sessions += Number(r.total_sessions ?? 0);
-      bounceRate = Number(r.bounce_rate ?? 0);
-      avgDuration = Number(r.avg_session_duration_sec ?? 0);
-    }
+    const { sessions, bounceRate, avgDuration } = sumSessionKpis(
+      sessionsResults.flatMap((d) => d.data ?? []),
+    );
     let firstVisits = 0;
     for (const r of firstVisitResults.flatMap((d) => d.data ?? [])) {
       firstVisits += Number(r.first_visits ?? 0);
@@ -541,7 +569,7 @@ analyticsCommand(
     output.log(kv("Bounce rate", `${(bounceRate * 100).toFixed(1)}%`));
     output.log(kv("Avg duration", formatDuration(avgDuration)));
 
-    const pageRows = topPagesResults.flatMap((d) => d.data ?? []);
+    const pageRows = mergeNamedRows(topPagesResults.flatMap((d) => d.data ?? []), "Pathname", limit);
     if (pageRows.length > 0) {
       output.log("");
       output.log(bold("Top pages"));
@@ -553,14 +581,15 @@ analyticsCommand(
           { key: "visitors", label: "VISITORS", align: "right" },
         ],
         rows: pageRows.map((r) => ({
-          pathname: String(r.Pathname ?? ""),
-          pageviews: formatCount(Number(r.pageviews ?? 0)),
-          visitors: formatCount(Number(r.visitors ?? 0)),
+          pathname: r.name,
+          pageviews: formatCount(r.pageviews),
+          visitors: formatCount(r.visitors),
         })),
       });
     }
 
-    const referrerRows = referrerResults.flatMap((d) => d.data ?? []);
+    const referrerRows = mergeNamedRows(referrerResults.flatMap((d) => d.data ?? []), "Referrer", limit)
+      .sort((a, b) => b.visitors - a.visitors || b.pageviews - a.pageviews);
     if (referrerRows.length > 0) {
       output.log("");
       output.log(bold("Top referrers"));
@@ -572,9 +601,9 @@ analyticsCommand(
           { key: "pageviews", label: "PAGEVIEWS", align: "right" },
         ],
         rows: referrerRows.map((r) => ({
-          referrer: String(r.Referrer ?? ""),
-          visitors: formatCount(Number(r.visitors ?? 0)),
-          pageviews: formatCount(Number(r.pageviews ?? 0)),
+          referrer: r.name,
+          visitors: formatCount(r.visitors),
+          pageviews: formatCount(r.pageviews),
         })),
       });
     }
@@ -602,13 +631,23 @@ analyticsCommand(
       WHERE ${conditions.join("\n  AND ")}
       GROUP BY Date
       ORDER BY Date ASC
-      LIMIT 90
     `.trim();
     const { slugs, rows } = await queryAllProjects(options, sql);
     if (rows.length === 0) {
       output.log(dim(`No pageview data in ${cyan(slugs.join(", "))} (last ${options.since || "7d"})`));
       return;
     }
+    const byDate = new Map<string, { visitors: number; pageviews: number }>();
+    for (const r of rows) {
+      const date = String(r.Date ?? "");
+      const current = byDate.get(date) ?? { visitors: 0, pageviews: 0 };
+      current.visitors += Number(r.visitors ?? 0);
+      current.pageviews += Number(r.pageviews ?? 0);
+      byDate.set(date, current);
+    }
+    const merged = [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, value]) => ({ date, ...value }));
     output.log("");
     output.log(bold(`Daily traffic in ${cyan(slugs.join(", "))}`) + dim(` (last ${options.since || "7d"})`));
     output.log("");
@@ -618,10 +657,10 @@ analyticsCommand(
         { key: "visitors", label: "VISITORS", align: "right", color: bold },
         { key: "pageviews", label: "PAGEVIEWS", align: "right" },
       ],
-      rows: rows.map((r) => ({
-        date: String(r.Date ?? ""),
-        visitors: formatCount(Number(r.visitors ?? 0)),
-        pageviews: formatCount(Number(r.pageviews ?? 0)),
+      rows: merged.map((r) => ({
+        date: r.date,
+        visitors: formatCount(r.visitors),
+        pageviews: formatCount(r.pageviews),
       })),
     });
     output.log("");

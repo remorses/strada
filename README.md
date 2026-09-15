@@ -488,7 +488,7 @@ strada query "
 Browser analytics in Strada is just **OTel data sent from the browser**. Pageviews are spans. Custom events are log records. Unique visitors use `visitor.id` (cookie `strada_vid`). Sessions use `session.id` in `sessionStorage`.
 
 ```ts
-import { initStrada, track } from "@strada.sh/sdk"
+import { initStrada, track, identifyUser } from "@strada.sh/sdk"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",

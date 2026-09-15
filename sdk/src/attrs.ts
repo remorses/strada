@@ -15,6 +15,7 @@ export const ATTR = {
   /** Per-tab browser session UUID, stored in sessionStorage. Groups pageviews, events, and errors into one visit. */
   "session.id": "session.id",
   /** Anonymous browser identity from cookie strada_vid. Survives tabs, login, and logout. Powers unique visitors. */
+  "visitor.id": "visitor.id",
   /** True on the first pageview of a new visitor.id. String "true" in ClickHouse maps. */
   "visitor.first_visit": "visitor.first_visit",
   /** Signed-in account from cookie strada_uid, identifyUser(), or userId. */

@@ -55,6 +55,13 @@ beforeEach(() => {
   resetContext();
 });
 
+describe("ATTR visitor keys", () => {
+  it("has visitor.id so pageview spans can set the attribute", () => {
+    expect(ATTR["visitor.id"]).toBe("visitor.id");
+    expect(ATTR["visitor.first_visit"]).toBe("visitor.first_visit");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // normalizeError
 // ---------------------------------------------------------------------------
