@@ -69,7 +69,7 @@
     "spiceflow": "1.26.0-rsc.18",
     "string-dedent": "^3.0.2",
     "termcast": "^1.8.0",
-    "zod": "^4.4.3",
+    "zod": "^4.6.5",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
