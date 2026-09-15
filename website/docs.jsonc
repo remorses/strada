@@ -100,7 +100,9 @@
             "pages": [
               "docs/cli/projects-list",
               "docs/cli/projects-create",
-              "docs/cli/projects-delete"
+              "docs/cli/projects-delete",
+              "docs/cli/projects-retention",
+              "docs/cli/projects-retention-update"
             ]
           },
           {

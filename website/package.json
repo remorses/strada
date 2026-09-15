@@ -70,6 +70,8 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.33.2",
     "@cloudflare/vitest-pool-workers": "^0.16.7",
+    "@goke/mcp": "^0.0.13",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^25.6.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",

@@ -533,7 +533,7 @@ tracesCli
       Project isolation is enforced by the project-scoped query API.
     `,
   )
-  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+  .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by ServiceName")
   .option("--since [time]", "Start time: duration (1h, 7d) or ISO date (default: 1h)")
@@ -681,8 +681,8 @@ tracesCli
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .option("--attrs <count>", z.number().default(3).describe("Number of compact span attributes to show"))
-  .option("-e, --expand-span <spanId>", z.array(z.string()).describe("SpanId or unique SpanId prefix to expand (repeatable)"))
+  .option("--attrs [count]", z.number().default(3).describe("Number of compact span attributes to show"))
+  .option("-e, --expand-span [spanId]", z.array(z.string()).describe("SpanId or unique SpanId prefix to expand (repeatable)"))
   .option("--json", "Print @strada.sh/ui compatible JSON")
   .action(async (traceId, options, { console: output, process: proc }) => {
     const { project } = await resolveProject({ project: options.project || undefined, org: options.org || undefined });

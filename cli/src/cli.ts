@@ -4,6 +4,7 @@
 // Only the default TUI command requires Bun (OpenTUI Zig FFI). When
 // invoked under Node, the TUI re-spawns itself with `bun` via spawnSync.
 
+import { createMcpAction } from "@goke/mcp";
 import { goke } from "goke";
 import dedent from "string-dedent";
 import packageJson from "../package.json" with { type: "json" };
@@ -21,6 +22,21 @@ import { tracesCli } from "./traces.ts";
 import { tokensCli } from "./tokens.ts";
 import { checksCli } from "./checks.ts";
 import { destinationsCli } from "./destinations.ts";
+
+const MCP_EXCLUDED_COMMANDS = new Set([
+  "login",
+  "logout",
+  "database create",
+  "database upgrade",
+  "projects retention update",
+  "mcp",
+]);
+
+export function isMcpCommand(name: string): boolean {
+  if (MCP_EXCLUDED_COMMANDS.has(name)) return false;
+  if (name.startsWith("completions")) return false;
+  return true;
+}
 
 export const cli = goke("strada")
   .use(databaseCli)
@@ -99,6 +115,33 @@ cli.command(
     extensionName: "strada",
   });
 });
+
+cli.command(
+  "mcp",
+  dedent`
+    Start a stdio MCP server that exposes supported non-interactive Strada
+    commands as tools.
+
+    The same \`strada\` binary is both the CLI and the MCP server. Clients
+    such as Cursor, Claude Desktop, and VS Code spawn \`strada mcp\` and
+    call tools like \`issues_list\`, \`logs\`, and \`query\`. Login with
+    \`strada login\` first so tools can use the saved session.
+
+    Browser, local-session, and long-running mutation commands are omitted:
+    \`login\`, \`logout\`, \`database create\`, \`database upgrade\`,
+    \`projects retention update\`, \`mcp\`, and the TUI. Run those in a terminal.
+  `,
+)
+  .example("strada mcp")
+  .example("npx @playwriter/install-mcp 'strada mcp' --client cursor")
+  .action(
+    createMcpAction({
+      cli,
+      commandFilter: isMcpCommand,
+      serverName: "strada",
+      serverVersion: packageJson.version,
+    }),
+  );
 
 cli.help();
 cli.version(packageJson.version);

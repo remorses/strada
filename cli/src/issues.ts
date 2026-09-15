@@ -85,7 +85,7 @@ issuesCli
   .example('strada issues list -p my-app --status all')
   .example('strada issues list -p my-app --status resolved')
   .example('strada issues list -p frontend -p api --since 7d')
-  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+  .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by service name")
   .option("--since [duration]", "Time range, e.g. 1h, 24h, 7d (default: 24h)")

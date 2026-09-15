@@ -47,6 +47,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.0.0
         version: 1.7.0
+      '@goke/mcp':
+        specifier: ^0.0.13
+        version: 0.0.13(goke@6.15.1)(zod@4.5.4)
       '@termcast/utils':
         specifier: ^2.2.8
         version: 2.2.8(react@19.2.8)(termcast@1.8.0(@opentui/core@0.2.14(typescript@6.0.3)(web-tree-sitter@0.25.10))(@opentui/react@0.2.14(react-devtools-core@7.0.1)(react@19.2.8)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.21.0))(@types/react@19.2.18)(immer@11.1.6)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8)))
@@ -78,6 +81,9 @@ importers:
         specifier: ^5.0.8
         version: 5.0.15(@types/react@19.2.18)(immer@11.1.6)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.5.4)
       '@types/node':
         specifier: ^25.5.0
         version: 25.9.5
@@ -98,7 +104,7 @@ importers:
         version: 1.0.0-beta.21
       drizzle-orm:
         specifier: 1.0.0-beta.21
-        version: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
+        version: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.6.5)
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -132,7 +138,7 @@ importers:
         version: link:../sdk
       spiceflow:
         specifier: 1.26.0-rsc.18
-        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.5.4)
+        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5)
     devDependencies:
       '@types/node':
         specifier: ^25.6.0
@@ -166,7 +172,7 @@ importers:
         version: 19.2.8(react@19.2.8)
       spiceflow:
         specifier: 1.26.0-rsc.18
-        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.5.4)
+        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5)
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.31.2
@@ -200,7 +206,7 @@ importers:
         version: link:../sdk
       spiceflow:
         specifier: 1.26.0-rsc.18
-        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.5.4)
+        version: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5)
     devDependencies:
       '@opentelemetry/api':
         specifier: ^1.9.1
@@ -383,7 +389,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: 1.0.0-beta.21
-        version: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
+        version: 1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
       echarts:
         specifier: ^6.0.0
         version: 6.0.0
@@ -448,6 +454,12 @@ importers:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.16.7
         version: 0.16.7(@vitest/runner@4.1.6)(@vitest/snapshot@4.1.6)(vitest@4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0)))
+      '@goke/mcp':
+        specifier: ^0.0.13
+        version: 0.0.13(goke@6.15.1)(zod@4.5.4)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.5.4)
       '@types/node':
         specifier: ^25.6.0
         version: 25.9.5
@@ -1728,8 +1740,13 @@ packages:
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
-  '@holocron.so/cli@0.22.1':
-    resolution: {integrity: sha512-7vXkxbuqZa5EDobpNy22lkdBhhRgYsUi5N6CB/N1ASDudg9juW3TZyypTI9iHdop0lyLXChi+tY4qYkyr7/CCw==}
+  '@goke/mcp@0.0.13':
+    resolution: {integrity: sha512-kn48iJYU4Td8zbaib6Dzx62dV+h3Y6vL+uVMXuCDaMVa4NlIcoiwN5q6l4ePufiuUYBdGaincWIk71BzwLfAew==}
+    peerDependencies:
+      goke: '*'
+
+  '@holocron.so/cli@0.22.2':
+    resolution: {integrity: sha512-Rshc8IN5Q3e8j0CTBabadnKy8eJpQ5J+O50ogghjL/zxfPRmIa9EiW9IMEB2e/CC0fxrukB3cWEw+Dt3bTs1zQ==}
     hasBin: true
 
   '@holocron.so/vite@0.34.0':
@@ -1751,14 +1768,14 @@ packages:
   '@iconify-json/fa6-solid@1.2.4':
     resolution: {integrity: sha512-LmDNNdJVyvF5mPm1yxWvL8KjCc/E8LzoqnF1LNTVpyY2ZJRUlGOWuPIThdbuFBF2IovgttkIyumhyqfmlHdwKg==}
 
-  '@iconify-json/lucide@1.2.129':
-    resolution: {integrity: sha512-pa0ufllJOXTDIH2BxE/BtWQEf/x46/lINDWcmncICV1/52veZ7KSBzQaVh9xDpmjDs8QN4j2Ex/LWlSSveL3yw==}
+  '@iconify-json/lucide@1.2.132':
+    resolution: {integrity: sha512-YgblweuQSz0AVG+zPvfECiYrJeTEFSKEthFSfwVB3OMJrL3dJ6QS0gX2akImqg3IEMRK1wVooAEAPbd7Kzj4FA==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
-  '@iconify/utils@3.1.5':
-    resolution: {integrity: sha512-nT+AWyh5caHY6xa0PdLXpUooIz6l7qsT+adqsCTYBfbdn5Q18VrWs2fvuTa7KEoJnPBfEPqWkmAIht0EHtCi2A==}
+  '@iconify/utils@3.1.7':
+    resolution: {integrity: sha512-JZHlwdID+dy+lTgbYC8NEC4zeugqeYsc6jewvzb4c58kHauJn+X7rNwQjxz5p2qSjqaEeQoLkCIQ9v/H4PK0/w==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -4556,8 +4573,8 @@ packages:
     peerDependencies:
       cytoscape: ^3.2.0
 
-  cytoscape@3.34.2:
-    resolution: {integrity: sha512-Cm2jaj1X/PBNlzV9yH8zcfGOxO7U+CJ/+mxSBVPSchLaugdp4jtlGx5qaHtPRZ6tgiZ5P+o1XoRfJA+ba6KM3g==}
+  cytoscape@3.34.3:
+    resolution: {integrity: sha512-yfYGhRcGAntq6YBD583j4n0Eg3jIxvWmZtz/5uz9UYkeIStSlMxuUja+ec5j3iBD8nv1rwaOAYMW09tBdkSeaQ==}
     engines: {node: '>=0.10'}
 
   d3-array@2.12.1:
@@ -4837,8 +4854,8 @@ packages:
     resolution: {integrity: sha512-gYzvtM72ZtxQO0T048kd6HWSbbGCNOUwcnfQ01cqIJ4X2IYKFFHZ5mKvrQETcFXxsRObZulDaKmy//R7TPtsBg==}
     engines: {node: '>=20.19.0'}
 
-  dompurify@3.4.14:
-    resolution: {integrity: sha512-dVoH9z+MY+C9IilgGCk3YfFqjLi3fChm2OiKJMzh6axrJ5qwxqWaZamgmHrpv22CN/KdbZJuGEGgfQoL00LTdg==}
+  dompurify@3.4.15:
+    resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
@@ -7439,6 +7456,9 @@ packages:
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
   zrender@6.0.0:
     resolution: {integrity: sha512-41dFXEEXuJpNecuUQq6JlbybmnHaqqpGlbH1yxnA5V9MMP4SbohSVZsJIwz+zdjQXSSlR1Vc34EgH1zxyTDvhg==}
 
@@ -7693,31 +7713,31 @@ snapshots:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
     optionalDependencies:
-      drizzle-orm: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
+      drizzle-orm: 1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
 
-  '@better-auth/kysely-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)':
+  '@better-auth/kysely-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)':
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
     optionalDependencies:
       kysely: 0.29.2
 
-  '@better-auth/memory-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
+  '@better-auth/memory-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
 
-  '@better-auth/mongo-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
+  '@better-auth/mongo-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
 
-  '@better-auth/prisma-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
+  '@better-auth/prisma-adapter@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)':
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
 
-  '@better-auth/telemetry@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)':
+  '@better-auth/telemetry@1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)':
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.1
@@ -8433,7 +8453,17 @@ snapshots:
 
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
-  '@holocron.so/cli@0.22.1(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))':
+  '@goke/mcp@0.0.13(goke@6.15.1)(zod@4.5.4)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
+      goke: 6.15.1
+      js-yaml: 4.1.1
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
+
+  '@holocron.so/cli@0.22.2(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@clack/prompts': 1.7.0
       '@opencode-ai/sdk': 1.18.5
@@ -8448,11 +8478,11 @@ snapshots:
       remark-frontmatter: 5.0.0
       remark-gfm: 4.0.1
       remark-mdx: 3.1.1
-      spiceflow: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.5.4)
+      spiceflow: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5)
       string-dedent: 3.0.2
       unist-util-visit: 5.1.0
       yaml: 2.9.0
-      zod: 4.5.4
+      zod: 4.6.5
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'
@@ -8468,12 +8498,12 @@ snapshots:
       '@cloudflare/vite-plugin': 1.33.2(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260529.1)(wrangler@4.96.0)
       '@fontsource-variable/inter': 5.3.0
       '@fontsource-variable/jetbrains-mono': 5.3.0
-      '@holocron.so/cli': 0.22.1(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+      '@holocron.so/cli': 0.22.2(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
       '@iconify-json/fa6-brands': 1.2.6
       '@iconify-json/fa6-regular': 1.2.4
       '@iconify-json/fa6-solid': 1.2.4
-      '@iconify-json/lucide': 1.2.129
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
+      '@iconify-json/lucide': 1.2.132
+      '@modelcontextprotocol/sdk': 1.30.0(zod@4.6.5)
       '@orama/orama': 3.1.18
       '@radix-ui/react-dropdown-menu': 2.1.24(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@scalar/json-magic': 0.12.20
@@ -8505,13 +8535,13 @@ snapshots:
       remark-gfm: 4.0.1
       remark-mdx: 3.1.1
       safe-mdx: 1.14.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      spiceflow: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.5.4)
+      spiceflow: 1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5)
       string-dedent: 3.0.2
       tailwind-merge: 3.5.0
       tailwindcss: 4.2.2
       unist-util-visit: 5.1.0
       yaml: 2.9.0
-      zod: 4.5.4
+      zod: 4.6.5
       zustand: 5.0.15(@types/react@19.2.18)(immer@11.1.6)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     optionalDependencies:
       dialkit: 1.4.3(motion@12.43.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -8556,13 +8586,13 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
-  '@iconify-json/lucide@1.2.129':
+  '@iconify-json/lucide@1.2.132':
     dependencies:
       '@iconify/types': 2.0.0
 
   '@iconify/types@2.0.0': {}
 
-  '@iconify/utils@3.1.5':
+  '@iconify/utils@3.1.7':
     dependencies:
       '@antfu/install-pkg': 2.0.1
       '@iconify/types': 2.0.0
@@ -8852,6 +8882,28 @@ snapshots:
       raw-body: 3.0.2
       zod: 4.5.4
       zod-to-json-schema: 3.25.2(zod@4.5.4)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.30.0(zod@4.6.5)':
+    dependencies:
+      '@hono/node-server': 2.1.1(hono@4.13.5)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      express: 5.2.1
+      express-rate-limit: 8.7.0(express@5.2.1)
+      hono: 4.13.5
+      jose: 6.2.11
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
     transitivePeerDependencies:
       - supports-color
 
@@ -10813,17 +10865,17 @@ snapshots:
   better-auth-drizzle-adapter@1.1.0(better-auth@1.6.14(@opentelemetry/api@1.9.1)(better-sqlite3@12.10.0)(drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))))(drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)):
     dependencies:
       better-auth: 1.6.14(@opentelemetry/api@1.9.1)(better-sqlite3@12.10.0)(drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0)))
-      drizzle-orm: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
+      drizzle-orm: 1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
 
   better-auth@1.6.14(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-sqlite3@12.10.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))):
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4))
-      '@better-auth/kysely-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)
-      '@better-auth/memory-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/mongo-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/prisma-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/telemetry': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)
+      '@better-auth/kysely-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)
+      '@better-auth/memory-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/mongo-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/prisma-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/telemetry': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)
       '@better-auth/utils': 0.4.1
       '@better-fetch/fetch': 1.1.21
       '@noble/ciphers': 2.2.0
@@ -10847,11 +10899,11 @@ snapshots:
     dependencies:
       '@better-auth/core': 1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4))
-      '@better-auth/kysely-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)
-      '@better-auth/memory-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/mongo-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/prisma-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
-      '@better-auth/telemetry': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)
+      '@better-auth/kysely-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(kysely@0.29.2)
+      '@better-auth/memory-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/mongo-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/prisma-adapter': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)
+      '@better-auth/telemetry': 1.6.14(@better-auth/core@1.6.14(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.5.4))(jose@6.2.11)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.1)(@better-fetch/fetch@1.1.21)
       '@better-auth/utils': 0.4.1
       '@better-fetch/fetch': 1.1.21
       '@noble/ciphers': 2.2.0
@@ -10864,7 +10916,7 @@ snapshots:
       zod: 4.5.4
     optionalDependencies:
       better-sqlite3: 12.10.0
-      drizzle-orm: 1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
+      drizzle-orm: 1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       vitest: 4.1.6(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(@vitest/browser-playwright@4.1.5)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
@@ -11098,17 +11150,17 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  cytoscape-cose-bilkent@4.1.0(cytoscape@3.34.2):
+  cytoscape-cose-bilkent@4.1.0(cytoscape@3.34.3):
     dependencies:
       cose-base: 1.0.3
-      cytoscape: 3.34.2
+      cytoscape: 3.34.3
 
-  cytoscape-fcose@2.2.0(cytoscape@3.34.2):
+  cytoscape-fcose@2.2.0(cytoscape@3.34.3):
     dependencies:
       cose-base: 2.2.0
-      cytoscape: 3.34.2
+      cytoscape: 3.34.3
 
-  cytoscape@3.34.2: {}
+  cytoscape@3.34.3: {}
 
   d3-array@2.12.1:
     dependencies:
@@ -11375,7 +11427,7 @@ snapshots:
     dependencies:
       domelementtype: 3.0.0
 
-  dompurify@3.4.14:
+  dompurify@3.4.15:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -11401,12 +11453,21 @@ snapshots:
       get-tsconfig: 4.13.7
       jiti: 2.6.1
 
-  drizzle-orm@1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4):
+  drizzle-orm@1.0.0-beta.21(@cloudflare/workers-types@4.20260317.1)(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.6.5):
     dependencies:
       '@types/mssql': 9.1.11
       mssql: 11.0.1
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260317.1
+      '@opentelemetry/api': 1.9.1
+      better-sqlite3: 12.10.0
+      zod: 4.6.5
+
+  drizzle-orm@1.0.0-beta.21(@opentelemetry/api@1.9.1)(@types/mssql@9.1.11)(better-sqlite3@12.10.0)(mssql@11.0.1)(zod@4.5.4):
+    dependencies:
+      '@types/mssql': 9.1.11
+      mssql: 11.0.1
+    optionalDependencies:
       '@opentelemetry/api': 1.9.1
       better-sqlite3: 12.10.0
       zod: 4.5.4
@@ -12516,18 +12577,18 @@ snapshots:
   mermaid@11.17.2:
     dependencies:
       '@braintree/sanitize-url': 7.1.2
-      '@iconify/utils': 3.1.5
+      '@iconify/utils': 3.1.7
       '@mermaid-js/parser': 1.2.1
       '@types/d3': 7.4.3
       '@upsetjs/venn.js': 2.0.0
-      cytoscape: 3.34.2
-      cytoscape-cose-bilkent: 4.1.0(cytoscape@3.34.2)
-      cytoscape-fcose: 2.2.0(cytoscape@3.34.2)
+      cytoscape: 3.34.3
+      cytoscape-cose-bilkent: 4.1.0(cytoscape@3.34.3)
+      cytoscape-fcose: 2.2.0(cytoscape@3.34.3)
       d3: 7.9.0
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.23
-      dompurify: 3.4.14
+      dompurify: 3.4.15
       es-toolkit: 1.52.0
       fastdom: 1.0.12
       katex: 0.16.47
@@ -13837,6 +13898,40 @@ snapshots:
       - react-server-dom-webpack
       - vite
 
+  spiceflow@1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5):
+    dependencies:
+      '@vitejs/plugin-rsc': 0.5.34(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+      eventsource-parser: 3.1.1
+      its-fine: 2.0.0(@types/react@19.2.18)(react@19.2.8)
+      nf3: 0.3.16
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
+      hono: 4.13.5
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+    transitivePeerDependencies:
+      - '@types/react'
+      - react-server-dom-webpack
+      - vite
+
+  spiceflow@1.26.0-rsc.18(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(@types/react@19.2.18)(hono@4.13.5)(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(zod@4.6.5):
+    dependencies:
+      '@vitejs/plugin-rsc': 0.5.34(react-dom@19.2.8(react@19.2.8))(react-server-dom-webpack@19.2.5(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(webpack@5.106.2(esbuild@0.28.1)))(react@19.2.8)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+      eventsource-parser: 3.1.1
+      its-fine: 2.0.0(@types/react@19.2.18)(react@19.2.8)
+      nf3: 0.3.16
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(zod@4.6.5)
+      hono: 4.13.5
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+    transitivePeerDependencies:
+      - '@types/react'
+      - react-server-dom-webpack
+      - vite
+
   sprintf-js@1.0.3: {}
 
   sprintf-js@1.1.3: {}
@@ -14499,9 +14594,15 @@ snapshots:
     dependencies:
       zod: 4.5.4
 
+  zod-to-json-schema@3.25.2(zod@4.6.5):
+    dependencies:
+      zod: 4.6.5
+
   zod@3.25.76: {}
 
   zod@4.5.4: {}
+
+  zod@4.6.5: {}
 
   zrender@6.0.0:
     dependencies:

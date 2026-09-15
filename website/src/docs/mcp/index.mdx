@@ -1,0 +1,83 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: Connect Strada CLI to Cursor and Claude via MCP
+sidebarTitle: Overview
+description: The same Strada CLI is a stdio MCP server. Install it in Cursor, Claude, or VS Code so agents can list issues, read logs, and run SQL.
+icon: lucide:server
+prompt: |
+  Write the MCP overview from @/cli/src/cli.ts and
+  @https://github.com/remorses/goke/tree/main/mcp.
+  Cover that strada mcp is the same binary as the CLI, stdio transport,
+  and that agents should login with strada login first.
+---
+
+# Strada MCP
+
+The **`strada` binary** is both the CLI and an [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) server. Run `strada mcp` and supported non-interactive CLI commands become tools that Cursor, Claude Desktop, VS Code, and other MCP clients can call.
+
+There is no second package. Agents use the **same login**, the same project setup, and the same ClickHouse SQL as you do in the terminal.
+
+```diagram
+  Cursor / Claude / VS Code
+              │
+              │  spawn: strada mcp   (stdio JSON-RPC)
+              ▼
+        ┌─────────────┐
+        │ strada mcp  │  same binary as `strada issues list`
+        └──────┬──────┘
+               │
+               ▼
+     issues_list  logs  query  traces_view  analytics_pages
+               │
+               ▼
+        Strada website API  ►  your ClickHouse / Tinybird
+```
+
+<Aside>
+<Note>
+`strada mcp` speaks **stdio**. The client starts the process and talks JSON-RPC on stdin and stdout. Do not pipe other output into that process.
+</Note>
+</Aside>
+
+## What agents can do
+
+Once the server is installed, an agent can:
+
+- **List and inspect issues** with `issues_list` and `issues_view`
+- **Read logs** around a failure with `logs`
+- **Open a trace** with `traces_view`
+- **Run SQL** with `query`
+- **Check traffic** with `analytics_pages` and `analytics_events`
+
+Those tools are the CLI commands, with spaces turned into **underscores**. `strada issues list` is the `issues_list` tool.
+
+## Auth
+
+MCP tools reuse the session from **`strada login`**. Log in once in a terminal before the agent starts:
+
+```bash
+strada login
+strada whoami
+```
+
+The login command needs an interactive **browser**. It is not an MCP tool. After the session is saved, tools such as `issues_list` and `query` work with no extra token.
+
+Folder **`strada setup`** still selects the default org and project. If the agent runs in that folder, it inherits the same defaults as the CLI.
+
+## What is not a tool
+
+These stay in the terminal:
+
+- **`login`**. Device flow. Opens a browser and needs a TTY.
+- **`logout`**. Clears the shared local session that other MCP tools need.
+- **`database create`**. Tinybird OAuth and workspace bootstrap.
+- **`database upgrade`**. Long-running Clack output that would break stdio.
+- **`mcp`**. The server command itself.
+- **The TUI**. `strada` with no arguments.
+
+`setup` and the rest of the query and mutate commands are tools. `setup` needs `--org` and `--project` when stdin is not a TTY. MCP includes mutation tools such as `issues_resolve` and `projects_delete`.
+
+## Next
+
+1. [Install the server](./install.mdx) in Cursor, Claude Desktop, or VS Code
+2. Use the **Tools** group in this tab for the generated schema of each command

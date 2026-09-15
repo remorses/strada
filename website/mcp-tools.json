@@ -1,0 +1,1338 @@
+{
+  "tools": [
+    {
+      "name": "whoami",
+      "description": "Show the currently authenticated user and server URL.\n\nValidates the stored session token by calling the Strada API. If the\nsession is expired or invalid, run `strada login` again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "orgs_list",
+      "description": "List all organizations you belong to.\n\nShows org name, role, and ID. A green dot marks the org configured for\nthe current folder. If no org is configured, run `strada setup`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "setup",
+      "description": "Save the default organization and project for the current folder.\n\nStrada resolves config by walking up from the current directory and using\nthe closest matching scope. Use this once per app folder so commands like\n`strada logs` and `strada issues list` do not need `-p`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Directory scope to configure (default: current directory)"
+          },
+          "org": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Organization name or ID"
+          },
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Project slug or ID"
+          }
+        }
+      }
+    },
+    {
+      "name": "projects_list",
+      "description": "List all projects in the current organization.\n\nShows project slugs and IDs. Use the slug with -p in other commands.\nSlugs often include an environment suffix (e.g. 'my-app-prod').\nThis also refreshes the local project cache.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        }
+      }
+    },
+    {
+      "name": "projects_create",
+      "description": "Create a new project and generate its first org-wide ingest token.\n\nThe generated project ID becomes the ingest hostname: `{projectId}-ingest.strada.sh`.\nThe token printed at creation is shown only once. Save it as `STRADA_TOKEN`\nfor server-side SDKs. Browser SDKs do not need a token.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Positional argument slug"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "tracesDays": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Trace retention in days"
+          },
+          "logsDays": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Log and custom-event retention in days"
+          },
+          "errorsDays": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Error retention in days"
+          },
+          "metricsDays": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Metrics retention in days"
+          },
+          "allDays": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Set all four signals to the same number of days"
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      }
+    },
+    {
+      "name": "projects_delete",
+      "description": "Delete a project by its ID.\n\nThis removes the project from D1. Data already ingested into\nTinybird/ClickHouse is not deleted. Get the project ID from\n`strada projects list`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "projects_retention",
+      "description": "Show raw telemetry retention for a project.\n\nTraces default to 14 days, logs to 30 days, errors and metrics to 90 days.\n`--logs-days` also controls custom product events stored in `otel_logs`.\nAggregated browser analytics and health-check results stay at a fixed 90 days.\nIssue state and identified users are kept.\n\nPer-project custom values require a Tinybird backend. Self-hosted ClickHouse\nuses the static defaults in `clickhouse.sql`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        }
+      }
+    },
+    {
+      "name": "issues_list",
+      "description": "List error issue groups sorted by frequency.\n\nGroups errors by FingerprintHash and shows the count, exception type,\nmessage, status, and last seen time for each group. This is the starting\npoint for debugging production errors. Use --since to control the time\nrange and -s to filter by service.\n\nAfter finding an issue, copy its fingerprint hash and run\n`strada issues view <fingerprint>` to see the full stack trace and\nrecent events.\n\nBy default only 'open' issues are shown. Use `--status` to filter by\ntriage state: open, resolved, muted, ignored, or all.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 24h)"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of issue groups (default: 20)"
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by triage status: open, resolved, muted, ignored, all (default: open)"
+          },
+          "unhandled": {
+            "type": "boolean",
+            "description": "Show only unhandled errors"
+          }
+        }
+      }
+    },
+    {
+      "name": "issues_view",
+      "description": "Show full details for a single issue by fingerprint hash.\n\nDisplays exception type, message, stack trace (structured frames when\navailable), triage status, mechanism (handled/unhandled), services,\nreleases, environments, and a table of recent error events with trace\ncorrelation IDs.\n\nGet the fingerprint hash from `strada issues list`. The `--events` flag\ncontrols how many recent occurrences to show (default 5).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Positional argument fingerprint"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "events": {
+            "type": "string",
+            "description": "Number of recent error events to show (default: 5)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Output raw JSON"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ]
+      }
+    },
+    {
+      "name": "issues_resolve",
+      "description": "Mark an issue as resolved.\n\nSets the issue status to 'resolved' in otel_issue_state. Resolved issues\nare hidden from the default `strada issues list` output. Use `--status all`\nor `--status resolved` to see them. Reopen with `strada issues unresolve`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Positional argument fingerprint"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ]
+      }
+    },
+    {
+      "name": "issues_mute",
+      "description": "Mark an issue as muted.\n\nMuted issues still collect error events but are hidden from the default\n`strada issues list` output. Use `--status muted` or `--status all` to see them.\nUseful for known noise you want to triage separately.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Positional argument fingerprint"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ]
+      }
+    },
+    {
+      "name": "issues_unresolve",
+      "description": "Reopen a resolved or muted issue.\n\nSets the status back to 'open' so it appears in the default listing again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Positional argument fingerprint"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ]
+      }
+    },
+    {
+      "name": "issues_assign",
+      "description": "Assign an issue to an org member or remove the current assignee.\n\nPass `--to <member-id>` to assign, or `--unassign` to clear the assignee.\nGet member IDs from the Strada website team page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Positional argument fingerprint"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "to": {
+            "type": "string",
+            "description": "Org member ID to assign"
+          },
+          "unassign": {
+            "type": "boolean",
+            "description": "Remove the current assignee"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ]
+      }
+    },
+    {
+      "name": "analytics_pages",
+      "description": "Top pages by pageviews from the otel_analytics_pages materialized view.\n\nShows pathname, pageview count, and unique visitor count. Uses\ncountMerge/uniqMerge for AggregatingMergeTree columns.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_browsers",
+      "description": "Top browsers by unique visitors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_devices",
+      "description": "Top device types by unique visitors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_countries",
+      "description": "Top countries by unique visitors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_referrers",
+      "description": "Top traffic sources by unique visitors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_languages",
+      "description": "Top browser languages by unique visitors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_kpis",
+      "description": "Summary KPIs: unique visitors, pageviews, sessions, bounce rate, and\naverage session duration.\n\nUnique visitors come from `visitor.id` (cookie `strada_vid`, survives tabs and logout). Sessions\ncome from `session.id` (one tab). Query both MVs. Use this as a health\ncheck of browser analytics. Same numbers as `strada analytics overview`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_overview",
+      "description": "One-screen browser analytics: unique visitors, pageviews, sessions,\nbounce rate, top pages, and top referrers.\n\nSame numbers as `strada analytics kpis` plus the first few rows of\n`strada analytics pages` and `strada analytics referrers`. Use this\ninstead of writing SQL for a daily traffic check.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_timeseries",
+      "description": "Daily unique visitors and pageviews.\n\nReads `otel_analytics_pages` grouped by Date. Use this for growth\ncharts without writing SQL. `--since 30d` is the usual window.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_visitors",
+      "description": "Unique visitors, first visits, and returning visitors.\n\nUnique visitors are `visitor.id` (cookie `strada_vid`). First visits are unique\nvisitors whose first pageview is in the same date window, from the pages MV\n`FirstVisits` column. Returning = unique minus first. Older data without\n`visitor.id` still counts via `session.id` fallback.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_events",
+      "description": "Top custom events by occurrence count",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "since": {
+            "type": "string",
+            "description": "Time range, e.g. 1h, 24h, 7d (default: 7d)"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max number of rows (default: 20)"
+          },
+          "where": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Raw SQL WHERE condition (repeatable, ANDed)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analytics_realtime",
+      "description": "Count active visitors in the last 5 minutes.\n\nQueries raw otel_traces for pageview spans with distinct session.id\nvalues. This is a real-time metric, not from the materialized views.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by service name"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Filter by domain"
+          }
+        }
+      }
+    },
+    {
+      "name": "query",
+      "description": "Run a ClickHouse SQL query against a project's database.\n\nWithout a FORMAT clause, renders an auto-sized terminal table. Add `--json`\nto get the raw JSON envelope `{ data, meta, rows, statistics }` instead.\n\nAppend a ClickHouse FORMAT clause to the SQL for raw output: JSON,\nJSONEachRow, CSV, CSVWithNames, TSV, TSVWithNames, PrettyCompact,\nParquet, Prometheus. The response body is written directly to stdout\nso you can pipe it.\n\nProjectId filtering is automatic via JWT. Never add `WHERE ProjectId` in SQL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "Positional argument sql"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print the raw JSON envelope { data, meta, rows, statistics } instead of a table (only applies when no FORMAT clause is in the SQL)"
+          }
+        },
+        "required": [
+          "sql"
+        ]
+      }
+    },
+    {
+      "name": "alerts_create",
+      "description": "Create an error alert rule.\n\nAlert when errors of the same fingerprint exceed a threshold within\na time window. Multiple rules per org are supported. Project-scoped\nrules override org-wide rules for the same project.\n\nOptionally pass --channel and --to to create a destination inline.\nAll existing org destinations are auto-linked to the new rule.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Rule name (required)"
+          },
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Scope to a project (omit for all projects)"
+          },
+          "threshold": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Min errors to trigger (default: 1)"
+          },
+          "window": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Time window in minutes (default: 5)"
+          },
+          "cooldown": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Re-alert cooldown in minutes (default: 60)"
+          },
+          "channel": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "enum": [
+              "email",
+              "webhook",
+              "slack"
+            ],
+            "description": "Create a destination inline"
+          },
+          "to": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Email address or webhook URL"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "alerts_list",
+      "description": "Show all alert rules and destinations for the current org.\n\nLists both error_threshold and health_check rules with their\ndestinations. Use `strada checks list` to see health check details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "alerts_update",
+      "description": "Update an error alert rule's settings.\n\nChange the threshold, window, cooldown, or name of an existing\nerror_threshold rule. Get the rule ID from `strada alerts list`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          },
+          "name": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "New rule name"
+          },
+          "threshold": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Min errors to trigger"
+          },
+          "window": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Time window in minutes"
+          },
+          "cooldown": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Re-alert cooldown in minutes"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "alerts_delete",
+      "description": "Delete an error alert rule.\n\nDestinations are not deleted; they remain for other rules.\nGet the rule ID from `strada alerts list`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "alerts_test",
+      "description": "Send a test alert to all destinations in the org.\n\nVerifies that each destination (email, webhook) is reachable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "checks_create",
+      "description": "Create a URL health check that runs on a schedule.\n\nThe check fetches the URL with the specified method and expects a status\ncode in the configured range (default 200-299). After N consecutive\nfailures (default 2), alerts fire to all configured destinations.\n\nChecks auto-disable after continuous failure for `--auto-disable-hours`\n(default 24) to avoid filling the database with identical failure rows.\nRe-enable with `strada checks enable <id>`.\n\nAlerts go to the same destinations as error alerts. If no destinations\nare configured, add one first with `strada alerts create`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "URL to check (required)"
+          },
+          "name": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Human-readable check name (required)"
+          },
+          "method": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "enum": [
+              "GET",
+              "HEAD",
+              "POST",
+              "PUT",
+              "DELETE",
+              "OPTIONS"
+            ],
+            "description": "HTTP method (default: GET)"
+          },
+          "schedule": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Cron schedule in UTC (default: '*/5 * * * *')"
+          },
+          "timeout": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Request timeout in ms (default: 10000)"
+          },
+          "failures": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Consecutive failures before alerting (default: 2)"
+          },
+          "statusMin": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Min acceptable status code (default: 200)"
+          },
+          "statusMax": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Max acceptable status code (default: 299)"
+          },
+          "cooldown": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Re-alert cooldown in minutes (default: 60)"
+          },
+          "autoDisableHours": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "number",
+            "description": "Auto-disable after N hours of failure, 0 to disable (default: 24)"
+          },
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "description": "Project slug to scope the check to"
+          }
+        },
+        "required": [
+          "url",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "checks_list",
+      "description": "List all health checks for the current org.\n\nShows check name, URL, schedule, status, and whether it's enabled.\nUse `strada checks delete <id>` to remove a check.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "checks_delete",
+      "description": "Delete a health check by ID.\n\nRemoves the check rule from D1. Historical check results remain in\nClickHouse and are queryable via `strada query`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "checks_enable",
+      "description": "Re-enable a health check that was disabled (manually or auto-disabled).\n\nAuto-disabled checks stop running after continuous failure for too long.\nRe-enable them so they start checking again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "checks_disable",
+      "description": "Manually disable a health check.\n\nThe check stops running but the rule is preserved. Re-enable with\n`strada checks enable <id>`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "destinations_list",
+      "description": "List all notification destinations for the current org.\n\nDestinations receive both error alerts and health check alerts.\nThey are auto-linked to all alert rules in the org.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "destinations_remove",
+      "description": "Remove a notification destination.\n\nUnlinks the destination from all alert rules and deletes it.\nGet the destination ID from `strada destinations list` or `strada alerts list`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "logs",
+      "description": "Browse and search OTel log records from otel_logs.\n\nRenders one log per line with timestamp, severity, service, body, and\nattributes. Supports subcommands: `list` (default) and `stats`.\n\nUse `-w` for raw SQL WHERE filters on attribute maps.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subcommand": {
+            "type": "string",
+            "description": "Positional argument subcommand"
+          },
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by ServiceName"
+          },
+          "since": {
+            "type": "string",
+            "description": "Start time: duration (1h, 7d) or ISO date (default: 1h)"
+          },
+          "until": {
+            "type": "string",
+            "description": "End time: duration (1h) or ISO date"
+          },
+          "minLevel": {
+            "type": "string",
+            "description": "Minimum severity: trace, debug, info, warn, error, fatal"
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search on log body"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "Show logs for a specific trace"
+          },
+          "where": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Raw SQL WHERE condition (repeatable, ANDed)"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max rows (default: 200)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw JSON response"
+          }
+        }
+      }
+    },
+    {
+      "name": "services_list",
+      "description": "Find service names that are actively generating logs or traces.\n\nUse this before filtering logs, issues, or SQL queries by ServiceName.\nIt helps discover the real service.name values present in a project and\nshows which services are currently producing telemetry in the selected\ntime range.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "since": {
+            "type": "string",
+            "description": "Start time: duration (1h, 7d) or ISO date (default: 24h)"
+          },
+          "until": {
+            "type": "string",
+            "description": "End time: duration (1h) or ISO date"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max services (default: 100)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw JSON response"
+          }
+        }
+      }
+    },
+    {
+      "name": "traces_list",
+      "description": "List distributed traces in a project, grouped by TraceId.\n\nUse this to find trace IDs before running `strada traces view`.\nScans otel_traces in the selected time range, summarizes span counts,\nservices, error spans, duration, and the first root span when one exists.\nProject isolation is enforced by the project-scoped query API.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by ServiceName"
+          },
+          "since": {
+            "type": "string",
+            "description": "Start time: duration (1h, 7d) or ISO date (default: 1h)"
+          },
+          "until": {
+            "type": "string",
+            "description": "End time: duration (1h) or ISO date"
+          },
+          "errors": {
+            "type": "boolean",
+            "description": "Only show traces with error spans"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max traces (default: 50)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw JSON response"
+          }
+        }
+      }
+    },
+    {
+      "name": "traces_span",
+      "description": "Show the full details for one span inside a trace.\n\nUse the short span id printed by `strada traces view`, or paste a full\nSpanId. The command prints all span attributes, resource attributes,\nscope attributes, exception events, and links without truncation. Use this\nafter the compact tree has identified the span that needs inspection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string",
+            "description": "Positional argument traceId"
+          },
+          "spanId": {
+            "type": "string",
+            "description": "Positional argument spanId"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw span JSON"
+          }
+        },
+        "required": [
+          "traceId",
+          "spanId"
+        ]
+      }
+    },
+    {
+      "name": "traces_view",
+      "description": "Render one distributed trace as a parent-child span tree.\n\nUse a TraceId from `strada traces list` or from logs/errors. The SQL\nfetches all spans for that TraceId, then the CLI builds a SpanNode tree\nfrom SpanId and ParentSpanId. Use `--json` to print a shape designed to\nmatch the @strada.sh/ui trace timeline, making future code sharing simple.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string",
+            "description": "Positional argument traceId"
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug override (defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "attrs": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "default": 3,
+            "description": "Number of compact span attributes to show",
+            "type": "number"
+          },
+          "expandSpan": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "SpanId or unique SpanId prefix to expand (repeatable)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print @strada.sh/ui compatible JSON"
+          }
+        },
+        "required": [
+          "traceId"
+        ]
+      }
+    },
+    {
+      "name": "tokens_create",
+      "description": "Create an org-wide token with an explicit scope.\n\nTokens with the ingest scope authenticate writes to the OTLP collector only. They do\nnot grant query access, project management access, or access to the\nStrada website API. Use them in Node.js, Cloudflare Workers, Vercel, and\nother trusted server runtimes.\n\nThe only supported scope today is `ingest`. The scope is still required\nas `--scope` so command usage will stay stable when more token scopes are\nadded later.\n\nBrowser SDKs should not use tokens. Browser ingest stays\nanonymous and is protected by the collector's anonymous rate limit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Positional argument name"
+          },
+          "scope": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "enum": [
+              "ingest"
+            ],
+            "description": "Token scope. Currently only ingest is supported"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        },
+        "required": [
+          "name",
+          "scope"
+        ]
+      }
+    },
+    {
+      "name": "tokens_list",
+      "description": "List org-wide tokens.\n\nThis shows token metadata and prefixes only. Full token values are never\nstored by Strada and cannot be recovered after creation. Create a new\ntoken and delete the old one when rotating credentials.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          }
+        }
+      }
+    },
+    {
+      "name": "tokens_delete",
+      "description": "Delete an org-wide token.\n\nUse this to rotate leaked or obsolete server-side ingestion credentials.\nDeleting a token immediately stops future collector requests that use it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  ]
+}

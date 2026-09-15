@@ -35,15 +35,15 @@ strada checks create
 |--------|---------|-------------|
 | `--url <url>` | - | URL to check (required) |
 | `--name <name>` | - | Human-readable check name (required) |
-| `--method <method>` | - | HTTP method (default: GET) |
-| `--schedule <cron>` | - | Cron schedule in UTC (default: '*/5 * * * *') |
-| `--timeout <ms>` | - | Request timeout in ms (default: 10000) |
-| `--failures <count>` | - | Consecutive failures before alerting (default: 2) |
-| `--status-min <code>` | - | Min acceptable status code (default: 200) |
-| `--status-max <code>` | - | Max acceptable status code (default: 299) |
-| `--cooldown <minutes>` | - | Re-alert cooldown in minutes (default: 60) |
-| `--auto-disable-hours <hours>` | - | Auto-disable after N hours of failure, 0 to disable (default: 24) |
-| `--project <slug>` | - | Project slug to scope the check to |
+| `--method [method]` | - | HTTP method (default: GET) |
+| `--schedule [cron]` | - | Cron schedule in UTC (default: '*/5 * * * *') |
+| `--timeout [ms]` | - | Request timeout in ms (default: 10000) |
+| `--failures [count]` | - | Consecutive failures before alerting (default: 2) |
+| `--status-min [code]` | - | Min acceptable status code (default: 200) |
+| `--status-max [code]` | - | Max acceptable status code (default: 299) |
+| `--cooldown [minutes]` | - | Re-alert cooldown in minutes (default: 60) |
+| `--auto-disable-hours [hours]` | - | Auto-disable after N hours of failure, 0 to disable (default: 24) |
+| `--project [slug]` | - | Project slug to scope the check to |
 
 ## Global Options
 

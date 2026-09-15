@@ -104,7 +104,7 @@ logsCli
   .example("strada logs -p my-app -w \"LogAttributes['user.id'] = 'user_123'\"")
   .example('strada logs -p my-app --search "timeout" --min-level error --since 24h')
   .example('strada logs stats -p my-app --since 7d')
-  .option("-p, --project <slug>", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+  .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by ServiceName")
   .option("--since [time]", "Start time: duration (1h, 7d) or ISO date (default: 1h)")
@@ -112,7 +112,7 @@ logsCli
   .option("--min-level [level]", "Minimum severity: trace, debug, info, warn, error, fatal")
   .option("--search [text]", "Full-text search on log body")
   .option("--trace-id [id]", "Show logs for a specific trace")
-  .option("-w, --where <expr>", z.array(z.string()).describe("Raw SQL WHERE condition (repeatable, ANDed)"))
+  .option("-w, --where [expr]", z.array(z.string()).describe("Raw SQL WHERE condition (repeatable, ANDed)"))
   .option("-n, --limit [count]", "Max rows (default: 200)")
   .option("--json", "Print raw JSON response")
   .action(async (subcommand, options, { console: output, process: proc }) => {

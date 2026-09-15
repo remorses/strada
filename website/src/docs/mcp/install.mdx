@@ -1,0 +1,73 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: Install the Strada MCP server in your editor
+sidebarTitle: Install
+description: Install strada mcp in Cursor, Claude Desktop, VS Code, and other MCP clients. One stdio command, and the same login as the CLI.
+icon: lucide:download
+prompt: |
+  Write the MCP install guide from @/cli/src/cli.ts and
+  @https://github.com/supermemoryai/install-mcp.
+  Show npx @playwriter/install-mcp for common clients and a manual
+  mcp.json example for Cursor.
+---
+
+# Install
+
+Install the **`strada` CLI** first, log in, then register `strada mcp` with your MCP client.
+
+```bash
+npm install -g strada
+strada login
+strada whoami
+```
+
+<Aside>
+<Tip>
+Use the same **`strada`** on `PATH` that you already use in the terminal. The MCP server is that binary, not a separate npm package.
+</Tip>
+</Aside>
+
+## One-liner with install-mcp
+
+[`@playwriter/install-mcp`](https://github.com/supermemoryai/install-mcp) writes the client config for you. Pass the full command so the client starts the MCP server, not the TUI:
+
+```bash
+npx @playwriter/install-mcp 'strada mcp' --client cursor
+npx @playwriter/install-mcp 'strada mcp' --client claude-desktop
+npx @playwriter/install-mcp 'strada mcp' --client vscode
+npx @playwriter/install-mcp 'strada mcp' --client claude-code
+npx @playwriter/install-mcp 'strada mcp' --client opencode
+```
+
+Supported clients include Cursor, Claude Desktop, VS Code, Windsurf, Claude Code, OpenCode, Zed, Goose, Cline, Codex, and Gemini CLI. See the [install-mcp client list](https://github.com/supermemoryai/install-mcp#supported-clients).
+
+## Manual Cursor config
+
+If you edit the file yourself, add a stdio server that runs **`strada mcp`**:
+
+```json
+{
+  "mcpServers": {
+    "strada": {
+      "command": "strada",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Restart the client after saving. The server should list tools such as `issues_list`, `logs`, and `query`.
+
+## Check that it works
+
+From a terminal in a folder that already has `strada setup`:
+
+```bash
+strada issues list --since 24h
+```
+
+If that command prints issues, the MCP tools in the same folder will too. If it asks you to log in, run `strada login` and try again.
+
+The **TUI** (`strada` with no arguments) is not an MCP tool. Clients must spawn `strada mcp`, not `strada`.
+
+`login`, `logout`, `database create`, and `database upgrade` are also not tools. Run those in a terminal.

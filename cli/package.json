@@ -8,7 +8,8 @@
     "opentelemetry",
     "otel",
     "strada",
-    "tinybird"
+    "tinybird",
+    "mcp"
   ],
   "homepage": "https://github.com/remorses/strada",
   "bugs": "https://github.com/remorses/strada/issues",
@@ -59,6 +60,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",
+    "@goke/mcp": "^0.0.13",
     "@termcast/utils": "^2.2.8",
     "@tinybirdco/sdk": "^0.0.64",
     "errore": "^0.14.1",
@@ -71,6 +73,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.18",
     "strada-website": "workspace:^",

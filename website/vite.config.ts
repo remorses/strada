@@ -31,7 +31,14 @@ export default defineConfig(async () => {
             wrangler: { configPath: './wrangler.jsonc' },
             main: './src/test-worker-entrypoint.ts',
             miniflare: {
-              bindings: { TEST_MIGRATIONS: migrations },
+              bindings: {
+                TEST_MIGRATIONS: migrations,
+                BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long',
+                BETTER_AUTH_URL: 'http://localhost',
+                GOOGLE_CLIENT_ID: 'test-google-client',
+                GOOGLE_CLIENT_SECRET: 'test-google-secret',
+                STRADA_TOKEN: 'test-strada-token',
+              },
             },
           })
         : null,

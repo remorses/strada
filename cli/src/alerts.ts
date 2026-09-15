@@ -33,12 +33,12 @@ alertsCli
     `,
   )
   .option("--name <name>", z.string().describe("Rule name (required)"))
-  .option("--project <slug>", z.string().describe("Scope to a project (omit for all projects)"))
-  .option("--threshold <count>", z.coerce.number().describe("Min errors to trigger (default: 1)"))
-  .option("--window <minutes>", z.coerce.number().describe("Time window in minutes (default: 5)"))
-  .option("--cooldown <minutes>", z.coerce.number().describe("Re-alert cooldown in minutes (default: 60)"))
-  .option("--channel <type>", z.enum(["email", "webhook", "slack"]).describe("Create a destination inline"))
-  .option("--to <destination>", z.string().describe("Email address or webhook URL"))
+  .option("--project [slug]", z.string().describe("Scope to a project (omit for all projects)"))
+  .option("--threshold [count]", z.coerce.number().describe("Min errors to trigger (default: 1)"))
+  .option("--window [minutes]", z.coerce.number().describe("Time window in minutes (default: 5)"))
+  .option("--cooldown [minutes]", z.coerce.number().describe("Re-alert cooldown in minutes (default: 60)"))
+  .option("--channel [type]", z.enum(["email", "webhook", "slack"]).describe("Create a destination inline"))
+  .option("--to [destination]", z.string().describe("Email address or webhook URL"))
   .action(async (options, { console: output, process: proc }) => {
     if (!options.name) {
       output.log("Missing required option: --name <name>");
@@ -211,10 +211,10 @@ alertsCli
       error_threshold rule. Get the rule ID from \`strada alerts list\`.
     `,
   )
-  .option("--name <name>", z.string().describe("New rule name"))
-  .option("--threshold <count>", z.coerce.number().describe("Min errors to trigger"))
-  .option("--window <minutes>", z.coerce.number().describe("Time window in minutes"))
-  .option("--cooldown <minutes>", z.coerce.number().describe("Re-alert cooldown in minutes"))
+  .option("--name [name]", z.string().describe("New rule name"))
+  .option("--threshold [count]", z.coerce.number().describe("Min errors to trigger"))
+  .option("--window [minutes]", z.coerce.number().describe("Time window in minutes"))
+  .option("--cooldown [minutes]", z.coerce.number().describe("Re-alert cooldown in minutes"))
   .action(async (id, options, { console: output }) => {
     const org = await ensureDefaultOrg();
     const { safeFetch } = getApiClient();

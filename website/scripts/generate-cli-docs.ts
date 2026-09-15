@@ -5,7 +5,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { generateDocs } from 'goke'
-import { cli } from 'strada/src/cli'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { addCliToolsToMcp } from '@goke/mcp'
+import { cli, isMcpCommand } from 'strada/src/cli'
 
 const outDir = path.resolve(import.meta.dirname, '../src/docs/cli')
 
@@ -27,6 +31,7 @@ const icons: Record<string, string> = {
   services: 'lucide:server',
   traces: 'lucide:route',
   tokens: 'lucide:key',
+  mcp: 'lucide:plug',
 }
 
 const pages = generateDocs({ cli, basePath: '.' })
@@ -63,3 +68,18 @@ for (const page of pages) {
 }
 
 console.log('Done!')
+
+const server = new Server({ name: 'strada', version: '1.0.0' }, { capabilities: {} })
+addCliToolsToMcp({ cli, server, commandFilter: isMcpCommand })
+
+const client = new Client({ name: 'docs-generator', version: '1.0.0' })
+const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+await server.connect(serverTransport)
+await client.connect(clientTransport)
+const { tools } = await client.listTools()
+await client.close()
+await server.close()
+
+const mcpOutFile = path.resolve(import.meta.dirname, '../mcp-tools.json')
+fs.writeFileSync(mcpOutFile, JSON.stringify({ tools }, null, 2) + '\n')
+console.log(`wrote ${mcpOutFile} (${tools.length} tools)`)

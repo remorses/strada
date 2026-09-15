@@ -33,7 +33,7 @@ strada logs [subcommand]
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-p, --project <slug>` | - | Project slug override (repeatable, defaults to folder setup) |
+| `-p, --project [slug]` | - | Project slug override (repeatable, defaults to folder setup) |
 | `--org [name-or-id]` | - | Organization override (defaults to folder setup) |
 | `-s, --service [name]` | - | Filter by ServiceName |
 | `--since [time]` | - | Start time: duration (1h, 7d) or ISO date (default: 1h) |
@@ -41,7 +41,7 @@ strada logs [subcommand]
 | `--min-level [level]` | - | Minimum severity: trace, debug, info, warn, error, fatal |
 | `--search [text]` | - | Full-text search on log body |
 | `--trace-id [id]` | - | Show logs for a specific trace |
-| `-w, --where <expr>` | - | Raw SQL WHERE condition (repeatable, ANDed) |
+| `-w, --where [expr]` | - | Raw SQL WHERE condition (repeatable, ANDed) |
 | `-n, --limit [count]` | - | Max rows (default: 200) |
 | `--json` | - | Print raw JSON response |
 
