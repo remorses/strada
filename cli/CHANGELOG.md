@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.0
+
+1. **Unique visitors and first-visit analytics** — browser traffic now uses cookie `strada_vid` (`visitor.id`). Login and logout do not touch it. `strada_uid` stays the signed-in account. New commands for a daily traffic check without SQL:
+
+   ```bash
+   strada analytics overview -p my-app --since 7d
+   strada analytics timeseries -p my-app --since 30d
+   strada analytics visitors -p my-app --since 7d
+   ```
+
+   `overview` prints unique visitors, first visits, pageviews, sessions, bounce rate, top pages, and top referrers. Unique visitors in the pages MV use `visitor.id`, with `session.id` as fallback for old data. First visits come from the `FirstVisits` column. Existing analytics rows are not backfilled.
+
+2. **`strada mcp`** — the same CLI binary is now a stdio MCP server. Cursor, Claude Desktop, and VS Code can spawn it and call supported non-interactive commands as tools (`issues_list`, `logs`, `query`):
+
+   ```bash
+   strada login
+   npx @playwriter/install-mcp 'strada mcp' --client cursor
+   ```
+
+   `login`, `logout`, `database create`, `database upgrade`, `projects retention update`, `mcp`, and the TUI are not MCP tools. Run those in a terminal.
+
+3. **Per-project Tinybird retention** — set how long raw traces, logs, errors, and metrics stay in Tinybird:
+
+   ```bash
+   strada projects retention -p api
+   strada projects retention update -p api --traces-days 7 --logs-days 14
+   strada projects retention update -p staging --all-days 7
+   ```
+
+   New projects default to 14 days for traces, 30 days for logs and custom events, and 90 days for errors and metrics. Browser analytics and health-check aggregates stay at 90 days. Lowering a value can delete existing Tinybird rows after schema promotion.
+
+4. **`strada database upgrade` waits for an in-progress Tinybird deploy** — a 400 that means "already a deployment in progress" is no longer treated as a hard failure. Upgrade now waits and retries until Tinybird finishes. Run `strada database upgrade` again if a previous attempt failed with `Deployment not found`.
+
 ## 0.6.0
 
 1. **URL health checks** — monitor any HTTP endpoint on a cron schedule and get alerted when it fails. Checks run as a Cloudflare Workflow, one durable step per org, so a slow tenant does not block others:

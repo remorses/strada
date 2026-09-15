@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.7.0
+
+1. **Unique visitors** — the browser SDK writes cookie `strada_vid` (`visitor.id`) on first pageview. `strada_uid` stays the signed-in account (`user.id`). Login and logout do not touch `strada_vid`. No localStorage.
+
+   Tab focus no longer starts an extra pageview. SPA navigations use the Navigation API only, and only `sameDocument` navigations, so a full page load is not counted twice. `identifyUser()` updates `strada_uid` without restarting the active pageview.
+
+2. **Telemetry never throws into application code** — high-level SDK calls catch internally and return the failure instead of throwing it:
+
+   ```ts
+   const error = captureException(err)
+   if (error) {
+     // optional. The SDK already logged it once.
+   }
+   ```
+
+   | Function | Returns |
+   | --- | --- |
+   | `captureException()`, `track()`, `trackPageview()`, `identifyUser()`, `initStrada()` | `Error \| undefined` |
+   | `flush()`, `shutdown()` | `Promise<Error \| undefined>` |
+
+   Almost every call site can ignore the return value. Failures are also logged once with `console.warn`, deduplicated by message. `startSpan()` still re-throws: it wraps your callback, records the exception on the span, and leaves app control flow unchanged.
+
+3. **A blank `projectId` disables export** — missing env vars or secrets no longer post to `https://-ingest.strada.sh`. Call `initStrada()` unconditionally:
+
+   ```ts
+   initStrada({
+     projectId: env.STRADA_PROJECT_ID, // "" while the secret is missing
+     token: env.STRADA_TOKEN,
+     service: "my-worker",
+   })
+
+   track("thing_happened", { ok: true }) // no guard, no request
+   ```
+
+   An explicit `endpoint` (a local collector) still exports without a projectId.
+
 ## 0.6.0
 
 1. **`trackPageview()` for server-side pageviews** — emit a zero-duration `pageview` span from Node or Cloudflare Workers. It lands in the same analytics materialized views as browser pageviews, so bots, AI crawlers, JS-blocked visitors, and SSR-only pages show up in analytics:

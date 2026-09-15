@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+1. **Unique visitors and first-visit analytics** — browser traffic uses cookie `strada_vid` (`visitor.id`). Login and logout do not touch it. Docs and CLI cover `strada analytics overview`, `timeseries`, and `visitors`. First visits come from the pages MV `FirstVisits` column. Existing analytics rows are not backfilled.
+
+2. **MCP docs** — the same `strada` binary is a stdio MCP server. Docs cover `strada mcp`, install-mcp one-liners for Cursor, Claude Desktop, and VS Code, and a manual Cursor `mcp.json`.
+
+3. **Per-project Tinybird retention** — set traces, logs, errors, and metrics retention from the CLI and the project API. Defaults are 14 / 30 / 90 / 90 days. Analytics and health checks stay at 90 days.
+
+4. **`strada database upgrade` waits for an in-progress Tinybird deploy** — a 400 that means "already a deployment in progress" is no longer treated as a hard failure.
+
 ## 0.1.0
 
 1. **Landing hero and docs refresh** — homepage uses **Syne** for heading and body type. The hero CTA is **Sign up with Google**. `/signup` redirects to `/login`. `/pricing` redirects to Tinybird pricing.
