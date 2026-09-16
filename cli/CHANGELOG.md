@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0
+
+1. **Raw telemetry is kept by default** — traces, logs, errors, and metrics no longer expire at 14 / 30 / 90 days. Set a custom TTL only when you want that signal to expire:
+
+   ```bash
+   strada projects retention -p api
+   strada projects retention update -p api --traces-days 7 --logs-days 14
+   strada projects retention update -p staging --all-days 7
+   strada projects retention update --traces-days -1
+   strada projects create staging --all-days 7
+   ```
+
+   Pass `-1` to remove a custom TTL and keep that signal forever. Custom values are 1 through 365 days. Browser analytics and health-check aggregates stay at 90 days. After website production deploy, run `strada database upgrade` so Tinybird drops the old default TTLs. New self-hosted ClickHouse tables also keep all raw rows. Existing ClickHouse tables still need `ALTER TABLE ... REMOVE TTL`.
+
+2. **`strada database upgrade` waits through Tinybird `pending`** — `pending` is treated as in-flight, same as `creating_schema` and `calculating`. Leftover Staging candidates are skipped by numeric deployment id when timestamps are missing.
+
 ## 0.7.0
 
 1. **Unique visitors and first-visit analytics** — browser traffic now uses cookie `strada_vid` (`visitor.id`). Login and logout do not touch it. `strada_uid` stays the signed-in account. New commands for a daily traffic check without SQL:

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+1. **Raw telemetry is kept by default** — traces, logs, errors, and metrics no longer expire at 14 / 30 / 90 days. Set a custom TTL from the CLI or the project retention API. Pass `-1` (CLI) or `null` (API) to keep a signal forever. Analytics and health checks stay at 90 days. After this website deploy, run `strada database upgrade` so Tinybird drops the old default TTLs.
+
+2. **SDK docs live at `/docs/sdk`** — `/sdk/README` redirects to the new slug. GitHub and in-site links now point at `website/src/docs/sdk.mdx`.
+
 ## 0.2.0
 
 1. **Unique visitors and first-visit analytics** — browser traffic uses cookie `strada_vid` (`visitor.id`). Login and logout do not touch it. Docs and CLI cover `strada analytics overview`, `timeseries`, and `visitors`. First visits come from the pages MV `FirstVisits` column. Existing analytics rows are not backfilled.

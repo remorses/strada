@@ -27,7 +27,7 @@ curl -s https://raw.githubusercontent.com/remorses/strada/main/README.md
 curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/quickstart.mdx
 
 # SDK API reference: every option and helper, per-runtime details
-curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/sdk/README.mdx
+curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/sdk.mdx
 
 # SQL: tables, ClickHouse gotchas, ready-made queries
 curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/querying.mdx
@@ -36,7 +36,7 @@ curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/
 curl -s https://raw.githubusercontent.com/remorses/strada/main/website/src/docs/browser-analytics.mdx
 ```
 
-Inside the strada repo itself, read the local files instead (`README.md`, `website/src/docs/*.mdx`, `website/src/sdk/README.mdx`) so you see uncommitted changes.
+Inside the strada repo itself, read the local files instead (`README.md`, `website/src/docs/*.mdx`, `website/src/docs/sdk.mdx`) so you see uncommitted changes.
 
 ## Read the CLI help before running commands
 

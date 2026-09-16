@@ -97,15 +97,19 @@ export async function resolveProjects(options: { project?: string[]; org?: strin
 // ── Project commands ──────────────────────────────────────────────
 
 const KEEP_FOREVER_DAYS = -1
+const RETENTION_DAYS_ERROR = `retention days must be ${KEEP_FOREVER_DAYS} to keep forever, or an integer between ${RETENTION_MIN_DAYS} and ${RETENTION_MAX_DAYS}`
 
-const retentionDaysOption = z.coerce.number().int().min(KEEP_FOREVER_DAYS).max(RETENTION_MAX_DAYS).refine(
-  (days) => days === KEEP_FOREVER_DAYS || days >= RETENTION_MIN_DAYS,
-  { message: `retention days must be ${KEEP_FOREVER_DAYS} to keep forever, or an integer between ${RETENTION_MIN_DAYS} and ${RETENTION_MAX_DAYS}` },
-)
+const retentionDaysOption = z.union([
+  z.literal(KEEP_FOREVER_DAYS),
+  z.coerce.number().int().min(RETENTION_MIN_DAYS).max(RETENTION_MAX_DAYS),
+])
 
-function parseRetentionDays(value: number | undefined): number | null | undefined {
+function parseRetentionDays(value: number | undefined): Error | number | null | undefined {
   if (value === undefined) return undefined
   if (value === KEEP_FOREVER_DAYS) return null
+  if (!Number.isInteger(value) || value < RETENTION_MIN_DAYS || value > RETENTION_MAX_DAYS) {
+    return new Error(RETENTION_DAYS_ERROR)
+  }
   return value
 }
 
@@ -129,8 +133,11 @@ export function buildRetentionUpdate(options: RetentionOptions): Error | undefin
     errorsDays: parseRetentionDays(options.errorsDays),
     metricsDays: parseRetentionDays(options.metricsDays),
   }
+  const invalid = Object.values(individual).find((value) => value instanceof Error)
+  if (invalid instanceof Error) return invalid
   const hasIndividual = Object.values(individual).some((value) => value !== undefined)
   const allDays = parseRetentionDays(options.allDays)
+  if (allDays instanceof Error) return allDays
   if (allDays !== undefined && hasIndividual) {
     return new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags.")
   }

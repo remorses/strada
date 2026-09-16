@@ -105,6 +105,9 @@ describe("mcp command", () => {
     expect(buildRetentionUpdate({ allDays: -1, tracesDays: 7 })).toEqual(
       new Error("Do not combine `--all-days` with signal-specific retention flags. Use either `--all-days 30` or individual flags."),
     );
+    expect(buildRetentionUpdate({ tracesDays: 0 })).toEqual(
+      new Error("retention days must be -1 to keep forever, or an integer between 1 and 365"),
+    );
   });
 
   test("optional CLI flags are optional in MCP schemas", async () => {
@@ -114,6 +117,12 @@ describe("mcp command", () => {
     expect(byName.logs.inputSchema.required).toBeUndefined();
     expect(byName.issues_list.inputSchema.required).toBeUndefined();
     expect(byName.projects_create.inputSchema.required).toEqual(["slug"]);
+    expect(byName.projects_create.inputSchema.properties?.tracesDays).toMatchObject({
+      anyOf: [
+        { const: -1 },
+        { type: "integer", minimum: 1, maximum: 365 },
+      ],
+    });
     expect(byName.alerts_create.inputSchema.required).toEqual(["name"]);
     expect(byName.checks_create.inputSchema.required).toEqual(["url", "name"]);
     expect(byName.traces_view.inputSchema.required).toEqual(["traceId"]);

@@ -69,37 +69,77 @@
           },
           "tracesDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 365,
+            "anyOf": [
+              {
+                "type": "number",
+                "const": -1
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
             "description": "Trace retention in days, or -1 to keep forever"
           },
           "logsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 365,
+            "anyOf": [
+              {
+                "type": "number",
+                "const": -1
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
             "description": "Log and custom-event retention in days, or -1 to keep forever"
           },
           "errorsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 365,
+            "anyOf": [
+              {
+                "type": "number",
+                "const": -1
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
             "description": "Error retention in days, or -1 to keep forever"
           },
           "metricsDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 365,
+            "anyOf": [
+              {
+                "type": "number",
+                "const": -1
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
             "description": "Metrics retention in days, or -1 to keep forever"
           },
           "allDays": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "integer",
-            "minimum": -1,
-            "maximum": 365,
+            "anyOf": [
+              {
+                "type": "number",
+                "const": -1
+              },
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            ],
             "description": "Set all four signals to the same number of days, or -1 to keep forever"
           }
         },

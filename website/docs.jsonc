@@ -49,7 +49,7 @@
           {
             "group": "Getting Started",
             "icon": "lucide:rocket",
-            "pages": ["index", "docs/quickstart", "sdk/README"]
+            "pages": ["index", "docs/quickstart", "docs/sdk"]
           },
           {
             "group": "Monitoring",
@@ -217,6 +217,9 @@
       ]
     }
   },
+  "redirects": [
+    { "source": "/sdk/README", "destination": "/docs/sdk", "permanent": true }
+  ],
   "knownPaths": [
     "/login",
     "/signup",

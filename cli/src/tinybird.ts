@@ -711,6 +711,25 @@ export async function getDeploymentManagedReadToken(client: Pick<TinybirdClient,
 // 3. Data migrations on shared Tinybird infra can take many minutes, so the
 //    wait must be wall-clock based and resumable: on timeout we return
 //    `in_progress` (not an Error) and the next call picks up where we left off.
+function parseTinybirdDeploymentId(id: string): number | null {
+  if (!/^\d+$/.test(id)) return null
+  return Number(id)
+}
+
+function compareTinybirdDeployments(candidate: TinybirdDeployment, live: TinybirdDeployment | undefined): Error | 'older' | 'newer' {
+  if (!live) return 'newer'
+  const candidateId = parseTinybirdDeploymentId(candidate.id)
+  const liveId = parseTinybirdDeploymentId(live.id)
+  if (candidateId != null && liveId != null) {
+    return candidateId < liveId ? 'older' : 'newer'
+  }
+  if (candidate.createdAt && live.createdAt) {
+    if (candidate.createdAt < live.createdAt) return 'older'
+    if (candidate.createdAt > live.createdAt) return 'newer'
+  }
+  return new Error(`Cannot determine whether data_ready deployment ${candidate.id} is newer than live deployment ${live.id}`)
+}
+
 export async function deployTinybirdResources({
   client,
   datasources,
@@ -721,6 +740,7 @@ export async function deployTinybirdResources({
 }: TinybirdDeployResourcesOptions): Promise<Error | TinybirdDeployResourcesResult> {
   const deadline = Date.now() + waitTimeoutMs
 
+  const inFlightStatuses = new Set(['pending', 'creating_schema', 'calculating'])
   const waitAndPromote = async (deploymentId: string): Promise<Error | TinybirdDeployResourcesResult> => {
     while (true) {
       const statusResponse = await client.getDeploymentStatus({ deploymentId })
@@ -731,7 +751,7 @@ export async function deployTinybirdResources({
       if (status === 'failed' || status === 'error') {
         return new Error(`Deployment ${deploymentId} failed with status ${status}`)
       }
-      if (status !== 'calculating' && status !== 'creating_schema') {
+      if (!inFlightStatuses.has(status)) {
         return new Error(`Deployment ${deploymentId} has unsupported status "${status}"`)
       }
       if (Date.now() >= deadline) {
@@ -746,13 +766,13 @@ export async function deployTinybirdResources({
   }
 
   // Tinybird keeps the previous live as Staging for rollback. Ignore that leftover.
-  // Only `creating_schema`, `calculating`, and a newer `data_ready` are in-flight.
-  // An older `data_ready` is the previous live, even when Tinybird still labels it that way.
+  // In-flight statuses are `pending`, `creating_schema`, `calculating`, and a
+  // newer `data_ready`. Prefer numeric ids over timestamps for leftover skip.
   const deployments = await client.listDeployments()
   if (deployments instanceof Error) {
     console.warn('Failed to list existing deployments before deploy:', deployments.message)
   } else {
-    const liveCreatedAt = deployments.find((deployment) => deployment.live || deployment.status === 'live')?.createdAt
+    const live = deployments.find((deployment) => deployment.live || deployment.status === 'live')
     for (const deployment of deployments) {
       const status = deployment.status
       if (deployment.live || status === 'live' || status === 'staging') continue
@@ -764,10 +784,12 @@ export async function deployTinybirdResources({
         }
         continue
       }
-      if (status === 'data_ready' && liveCreatedAt && deployment.createdAt && deployment.createdAt < liveCreatedAt) {
-        continue
+      if (status === 'data_ready') {
+        const leftover = compareTinybirdDeployments(deployment, live)
+        if (leftover === 'older') continue
+        if (leftover instanceof Error) return leftover
       }
-      if (status !== 'calculating' && status !== 'creating_schema' && status !== 'data_ready') {
+      if (!inFlightStatuses.has(status) && status !== 'data_ready') {
         return new Error(`Deployment ${deployment.id} has unsupported status "${status}"`)
       }
 

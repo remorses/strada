@@ -615,7 +615,7 @@ The SDK also normalizes **old OTel semantic conventions** (`http.target`, `http.
 
 **Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity.
 
-See the full [SDK documentation](./website/src/sdk/README.mdx) for detailed API reference, auto-instrumentation setup, batching config, and browser/server context propagation.
+See the full [SDK documentation](./website/src/docs/sdk.mdx) for detailed API reference, auto-instrumentation setup, batching config, and browser/server context propagation.
 
 ## Sourcemaps
 
@@ -649,7 +649,7 @@ This works with Claude Code, Cursor, Windsurf, and other AI coding agents. The s
 ## Docs
 
 - [Quickstart](./website/src/docs/quickstart.mdx)
-- [SDK reference](./website/src/sdk/README.mdx)
+- [SDK reference](./website/src/docs/sdk.mdx)
 - [Browser analytics](./website/src/docs/browser-analytics.mdx)
 - [Tinybird pricing breakdown](./website/src/docs/tinybird-pricing.mdx)
 - [Cloudflare Workers OTel export](./website/src/docs/cloudflare-workers-otel-export.mdx)

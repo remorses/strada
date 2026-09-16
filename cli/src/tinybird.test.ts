@@ -172,6 +172,66 @@ describe("deployTinybirdResources", () => {
     expect(calls).toEqual(["create"]);
   });
 
+  test("skips leftover data_ready by numeric id when timestamps are missing", async () => {
+    const calls: string[] = [];
+    const client = {
+      listDeployments: async () => [
+        { id: "8", status: "live", live: true },
+        { id: "3", status: "data_ready", live: false },
+      ],
+      deleteDeployment: async ({ deploymentId }: { deploymentId: string }) => {
+        calls.push(`delete:${deploymentId}`);
+        return null;
+      },
+      createDeployment: async () => {
+        calls.push("create");
+        return { result: "no_changes" as const };
+      },
+      getDeploymentStatus: async ({ deploymentId }: { deploymentId: string }) => {
+        calls.push(`status:${deploymentId}`);
+        return new Error("unexpected status call");
+      },
+      promoteDeployment: async ({ deploymentId }: { deploymentId: string }) => {
+        calls.push(`promote:${deploymentId}`);
+        return null;
+      },
+    };
+
+    await expect(deployTinybirdResources({ client, datasources: [], pipes: [] }))
+      .resolves.toEqual({ result: "no_changes" });
+    expect(calls).toEqual(["create"]);
+  });
+
+  test("errors when a data_ready leftover cannot be ordered against live", async () => {
+    const calls: string[] = [];
+    const client = {
+      listDeployments: async () => [
+        { id: "live-a", status: "live", live: true },
+        { id: "ready-b", status: "data_ready", live: false },
+      ],
+      deleteDeployment: async () => {
+        calls.push("delete");
+        return null;
+      },
+      createDeployment: async () => {
+        calls.push("create");
+        return { result: "no_changes" as const };
+      },
+      getDeploymentStatus: async () => {
+        calls.push("status");
+        return new Error("unexpected status call");
+      },
+      promoteDeployment: async () => {
+        calls.push("promote");
+        return null;
+      },
+    };
+
+    const result = await deployTinybirdResources({ client, datasources: [], pipes: [] });
+    expect(result).toEqual(new Error("Cannot determine whether data_ready deployment ready-b is newer than live deployment live-a"));
+    expect(calls).toEqual([]);
+  });
+
   test("does not mutate an unknown non-live deployment state", async () => {
     const calls: string[] = [];
     const client = {
@@ -227,6 +287,42 @@ describe("deployTinybirdResources", () => {
     const result = await deployTinybirdResources({ client, datasources: [], pipes: [] });
     expect(result).toEqual({ result: "no_changes" });
     expect(calls).toEqual(["status", "promote", "create"]);
+  });
+
+  test("adopts pending then creating_schema as in-flight", async () => {
+    const calls: string[] = [];
+    const statuses = ["pending", "creating_schema", "data_ready"];
+    const client = {
+      listDeployments: async () => [{ id: "9", status: "pending", live: false, createdAt: "2026-09-15T17:30:00.000Z" }],
+      deleteDeployment: async () => {
+        calls.push("delete");
+        return null;
+      },
+      createDeployment: async () => {
+        calls.push("create");
+        return { result: "no_changes" as const };
+      },
+      getDeploymentStatus: async () => {
+        calls.push("status");
+        return {
+          result: "ok",
+          deployment: { id: "9", status: statuses.shift() ?? "data_ready", live: false },
+        };
+      },
+      promoteDeployment: async () => {
+        calls.push("promote");
+        return null;
+      },
+    };
+
+    const result = await deployTinybirdResources({
+      client,
+      datasources: [],
+      pipes: [],
+      pollIntervalMs: 0,
+    });
+    expect(result).toEqual({ result: "no_changes" });
+    expect(calls).toEqual(["status", "status", "status", "promote", "create"]);
   });
 
   test("adopts an in-flight listed deployment, then diffs the target bundle", async () => {
