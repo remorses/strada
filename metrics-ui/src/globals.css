@@ -131,3 +131,13 @@
 .ts-chart-host svg {
   overflow: visible;
 }
+
+/* Charts using ChartTooltip render their own card, so strip the library
+   tooltip wrapper chrome to avoid a doubled container. */
+.metrics-tooltip {
+  --ts-chart-tooltip-background: transparent;
+  --ts-chart-tooltip-border: none;
+  --ts-chart-tooltip-shadow: none;
+  --ts-chart-tooltip-padding: 0;
+  --ts-chart-tooltip-border-radius: 0;
+}
