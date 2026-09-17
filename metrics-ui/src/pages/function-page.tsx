@@ -92,7 +92,7 @@ export function FunctionPage() {
                   { key: 'total', label: 'Total', color: COLORS.live, kind: 'line', strokeWidth: 1.4 },
                 ]}
                 ariaLabel="Containers"
-                valueFormat={(value) => `${value.toFixed(0)} containers`}
+                valueFormat={(value) => value.toFixed(0)}
                 yTicks={[0, 500]}
               />
             </div>
