@@ -1,16 +1,12 @@
 'use client'
 
-import {
-  ChevronDownIcon,
-  CopyIcon,
-  InfoIcon,
-  Maximize2Icon,
-  SearchIcon,
-} from 'lucide-react'
-import type { ReactNode } from 'react'
+import { CopyIcon, InfoIcon, Maximize2Icon, SearchIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'spiceflow/react'
 import { cn } from '../lib/utils.ts'
 import { Button } from './ui/button.tsx'
+import { NativeSelect, NativeSelectOption } from './ui/native-select.tsx'
+import { Tabs, TabsList, TabsTab } from './ui/tabs.tsx'
 
 export function PageShell({ children }: { children: ReactNode }) {
   return <div className="min-h-screen bg-background text-foreground">{children}</div>
@@ -52,18 +48,27 @@ export function PageTitle({ children, copied }: { children: ReactNode; copied?: 
   )
 }
 
+export const TIME_RANGES = [
+  { value: '15m', label: 'Last 15 minutes' },
+  { value: '1h', label: 'Last hour' },
+  { value: '6h', label: 'Last 6 hours' },
+  { value: '24h', label: 'Last 24 hours' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '90d', label: 'Last 90 days' },
+]
+
 export function TimeRangeBar() {
+  const [range, setRange] = useState('1h')
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm">
-        <span className="size-2 rounded-full bg-success" />
-        <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium">1h</span>
-        <span>Sep 10, 4:05 PM – now</span>
-        <span className="ml-2 flex items-center gap-1 text-muted-foreground">
-          EDT
-          <ChevronDownIcon className="size-3.5" />
-        </span>
-      </div>
+      <NativeSelect value={range} onChange={(event) => setRange(event.target.value)} aria-label="Time range">
+        {TIME_RANGES.map((item) => (
+          <NativeSelectOption key={item.value} value={item.value}>
+            {item.label}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
       <Button size="icon" variant="outline" aria-label="Search">
         <SearchIcon />
       </Button>
@@ -92,51 +97,36 @@ export function StatusPills({
   )
 }
 
-export function ShowDeploymentsToggle() {
-  return (
-    <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm">
-      <span className="relative h-5 w-9 rounded-full bg-success">
-        <span className="absolute top-0.5 right-0.5 size-4 rounded-full bg-card shadow-sm" />
-      </span>
-      Show Deployments
-    </label>
-  )
+export type MetricTabItem = {
+  label: string
+  badge?: string
+  badgeTone?: 'destructive' | 'info'
+  badgeOnly?: boolean
 }
 
-export function MetricTabs({
-  items,
-  active,
-}: {
-  items: { href: string; label: string; badge?: string; badgeTone?: 'destructive' | 'info'; badgeOnly?: boolean }[]
-  active: string
-}) {
+export function MetricTabs({ items, active }: { items: MetricTabItem[]; active: string }) {
+  const [value, setValue] = useState(active)
   return (
-    <div className="flex items-center gap-5 border-b border-border text-sm">
-      {items.map((item) => (
-        <Link
-          key={item.label}
-          href={item.href}
-          className={cn(
-            'relative -mb-px flex items-center gap-2 pb-2.5 text-muted-foreground',
-            active === item.label && 'text-foreground',
-          )}
-        >
-          {!item.badgeOnly && item.label}
-          {item.badge && (
-            <span
-              className={cn(
-                'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-                item.badgeTone === 'destructive' && 'bg-destructive/10 text-destructive',
-                item.badgeTone === 'info' && 'bg-violet-100 text-violet-700',
-              )}
-            >
-              {item.badge}
-            </span>
-          )}
-          {active === item.label && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-success" />}
-        </Link>
-      ))}
-    </div>
+    <Tabs value={value} onValueChange={(next) => setValue(String(next))}>
+      <TabsList variant="line">
+        {items.map((item) => (
+          <TabsTab key={item.label} value={item.label}>
+            {!item.badgeOnly && item.label}
+            {item.badge && (
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+                  item.badgeTone === 'destructive' && 'bg-destructive/10 text-destructive',
+                  item.badgeTone === 'info' && 'bg-info/10 text-info',
+                )}
+              >
+                {item.badge}
+              </span>
+            )}
+          </TabsTab>
+        ))}
+      </TabsList>
+    </Tabs>
   )
 }
 

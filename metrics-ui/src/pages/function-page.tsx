@@ -7,7 +7,6 @@ import {
   PageBody,
   PageShell,
   PageTitle,
-  ShowDeploymentsToggle,
   StatusPills,
   TimeRangeBar,
 } from '../components/chrome.tsx'
@@ -42,41 +41,37 @@ export function FunctionPage() {
         />
         <PageTitle copied>{FUNCTION_NAME}</PageTitle>
         <TimeRangeBar />
-        <div className="flex flex-wrap items-center gap-3">
-          <StatusPills
-            items={[
-              { label: 'Containers', value: '26 live (+654 draining)' },
-              { label: 'Calls', value: '680 running' },
-            ]}
-          />
-          <ShowDeploymentsToggle />
-        </div>
+        <StatusPills
+          items={[
+            { label: 'Containers', value: '26 live (+654 draining)' },
+            { label: 'Calls', value: '680 running' },
+          ]}
+        />
 
         <section className="flex flex-col gap-3">
           <h2 className="text-center text-sm font-medium">Function call results</h2>
-          <div className="relative">
-            <TimeSeriesChart
-              data={functionCallResults}
-              series={[{ key: 'success', label: 'success', color: COLORS.success, kind: 'bar' }]}
-              ariaLabel="Function call results"
-              valueFormat={(value) => value.toFixed(0)}
-              height={140}
-              yTicks={[0, 2, 4]}
-              yFormat={(value) => value.toFixed(1)}
-            />
-          </div>
+          <TimeSeriesChart
+            data={functionCallResults}
+            series={[{ key: 'success', label: 'success', color: COLORS.success, kind: 'bar' }]}
+            ariaLabel="Function call results"
+            valueFormat={(value) => value.toFixed(0)}
+            height={140}
+            yTicks={[0, 2, 4]}
+            yFormat={(value) => value.toFixed(1)}
+            margin={{ top: 8, right: 16, bottom: 24, left: 34 }}
+          />
         </section>
 
         <MetricTabs
           active="Metrics"
           items={[
-            { href: '/', label: 'Function Calls' },
-            { href: '/', label: 'Containers' },
-            { href: '/', label: '2 errors', badge: '2 errors', badgeTone: 'destructive', badgeOnly: true },
-            { href: '/', label: 'Metrics' },
-            { href: '/', label: 'Details' },
-            { href: '/', label: 'Files' },
-            { href: '/', label: 'Try It', badge: 'Beta', badgeTone: 'info' },
+            { label: 'Function Calls' },
+            { label: 'Containers' },
+            { label: '2 errors', badge: '2 errors', badgeTone: 'destructive', badgeOnly: true },
+            { label: 'Metrics' },
+            { label: 'Details' },
+            { label: 'Files' },
+            { label: 'Try It', badge: 'Beta', badgeTone: 'info' },
           ]}
         />
 

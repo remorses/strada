@@ -1,16 +1,12 @@
 'use client'
 
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import {
-  Breadcrumbs,
-  ChartCard,
-  PageBody,
-  PageShell,
-  PageTitle,
-} from '../components/chrome.tsx'
+import { useState } from 'react'
+import { Breadcrumbs, ChartCard, PageBody, PageShell, PageTitle } from '../components/chrome.tsx'
 import { CategoryBarChart, TimeSeriesChart } from '../components/charts.tsx'
 import { COLORS } from '../lib/chart-colors.ts'
 import { Button } from '../components/ui/button.tsx'
+import { Tabs, TabsList, TabsTab } from '../components/ui/tabs.tsx'
 import {
   APP_NAME,
   cycleUsage,
@@ -19,7 +15,15 @@ import {
 } from '../lib/metrics-data.ts'
 import { formatMoney } from '../lib/utils.ts'
 
+const BILLING_CYCLES = [
+  'Jul 1 – Aug 1, 2026',
+  'Aug 1 – Sep 1, 2026',
+  'Sep 1 – Oct 1, 2026',
+]
+
 export function UsagePage() {
+  const [cycleIndex, setCycleIndex] = useState(BILLING_CYCLES.length - 1)
+  const [usageWindow, setUsageWindow] = useState('1h')
   const stackedHour = lastHourUsage.reduce<
     { time: Date; cpu: number; memory: number }[]
   >((rows, item) => {
@@ -46,11 +50,23 @@ export function UsagePage() {
             <PageTitle>Usage</PageTitle>
           </div>
           <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm">
-            <Button size="icon-sm" variant="ghost" aria-label="Previous cycle">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Previous cycle"
+              disabled={cycleIndex === 0}
+              onClick={() => setCycleIndex((index) => Math.max(0, index - 1))}
+            >
               <ChevronLeftIcon />
             </Button>
-            <span>Billing Cycle: Sep 1 – Oct 1, 2026</span>
-            <Button size="icon-sm" variant="ghost" aria-label="Next cycle">
+            <span className="tabular-nums">Billing Cycle: {BILLING_CYCLES[cycleIndex]}</span>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Next cycle"
+              disabled={cycleIndex === BILLING_CYCLES.length - 1}
+              onClick={() => setCycleIndex((index) => Math.min(BILLING_CYCLES.length - 1, index + 1))}
+            >
               <ChevronRightIcon />
             </Button>
           </div>
@@ -63,11 +79,15 @@ export function UsagePage() {
 
         <section className="flex flex-col gap-4 overflow-hidden bg-background p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-medium">Last Hour Usage: $28.90</h2>
-            <div className="flex rounded-md border border-border text-xs">
-              <span className="rounded-l-md bg-muted px-2.5 py-1.5 font-medium">Last hour</span>
-              <span className="px-2.5 py-1.5 text-muted-foreground">Last 24h</span>
-            </div>
+            <h2 className="text-[15px] font-medium">
+              {usageWindow === '1h' ? 'Last Hour Usage: $28.90' : 'Last 24h Usage: $694.80'}
+            </h2>
+            <Tabs value={usageWindow} onValueChange={(next) => setUsageWindow(String(next))}>
+              <TabsList>
+                <TabsTab value="1h">Last hour</TabsTab>
+                <TabsTab value="24h">Last 24h</TabsTab>
+              </TabsList>
+            </Tabs>
           </div>
           <div className="relative">
             <TimeSeriesChart

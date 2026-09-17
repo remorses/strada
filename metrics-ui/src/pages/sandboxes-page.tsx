@@ -43,25 +43,18 @@ export function SandboxesPage() {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-center text-sm font-medium">Sandboxes created</h2>
-          <div className="relative px-2 pt-2 pb-1">
-            <TimeSeriesChart
-              data={sandboxCreated}
-              series={[{ key: 'created', label: 'created', color: COLORS.pending, kind: 'bar' }]}
-              ariaLabel="Sandboxes created"
-              valueFormat={(value) => value.toFixed(0)}
-              height={140}
-              yTicks={[0, 50]}
-            />
-          </div>
+          <TimeSeriesChart
+            data={sandboxCreated}
+            series={[{ key: 'created', label: 'created', color: COLORS.pending, kind: 'bar' }]}
+            ariaLabel="Sandboxes created"
+            valueFormat={(value) => value.toFixed(0)}
+            height={140}
+            yTicks={[0, 50]}
+            margin={{ top: 8, right: 16, bottom: 24, left: 34 }}
+          />
         </section>
 
-        <MetricTabs
-          active="Metrics"
-          items={[
-            { href: '/sandboxes', label: 'Metrics' },
-            { href: '/sandboxes', label: 'Sandboxes' },
-          ]}
-        />
+        <MetricTabs active="Metrics" items={[{ label: 'Metrics' }, { label: 'Sandboxes' }]} />
 
         <ChartGrid>
           <ChartCard

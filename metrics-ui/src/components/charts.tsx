@@ -92,6 +92,7 @@ export function TimeSeriesChart({
   yTicks,
   domainMax,
   stacked,
+  margin,
 }: {
   data: readonly TimePoint[]
   series: readonly SeriesSpec[]
@@ -102,6 +103,7 @@ export function TimeSeriesChart({
   yTicks?: number[]
   domainMax?: number
   stacked?: boolean
+  margin?: { top: number; right: number; bottom: number; left: number }
 }) {
   const definition = useMemo(() => {
     const colorRange = series.map((item) => item.color)
@@ -186,7 +188,7 @@ export function TimeSeriesChart({
         y: yAxis([yFormat, yTicks, domainMax, dataMax]),
       },
       color: { domain: colorDomain, range: colorRange },
-      margin: { top: 10, right: 42, bottom: 24, left: 44 },
+      margin: margin ?? { top: 10, right: 42, bottom: 24, left: 44 },
       clip: hasBar,
       theme: {
         foreground: 'var(--muted-foreground)',
@@ -204,7 +206,7 @@ export function TimeSeriesChart({
       },
       tooltip: { use: tooltip, portal, className: 'metrics-tooltip' },
     })
-  }, [data, domainMax, series, stacked, yFormat, yTicks])
+  }, [data, domainMax, margin, series, stacked, yFormat, yTicks])
 
   return (
     <div className="relative overflow-hidden">
