@@ -33,6 +33,7 @@ alertsCli
     `,
   )
   .option("--name <name>", z.string().describe("Rule name (required)"))
+  .required()
   .option("--project [slug]", z.string().describe("Scope to a project (omit for all projects)"))
   .option("--threshold [count]", z.coerce.number().describe("Min errors to trigger (default: 1)"))
   .option("--window [minutes]", z.coerce.number().describe("Time window in minutes (default: 5)"))

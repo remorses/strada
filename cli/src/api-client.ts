@@ -15,19 +15,27 @@
 
 import { createSpiceflowFetch } from "spiceflow/client";
 import type { App } from "strada-website/src/app.tsx";
-import { requireAuth } from "./config.ts";
+import { requireAuth, type AuthCtx } from "./config.ts";
+import { inProcessMcp } from "./mcp-request.ts";
 
-export function createApiClient(baseUrl: string, sessionToken: string) {
-  const safeFetch = createSpiceflowFetch<App>(baseUrl, {
-    headers: { Authorization: `Bearer ${sessionToken}` },
+export function createApiClient(opts: {
+  baseUrl: string
+  sessionToken: string
+  fetch?: typeof fetch
+}) {
+  const safeFetch = createSpiceflowFetch<App>(opts.baseUrl, {
+    headers: { Authorization: `Bearer ${opts.sessionToken}` },
+    fetch: opts.fetch,
   });
   return { safeFetch };
 }
 
 /** Create an API client from the stored auth config. Throws if not logged in. */
-export function getApiClient() {
-  const auth = requireAuth();
-  return createApiClient(auth.baseUrl, auth.sessionToken);
+export function getApiClient(ctx?: AuthCtx) {
+  const mcp = inProcessMcp.getStore();
+  if (mcp) return createApiClient({ baseUrl: mcp.baseUrl, sessionToken: "mcp", fetch: mcp.fetch });
+  const auth = requireAuth(ctx);
+  return createApiClient({ baseUrl: auth.baseUrl, sessionToken: auth.sessionToken });
 }
 
 // ── Query execution ───────────────────────────────────────────────

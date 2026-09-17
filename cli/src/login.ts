@@ -169,14 +169,22 @@ async function logoutAction({ console: output }: GokeExecutionContext) {
 }
 
 async function whoamiAction({ console: output, process: proc }: GokeExecutionContext) {
-  const config = getResolvedConfig();
-  if (!config.sessionToken) {
+  const { inProcessMcp } = await import("./mcp-request.ts");
+  const mcp = inProcessMcp.getStore();
+  if (mcp) {
+    output.log(`Logged in as ${mcp.user.name || "unknown"} (${mcp.user.email || "unknown"})`);
+    output.log(`Server: ${mcp.baseUrl}`);
+    return;
+  }
+  const config = getResolvedConfig(proc.cwd);
+  const sessionToken = proc.env.STRADA_SESSION_TOKEN || config.sessionToken;
+  if (!sessionToken) {
     output.log("Not logged in. Run `strada login` first.");
     return proc.exit(1);
   }
-  const baseUrl = config.baseUrl || "https://strada.sh";
+  const baseUrl = proc.env.STRADA_API_URL || config.baseUrl || "https://strada.sh";
   const res = await fetch(new URL("/api/auth/get-session", baseUrl), {
-    headers: { Authorization: `Bearer ${config.sessionToken}` },
+    headers: { Authorization: `Bearer ${sessionToken}` },
   });
   if (!res.ok) {
     output.log("Session expired or invalid. Run `strada login` again.");

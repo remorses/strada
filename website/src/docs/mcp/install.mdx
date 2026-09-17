@@ -2,16 +2,30 @@
 $schema: https://holocron.so/frontmatter.json
 title: Install the Strada MCP server in your editor
 sidebarTitle: Install
-description: Install strada mcp in Cursor, Claude Desktop, VS Code, and other MCP clients. One stdio command, and the same login as the CLI.
+description: Add https://strada.sh/mcp with OAuth, or install strada mcp over stdio. Same tools either way.
 icon: lucide:download
 prompt: |
-  Write the MCP install guide from @/cli/src/cli.ts and
-  @https://github.com/supermemoryai/install-mcp.
-  Show npx @playwriter/install-mcp for common clients and a manual
-  mcp.json example for Cursor.
+  Write the MCP install guide from @/cli/src/cli.ts.
+  Show remote HTTP URL first, then stdio strada mcp.
 ---
 
 # Install
+
+Prefer **remote HTTP MCP**. Add the URL and complete OAuth in the browser.
+
+```
+https://strada.sh/mcp
+```
+
+Preview:
+
+```
+https://preview.strada.sh/mcp
+```
+
+After Google sign-in, approve **Allow access**. Remote tools need `--project` because there is no folder setup.
+
+## Local stdio
 
 Install the **`strada` CLI** first, log in, then register `strada mcp` with your MCP client.
 
@@ -21,11 +35,7 @@ strada login
 strada whoami
 ```
 
-<Aside>
-<Tip>
-Use the same **`strada`** on `PATH` that you already use in the terminal. The MCP server is that binary, not a separate npm package.
-</Tip>
-</Aside>
+Use the same **`strada`** on `PATH` that you already use in the terminal.
 
 ## One-liner with install-mcp
 
@@ -43,7 +53,19 @@ Supported clients include Cursor, Claude Desktop, VS Code, Windsurf, Claude Code
 
 ## Manual Cursor config
 
-If you edit the file yourself, add a stdio server that runs **`strada mcp`**:
+Remote HTTP:
+
+```json
+{
+  "mcpServers": {
+    "strada": {
+      "url": "https://strada.sh/mcp"
+    }
+  }
+}
+```
+
+Local stdio:
 
 ```json
 {
@@ -66,8 +88,8 @@ From a terminal in a folder that already has `strada setup`:
 strada issues list --since 24h
 ```
 
-If that command prints issues, the MCP tools in the same folder will too. If it asks you to log in, run `strada login` and try again.
+If that command prints issues, the stdio MCP tools in the same folder will too. If it asks you to log in, run `strada login` and try again.
 
-The **TUI** (`strada` with no arguments) is not an MCP tool. Clients must spawn `strada mcp`, not `strada`.
+The **TUI** (`strada` with no arguments) is not an MCP tool. Local clients must spawn `strada mcp`, not `strada`.
 
 `login`, `logout`, `database create`, and `database upgrade` are also not tools. Run those in a terminal.

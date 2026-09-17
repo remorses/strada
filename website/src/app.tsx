@@ -23,9 +23,21 @@ import { env } from 'cloudflare:workers'
 import { initStrada, captureException, trace, getLogger } from '@strada.sh/sdk'
 import { Button } from './components/ui/button.tsx'
 import { DeviceActionButtons } from './components/device-action-buttons.tsx'
+import { ConsentActionButtons } from './components/consent-action-buttons.tsx'
 import { StradaLogo } from './components/strada-logo.tsx'
 import { api } from './api.ts'
-import { getAuth, getDb, getSession, requireSession } from './db.ts'
+import {
+  approveDeviceCode,
+  denyDeviceCode,
+  getAuth,
+  getDb,
+  getSession,
+  requireSession,
+  submitOAuthConsent,
+  verifyDeviceCode,
+} from './db.ts'
+import { handleMcpRequest } from './mcp.ts'
+import { mcpClientMetadataDocument } from './mcp-resource.ts'
 import { checkAlerts } from './alert-check.ts'
 import { dispatchHealthChecks } from './health-check-dispatch.ts'
 export { HealthCheckWorkflow } from './health-check-workflow.ts'
@@ -61,13 +73,22 @@ const devicePageQuerySchema = z.object({
 
 const deviceUserCodeSchema = z.object({ userCode: z.string().min(1) })
 
+function oauthAuthorizeResumePath(search: string) {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  if (params.get('response_type') !== 'code') return null
+  return `/api/auth/oauth2/authorize${search.startsWith('?') ? search : `?${search}`}`
+}
+
 function safeRedirectPath(value: string | undefined | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/wip'
   // Parse with URL to safely extract pathname + search (preserves query params)
   const url = new URL(value, 'https://strada.local')
   // Block /login as callbackURL to prevent redirect loops
   if (url.pathname === '/login') return '/wip'
-  if (url.pathname === '/device' || url.pathname === '/wip') {
+  if (url.pathname === '/api/auth/oauth2/authorize') {
+    return oauthAuthorizeResumePath(url.search) ?? '/wip'
+  }
+  if (url.pathname === '/device' || url.pathname === '/wip' || url.pathname === '/consent') {
     return `${url.pathname}${url.search}`
   }
   return '/wip'
@@ -283,7 +304,12 @@ export const app = new Spiceflow({ tracer })
 
   // ── BetterAuth middleware ──────────────────────────────────────
   .use(async ({ request }, next) => {
-    if (request.parsedUrl.pathname.startsWith('/api/auth')) {
+    const path = request.parsedUrl.pathname
+    const isAuthPath = path.startsWith('/api/auth')
+      || path.startsWith('/.well-known/oauth-authorization-server')
+      || path.startsWith('/.well-known/oauth-protected-resource')
+      || path.startsWith('/.well-known/openid-configuration')
+    if (isAuthPath) {
       const auth = getAuth()
       const res = await auth.handler(request)
       if (res.ok || res.status !== 404) return res
@@ -333,6 +359,11 @@ export const app = new Spiceflow({ tracer })
     )
   })
   .layout('/device', async ({ children, request }) => {
+    return (
+      <AppShell request={request}>{children}</AppShell>
+    )
+  })
+  .layout('/consent', async ({ children, request }) => {
     return (
       <AppShell request={request}>{children}</AppShell>
     )
@@ -552,9 +583,10 @@ export const app = new Spiceflow({ tracer })
   .page({
     path: '/login',
     query: loginQuerySchema,
-    handler: async ({ query, loaderData }) => {
-      if (loaderData.session) throw redirect(safeRedirectPath(query.callbackURL))
-      const callbackURL = safeRedirectPath(query.callbackURL)
+    handler: async ({ query, request, loaderData }) => {
+      const oauthResume = oauthAuthorizeResumePath(request.parsedUrl.search)
+      if (loaderData.session) throw redirect(oauthResume ?? safeRedirectPath(query.callbackURL))
+      const callbackURL = oauthResume ?? safeRedirectPath(query.callbackURL)
       const { LoginButton } = await import('./components/login-button.tsx')
       return (
         <AuthPage
@@ -605,11 +637,7 @@ export const app = new Spiceflow({ tracer })
         )
       }
 
-      const auth = getAuth()
-      // Pass request headers so better-auth can claim the device code for the
-      // authenticated session. Without headers, the subsequent approve/deny call
-      // fails with "Device code has not been claimed by a verifying session".
-      const device = await auth.api.deviceVerify({ query: { user_code: userCode }, headers: request.headers }).catch(() => null)
+      const device = await verifyDeviceCode(request, userCode).catch(() => null)
       if (!device) {
         return (
           <AuthPage
@@ -631,8 +659,7 @@ export const app = new Spiceflow({ tracer })
         const actionRequest = getActionRequest()
         await requireSession(actionRequest)
         const { userCode: parsedUserCode } = parseFormData(deviceUserCodeSchema, formData)
-        const actionAuth = getAuth()
-        await actionAuth.api.deviceApprove({ body: { userCode: parsedUserCode }, headers: actionRequest.headers })
+        await approveDeviceCode(actionRequest, parsedUserCode)
         throw redirect(router.href('/device', { user_code: parsedUserCode, status: 'approved' }))
       }
 
@@ -641,8 +668,7 @@ export const app = new Spiceflow({ tracer })
         const actionRequest = getActionRequest()
         await requireSession(actionRequest)
         const { userCode: parsedUserCode } = parseFormData(deviceUserCodeSchema, formData)
-        const actionAuth = getAuth()
-        await actionAuth.api.deviceDeny({ body: { userCode: parsedUserCode }, headers: actionRequest.headers })
+        await denyDeviceCode(actionRequest, parsedUserCode)
         throw redirect(router.href('/device', { user_code: parsedUserCode, status: 'denied' }))
       }
 
@@ -689,6 +715,71 @@ export const app = new Spiceflow({ tracer })
         </AuthPage>
       )
     },
+  })
+
+  .page({
+    path: '/consent',
+    handler: async ({ request, loaderData }) => {
+      if (!loaderData.session) {
+        throw redirect(
+          router.href('/login', {
+            callbackURL: `${request.parsedUrl.pathname}${request.parsedUrl.search}`,
+          }),
+        )
+      }
+
+      const oauthQuery = request.parsedUrl.search.slice(1) || undefined
+
+      async function approveConsent() {
+        'use server'
+        const actionRequest = getActionRequest()
+        await requireSession(actionRequest)
+        const result = await submitOAuthConsent({
+          request: actionRequest,
+          accept: true,
+          oauthQuery,
+        })
+        if (result.redirect_uri) throw redirect(result.redirect_uri)
+      }
+
+      async function denyConsent() {
+        'use server'
+        const actionRequest = getActionRequest()
+        await requireSession(actionRequest)
+        const result = await submitOAuthConsent({
+          request: actionRequest,
+          accept: false,
+          oauthQuery,
+        })
+        if (result.redirect_uri) throw redirect(result.redirect_uri)
+      }
+
+      return (
+        <AuthPage
+          description="Allow an MCP client to query your Strada telemetry."
+          title="Allow MCP access"
+        >
+          <div className="flex flex-col gap-4 items-center text-center">
+            <StradaLogo className="h-10 w-auto" />
+            <p className="text-sm text-foreground">
+              An MCP client wants to list issues, logs, traces, and run SQL against your Strada projects.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Allow only clients you trust. You can deny this request.
+            </p>
+          </div>
+          <ConsentActionButtons approveAction={approveConsent} denyAction={denyConsent} />
+        </AuthPage>
+      )
+    },
+  })
+
+  .get('/.well-known/oauth-client', () => Response.json(mcpClientMetadataDocument()))
+
+  .route({
+    method: '*',
+    path: '/mcp',
+    handler: ({ request }) => handleMcpRequest(request),
   })
   .use(api)
 

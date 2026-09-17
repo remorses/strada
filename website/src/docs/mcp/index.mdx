@@ -1,29 +1,28 @@
 ---
 $schema: https://holocron.so/frontmatter.json
-title: Connect Strada CLI to Cursor and Claude via MCP
+title: Connect Strada to Cursor and Claude via MCP
 sidebarTitle: Overview
-description: The same Strada CLI is a stdio MCP server. Install it in Cursor, Claude, or VS Code so agents can list issues, read logs, and run SQL.
+description: Add Strada as a remote HTTP MCP URL with OAuth, or run strada mcp over stdio. Agents list issues, read logs, and run SQL with the same CLI tools.
 icon: lucide:server
 prompt: |
   Write the MCP overview from @/cli/src/cli.ts and
   @https://github.com/remorses/goke/tree/main/mcp.
-  Cover that strada mcp is the same binary as the CLI, stdio transport,
-  and that agents should login with strada login first.
+  Cover remote HTTP MCP at /mcp with OAuth, plus local stdio strada mcp.
 ---
 
 # Strada MCP
 
-The **`strada` binary** is both the CLI and an [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) server. Run `strada mcp` and supported non-interactive CLI commands become tools that Cursor, Claude Desktop, VS Code, and other MCP clients can call.
+Strada exposes the **same CLI tools** over MCP. Cursor, Claude, and VS Code can list issues, read logs, and run SQL.
 
-There is no second package. Agents use the **same login**, the same project setup, and the same ClickHouse SQL as you do in the terminal.
+Prefer the **remote HTTP** server when the agent should log in with OAuth. Keep local **`strada mcp`** when you already use the CLI in that folder.
 
 ```diagram
   Cursor / Claude / VS Code
               │
-              │  spawn: strada mcp   (stdio JSON-RPC)
+              │  POST https://strada.sh/mcp   (OAuth JWT)
               ▼
         ┌─────────────┐
-        │ strada mcp  │  same binary as `strada issues list`
+        │  /mcp       │  same tools as `strada issues list`
         └──────┬──────┘
                │
                ▼
@@ -33,11 +32,25 @@ There is no second package. Agents use the **same login**, the same project setu
         Strada website API  ►  your ClickHouse / Tinybird
 ```
 
-<Aside>
-<Note>
-`strada mcp` speaks **stdio**. The client starts the process and talks JSON-RPC on stdin and stdout. Do not pipe other output into that process.
-</Note>
-</Aside>
+## Remote HTTP MCP
+
+Add this **URL** in the MCP client:
+
+```
+https://strada.sh/mcp
+```
+
+The client starts OAuth. Sign in with Google, then **Allow access** on `/consent`. After that, tools such as `issues_list` and `query` work.
+
+Remote MCP has **no folder defaults**. Pass `--project` and `--org` on tools that need them.
+
+Preview uses `https://preview.strada.sh/mcp`.
+
+## Local stdio MCP
+
+The **`strada` binary** is also a stdio MCP server. Run `strada mcp` after `strada login`. The client starts the process and talks JSON-RPC on stdin and stdout. Do not pipe other output into that process.
+
+Folder **`strada setup`** still selects the default org and project for stdio.
 
 ## What agents can do
 
@@ -51,19 +64,6 @@ Once the server is installed, an agent can:
 
 Those tools are the CLI commands, with spaces turned into **underscores**. `strada issues list` is the `issues_list` tool.
 
-## Auth
-
-MCP tools reuse the session from **`strada login`**. Log in once in a terminal before the agent starts:
-
-```bash
-strada login
-strada whoami
-```
-
-The login command needs an interactive **browser**. It is not an MCP tool. After the session is saved, tools such as `issues_list` and `query` work with no extra token.
-
-Folder **`strada setup`** still selects the default org and project. If the agent runs in that folder, it inherits the same defaults as the CLI.
-
 ## What is not a tool
 
 These stay in the terminal:
@@ -72,7 +72,7 @@ These stay in the terminal:
 - **`logout`**. Clears the shared local session that other MCP tools need.
 - **`database create`**. Tinybird OAuth and workspace bootstrap.
 - **`database upgrade`**. Long-running Clack output that would break stdio.
-- **`mcp`**. The server command itself.
+- **`mcp`**. The stdio server command itself.
 - **The TUI**. `strada` with no arguments.
 
 `setup` and the rest of the query and mutate commands are tools. `setup` needs `--org` and `--project` when stdin is not a TTY. MCP includes mutation tools such as `issues_resolve` and `projects_delete`.

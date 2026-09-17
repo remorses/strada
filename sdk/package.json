@@ -102,17 +102,17 @@
     "@opentelemetry/api-logs": "^0.214.0",
     "@opentelemetry/core": "^2.7.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
-    "@strada.sh/otlp-json": "workspace:^",
     "@opentelemetry/resources": "^2.6.1",
     "@opentelemetry/sdk-logs": "^0.214.0",
     "@opentelemetry/sdk-metrics": "^2.6.1",
     "@opentelemetry/sdk-trace-base": "^2.6.1",
     "@opentelemetry/sdk-trace-node": "^2.7.0",
-    "@opentelemetry/sdk-trace-web": "^2.7.0"
+    "@opentelemetry/sdk-trace-web": "^2.7.0",
+    "@strada.sh/otlp-json": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "better-auth": "^1.6.14",
+    "better-auth": "^1.7.5",
     "esbuild": "^0.28.0",
     "rimraf": "^6.0.1",
     "vite": "^8.0.13"

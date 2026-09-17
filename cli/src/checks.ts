@@ -39,7 +39,9 @@ checksCli
     `,
   )
   .option("--url <url>", z.string().describe("URL to check (required)"))
+  .required()
   .option("--name <name>", z.string().describe("Human-readable check name (required)"))
+  .required()
   .option("--method [method]", z.enum(["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]).describe("HTTP method (default: GET)"))
   .option("--schedule [cron]", z.string().describe("Cron schedule in UTC (default: '*/5 * * * *')"))
   .option("--timeout [ms]", z.coerce.number().describe("Request timeout in ms (default: 10000)"))

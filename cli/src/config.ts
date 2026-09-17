@@ -121,6 +121,10 @@ export function clearScope(scope: string): void {
   saveConfig({ ...config, scoped });
 }
 
+export type AuthCtx = {
+  process?: { env?: Record<string, string | undefined>; cwd?: string };
+};
+
 export function getResolvedConfig(cwd = process.cwd()): ScopedEntry {
   return resolveScopedEntry(loadConfig(), cwd);
 }
@@ -133,8 +137,15 @@ export function getBaseUrl(): string {
   return getResolvedConfig().baseUrl || "https://strada.sh";
 }
 
-export function requireAuth(): { sessionToken: string; baseUrl: string } {
-  const config = getResolvedConfig();
+export function requireAuth(ctx?: AuthCtx): { sessionToken: string; baseUrl: string } {
+  const env = ctx?.process?.env ?? {};
+  if (env.STRADA_SESSION_TOKEN) {
+    return {
+      sessionToken: env.STRADA_SESSION_TOKEN,
+      baseUrl: env.STRADA_API_URL || "https://strada.sh",
+    };
+  }
+  const config = getResolvedConfig(ctx?.process?.cwd);
   if (!config.sessionToken) {
     throw new Error("Not logged in. Run `strada login` first.");
   }

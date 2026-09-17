@@ -1,5 +1,6 @@
 // Public API for programmatic usage
 export { cli, isMcpCommand } from "./cli.ts";
+export { buildCli } from "./command-tree.ts";
 export { loadTinybirdResources } from "./tinybird-resources.ts";
 export { createApiClient } from "./api-client.ts";
 export {

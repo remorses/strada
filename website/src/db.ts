@@ -10,9 +10,13 @@ import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
 import { betterAuth } from 'better-auth/minimal'
-import { deviceAuthorization, bearer } from 'better-auth/plugins'
+import { deviceAuthorization, bearer, jwt } from 'better-auth/plugins'
+import { mcp } from '@better-auth/mcp'
+import { cimd } from '@better-auth/cimd'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { strataBetterAuth } from '@strada.sh/sdk/better-auth'
+import { fetchCimdOnWorkers } from './cimd-fetch.ts'
+import { mcpResourceUrl } from './mcp-resource.ts'
 import { json } from 'spiceflow'
 import { TinybirdClient, TINYBIRD_DATASOURCES } from 'strada/src/tinybird'
 
@@ -46,6 +50,71 @@ export function getDb() {
 
 // ── BetterAuth ──────────────────────────────────────────────────────
 
+async function callAuthJson(opts: {
+  path: string
+  request: Request
+  init?: RequestInit
+}) {
+  const auth = getAuth()
+  const url = new URL(opts.path, env.BETTER_AUTH_URL)
+  const headers = new Headers(opts.request.headers)
+  if (opts.init?.body) headers.set('content-type', 'application/json')
+  return auth.handler(new Request(url, { ...opts.init, headers }))
+}
+
+export async function verifyDeviceCode(request: Request, userCode: string) {
+  const url = new URL('/api/auth/device', env.BETTER_AUTH_URL)
+  url.searchParams.set('user_code', userCode)
+  const res = await callAuthJson({ path: `${url.pathname}${url.search}`, request })
+  if (!res.ok) return null
+  return await res.json() as { status: string }
+}
+
+export async function approveDeviceCode(request: Request, userCode: string) {
+  const res = await callAuthJson({
+    path: '/api/auth/device/approve',
+    request,
+    init: {
+      method: 'POST',
+      body: JSON.stringify({ userCode }),
+    },
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function denyDeviceCode(request: Request, userCode: string) {
+  const res = await callAuthJson({
+    path: '/api/auth/device/deny',
+    request,
+    init: {
+      method: 'POST',
+      body: JSON.stringify({ userCode }),
+    },
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function submitOAuthConsent(opts: {
+  request: Request
+  accept: boolean
+  oauthQuery?: string
+}) {
+  const res = await callAuthJson({
+    path: '/api/auth/oauth2/consent',
+    request: opts.request,
+    init: {
+      method: 'POST',
+      body: JSON.stringify({
+        accept: opts.accept,
+        oauth_query: opts.oauthQuery || undefined,
+      }),
+    },
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const body: { url?: string; redirect_uri?: string } = await res.json()
+  return { redirect_uri: body.url ?? body.redirect_uri }
+}
+
 export function getAuth() {
   const db = getDb()
   return betterAuth({
@@ -55,10 +124,6 @@ export function getAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 365,
       updateAge: 60 * 60 * 24,
-      cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60,
-      },
     },
     socialProviders: {
       google: {
@@ -67,11 +132,26 @@ export function getAuth() {
         prompt: 'select_account',
       },
     },
-    experimental: { joins: true },
+    advanced: {
+      database: {
+        joins: true,
+      },
+    },
+    disabledPaths: ['/token'],
     plugins: [
       strataBetterAuth(),
       deviceAuthorization({ verificationUri: '/device', schema: {} }),
       bearer(),
+      jwt({ disableSettingJwtHeader: true }),
+      mcp({
+        loginPage: '/login',
+        consentPage: '/consent',
+        resource: mcpResourceUrl(),
+      }),
+      cimd({
+        fetchClientMetadataResource: fetchCimdOnWorkers,
+        metadataProfile: 'mcp-2026-07-28',
+      }),
     ],
   })
 }
@@ -83,6 +163,14 @@ type Session = { userId: string; user: { id: string; name: string; email: string
 type RequestHeaders = Pick<Request, 'headers'>
 
 export async function getSession(request: RequestHeaders): Promise<Session | null> {
+  const { inProcessMcp } = await import('strada/src/mcp-request')
+  const mcp = inProcessMcp.getStore()
+  if (mcp) {
+    return {
+      userId: mcp.userId,
+      user: { id: mcp.userId, name: mcp.user.name, email: mcp.user.email },
+    }
+  }
   const hasCookie = request.headers.has('cookie')
   const hasAuthorization = request.headers.has('authorization')
   if (!hasCookie && !hasAuthorization) {

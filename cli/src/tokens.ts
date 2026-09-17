@@ -31,6 +31,7 @@ tokensCli
     `,
   )
   .option("--scope <scope>", z.enum(["ingest"]).describe("Token scope. Currently only ingest is supported"))
+  .required()
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .action(async (name, options, { console: output }) => {
     const { safeFetch } = getApiClient();

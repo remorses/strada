@@ -225,6 +225,8 @@
     "/signup",
     "/pricing",
     "/device",
+    "/consent",
+    "/mcp",
     "/wip",
     "/dash/*",
     "/api/*"

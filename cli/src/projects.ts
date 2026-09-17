@@ -12,7 +12,7 @@ import { bold, cyan, dim, green } from "./colors.ts";
 import { getResolvedConfig, loadConfig, updateConfig } from "./config.ts";
 import type { CachedProject } from "./config.ts";
 import { getApiClient } from "./api-client.ts";
-import { waitForTinybirdMigration } from "./database.ts";
+import { waitForTinybirdMigration } from "./tinybird-migrate.ts";
 import { resolveCurrentOrg } from "./orgs.ts";
 import { printTable } from "./table.ts";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "./tinybird-retention.ts";
