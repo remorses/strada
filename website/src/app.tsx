@@ -37,7 +37,7 @@ import {
   verifyDeviceCode,
 } from './db.ts'
 import { handleMcpRequest } from './mcp.ts'
-import { mcpClientMetadataDocument } from './mcp-resource.ts'
+import { mcpClientMetadataDocument, mcpResourceUrl } from './mcp-resource.ts'
 import { checkAlerts } from './alert-check.ts'
 import { dispatchHealthChecks } from './health-check-dispatch.ts'
 export { HealthCheckWorkflow } from './health-check-workflow.ts'
@@ -73,21 +73,12 @@ const devicePageQuerySchema = z.object({
 
 const deviceUserCodeSchema = z.object({ userCode: z.string().min(1) })
 
-function oauthAuthorizeResumePath(search: string) {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
-  if (params.get('response_type') !== 'code') return null
-  return `/api/auth/oauth2/authorize${search.startsWith('?') ? search : `?${search}`}`
-}
-
 function safeRedirectPath(value: string | undefined | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/wip'
   // Parse with URL to safely extract pathname + search (preserves query params)
   const url = new URL(value, 'https://strada.local')
   // Block /login as callbackURL to prevent redirect loops
   if (url.pathname === '/login') return '/wip'
-  if (url.pathname === '/api/auth/oauth2/authorize') {
-    return oauthAuthorizeResumePath(url.search) ?? '/wip'
-  }
   if (url.pathname === '/device' || url.pathname === '/wip' || url.pathname === '/consent') {
     return `${url.pathname}${url.search}`
   }
@@ -584,9 +575,13 @@ export const app = new Spiceflow({ tracer })
     path: '/login',
     query: loginQuerySchema,
     handler: async ({ query, request, loaderData }) => {
-      const oauthResume = oauthAuthorizeResumePath(request.parsedUrl.search)
-      if (loaderData.session) throw redirect(oauthResume ?? safeRedirectPath(query.callbackURL))
-      const callbackURL = oauthResume ?? safeRedirectPath(query.callbackURL)
+      if (loaderData.session) {
+        if (request.parsedUrl.searchParams.get('response_type') === 'code') {
+          throw redirect(`/api/auth/oauth2/authorize${request.parsedUrl.search}`)
+        }
+        throw redirect(safeRedirectPath(query.callbackURL))
+      }
+      const callbackURL = safeRedirectPath(query.callbackURL)
       const { LoginButton } = await import('./components/login-button.tsx')
       return (
         <AuthPage
@@ -729,6 +724,10 @@ export const app = new Spiceflow({ tracer })
       }
 
       const oauthQuery = request.parsedUrl.search.slice(1) || undefined
+      const clientId = request.parsedUrl.searchParams.get('client_id') || 'unknown client'
+      const scopes = request.parsedUrl.searchParams.get('scope') || 'openid'
+      const resource = request.parsedUrl.searchParams.get('resource') || mcpResourceUrl()
+      const redirectUri = request.parsedUrl.searchParams.get('redirect_uri') || ''
 
       async function approveConsent() {
         'use server'
@@ -764,6 +763,12 @@ export const app = new Spiceflow({ tracer })
             <p className="text-sm text-foreground">
               An MCP client wants to list issues, logs, traces, and run SQL against your Strada projects.
             </p>
+            <dl className="w-full text-left text-sm text-muted-foreground">
+              <div className="break-all"><dt className="font-medium text-foreground">Client</dt><dd>{clientId}</dd></div>
+              <div className="mt-2"><dt className="font-medium text-foreground">Scopes</dt><dd>{scopes}</dd></div>
+              <div className="mt-2 break-all"><dt className="font-medium text-foreground">Resource</dt><dd>{resource}</dd></div>
+              {redirectUri ? <div className="mt-2 break-all"><dt className="font-medium text-foreground">Redirect</dt><dd>{redirectUri}</dd></div> : null}
+            </dl>
             <p className="text-sm text-muted-foreground">
               Allow only clients you trust. You can deny this request.
             </p>

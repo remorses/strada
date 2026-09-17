@@ -22,6 +22,22 @@ export const epochMs = s.customType<{ data: number; driverParam: number }>({
   },
 });
 
+// Better Auth date fields. D1 still stores INTEGER ms. Runtime values are Date
+// so cookie cache and OAuth freshness checks match Better Auth's schema.
+export const authDate = s.customType<{ data: Date; driverParam: number }>({
+  dataType() {
+    return "integer";
+  },
+  toDriver(value: unknown): number {
+    if (value instanceof Date) return value.getTime();
+    return value as number;
+  },
+  fromDriver(value: unknown): Date {
+    if (value instanceof Date || value == null) return value as Date;
+    return new Date(value as number);
+  },
+});
+
 // ── BetterAuth core tables ──────────────────────────────────────────
 
 export const user = s.sqliteTable("user", {
@@ -37,12 +53,12 @@ export const user = s.sqliteTable("user", {
     .notNull()
     .default(false),
   image: s.text("image"),
-  createdAt: epochMs("created_at")
+  createdAt: authDate("created_at")
     .notNull()
-    .$defaultFn(() => Date.now()),
-  updatedAt: epochMs("updated_at")
+    .$defaultFn(() => new Date()),
+  updatedAt: authDate("updated_at")
     .notNull()
-    .$defaultFn(() => Date.now()),
+    .$defaultFn(() => new Date()),
 });
 
 export const session = s.sqliteTable(
@@ -58,15 +74,15 @@ export const session = s.sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     token: s.text("token").notNull().unique(),
-    expiresAt: epochMs("expires_at").notNull(),
+    expiresAt: authDate("expires_at").notNull(),
     ipAddress: s.text("ip_address"),
     userAgent: s.text("user_agent"),
-    createdAt: epochMs("created_at")
+    createdAt: authDate("created_at")
       .notNull()
-      .$defaultFn(() => Date.now()),
-    updatedAt: epochMs("updated_at")
+      .$defaultFn(() => new Date()),
+    updatedAt: authDate("updated_at")
       .notNull()
-      .$defaultFn(() => Date.now()),
+      .$defaultFn(() => new Date()),
   },
   (table) => [s.index("session_user_id_idx").on(table.userId)],
 );
@@ -87,17 +103,17 @@ export const account = s.sqliteTable(
     providerId: s.text("provider_id").notNull(),
     accessToken: s.text("access_token"),
     refreshToken: s.text("refresh_token"),
-    accessTokenExpiresAt: epochMs("access_token_expires_at"),
-    refreshTokenExpiresAt: epochMs("refresh_token_expires_at"),
+    accessTokenExpiresAt: authDate("access_token_expires_at"),
+    refreshTokenExpiresAt: authDate("refresh_token_expires_at"),
     scope: s.text("scope"),
     idToken: s.text("id_token"),
     password: s.text("password"),
-    createdAt: epochMs("created_at")
+    createdAt: authDate("created_at")
       .notNull()
-      .$defaultFn(() => Date.now()),
-    updatedAt: epochMs("updated_at")
+      .$defaultFn(() => new Date()),
+    updatedAt: authDate("updated_at")
       .notNull()
-      .$defaultFn(() => Date.now()),
+      .$defaultFn(() => new Date()),
   },
   (table) => [s.index("account_user_id_idx").on(table.userId)],
 );
@@ -110,13 +126,13 @@ export const verification = s.sqliteTable("verification", {
     .$defaultFn(() => ulid()),
   identifier: s.text("identifier").notNull(),
   value: s.text("value").notNull(),
-  expiresAt: epochMs("expires_at").notNull(),
-  createdAt: epochMs("created_at")
+  expiresAt: authDate("expires_at").notNull(),
+  createdAt: authDate("created_at")
     .notNull()
-    .$defaultFn(() => Date.now()),
-  updatedAt: epochMs("updated_at")
+    .$defaultFn(() => new Date()),
+  updatedAt: authDate("updated_at")
     .notNull()
-    .$defaultFn(() => Date.now()),
+    .$defaultFn(() => new Date()),
 });
 
 // ── Org tables ──────────────────────────────────────────────────────
@@ -481,10 +497,10 @@ export const jwks = s.sqliteTable("jwks", {
     .$defaultFn(() => ulid()),
   publicKey: s.text("public_key").notNull(),
   privateKey: s.text("private_key").notNull(),
-  createdAt: epochMs("created_at")
+  createdAt: authDate("created_at")
     .notNull()
-    .$defaultFn(() => Date.now()),
-  expiresAt: epochMs("expires_at"),
+    .$defaultFn(() => new Date()),
+  expiresAt: authDate("expires_at"),
   alg: s.text("alg"),
   crv: s.text("crv"),
 });
@@ -508,9 +524,9 @@ export const oauthClient = s.sqliteTable(
     subjectType: s.text("subject_type"),
     scopes: s.text("scopes", { mode: "json" }).$type<string[]>(),
     clientCredentialsScopes: s.text("client_credentials_scopes", { mode: "json" }).$type<string[]>(),
-    userId: s.text("user_id").references(() => user.id, { onDelete: "cascade" }),
-    createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
-    updatedAt: epochMs("updated_at").$defaultFn(() => Date.now()),
+    userId: s.text("user_id").references(() => user.id),
+    createdAt: authDate("created_at").$defaultFn(() => new Date()),
+    updatedAt: authDate("updated_at").$defaultFn(() => new Date()),
     name: s.text("name"),
     uri: s.text("uri"),
     icon: s.text("icon"),
@@ -561,8 +577,8 @@ export const oauthResource = s.sqliteTable("oauth_resource", {
     .integer("dpop_bound_access_tokens_required", { mode: "boolean" })
     .default(false),
   disabled: s.integer("disabled", { mode: "boolean" }).default(false),
-  createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
-  updatedAt: epochMs("updated_at").$defaultFn(() => Date.now()),
+  createdAt: authDate("created_at").$defaultFn(() => new Date()),
+  updatedAt: authDate("updated_at").$defaultFn(() => new Date()),
   policyVersion: s.integer("policy_version", { mode: "number" }).default(1),
   metadata: s.text("metadata", { mode: "json" }),
 });
@@ -584,7 +600,7 @@ export const oauthClientResource = s.sqliteTable(
       .notNull()
       .references(() => oauthResource.identifier, { onDelete: "cascade" }),
     metadata: s.text("metadata", { mode: "json" }),
-    createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
+    createdAt: authDate("created_at").$defaultFn(() => new Date()),
   },
   (table) => [
     s.index("oauth_client_resource_client_id_idx").on(table.clientId),
@@ -619,13 +635,13 @@ export const oauthRefreshToken = s.sqliteTable(
     authorizationCodeId: s.text("authorization_code_id"),
     resources: s.text("resources", { mode: "json" }).$type<string[]>(),
     requestedUserInfoClaims: s.text("requested_user_info_claims", { mode: "json" }).$type<string[]>(),
-    expiresAt: epochMs("expires_at"),
-    createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
-    revoked: epochMs("revoked"),
-    rotatedAt: epochMs("rotated_at"),
+    expiresAt: authDate("expires_at"),
+    createdAt: authDate("created_at").$defaultFn(() => new Date()),
+    revoked: authDate("revoked"),
+    rotatedAt: authDate("rotated_at"),
     rotationReplayResponse: s.text("rotation_replay_response"),
-    rotationReplayExpiresAt: epochMs("rotation_replay_expires_at"),
-    authTime: epochMs("auth_time"),
+    rotationReplayExpiresAt: authDate("rotation_replay_expires_at"),
+    authTime: authDate("auth_time"),
     confirmation: s.text("confirmation", { mode: "json" }),
     scopes: s.text("scopes", { mode: "json" }).$type<string[]>().notNull(),
   },
@@ -663,9 +679,9 @@ export const oauthAccessToken = s.sqliteTable(
     refreshId: s
       .text("refresh_id")
       .references(() => oauthRefreshToken.id),
-    expiresAt: epochMs("expires_at"),
-    createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
-    revoked: epochMs("revoked"),
+    expiresAt: authDate("expires_at"),
+    createdAt: authDate("created_at").$defaultFn(() => new Date()),
+    revoked: authDate("revoked"),
     confirmation: s.text("confirmation", { mode: "json" }),
     scopes: s.text("scopes", { mode: "json" }).$type<string[]>().notNull(),
   },
@@ -697,8 +713,8 @@ export const oauthConsent = s.sqliteTable(
     resources: s.text("resources", { mode: "json" }).$type<string[]>(),
     requestedUserInfoClaims: s.text("requested_user_info_claims", { mode: "json" }).$type<string[]>(),
     scopes: s.text("scopes", { mode: "json" }).$type<string[]>().notNull(),
-    createdAt: epochMs("created_at").$defaultFn(() => Date.now()),
-    updatedAt: epochMs("updated_at").$defaultFn(() => Date.now()),
+    createdAt: authDate("created_at").$defaultFn(() => new Date()),
+    updatedAt: authDate("updated_at").$defaultFn(() => new Date()),
   },
   (table) => [
     s.index("oauth_consent_client_id_idx").on(table.clientId),
@@ -712,7 +728,7 @@ export const oauthClientAssertion = s.sqliteTable("oauth_client_assertion", {
     .primaryKey()
     .notNull()
     .$defaultFn(() => ulid()),
-  expiresAt: epochMs("expires_at").notNull(),
+  expiresAt: authDate("expires_at").notNull(),
 });
 
 export const deviceCode = s.sqliteTable(
@@ -728,12 +744,12 @@ export const deviceCode = s.sqliteTable(
     userId: s
       .text("user_id")
       .references(() => user.id, { onDelete: "cascade" }),
-    expiresAt: epochMs("expires_at").notNull(),
+    expiresAt: authDate("expires_at").notNull(),
     status: s
       .text("status", { enum: ["pending", "approved", "denied", "expired"] })
       .notNull()
       .default("pending"),
-    lastPolledAt: epochMs("last_polled_at"),
+    lastPolledAt: authDate("last_polled_at"),
     pollingInterval: s.integer("polling_interval", { mode: "number" }),
     clientId: s.text("client_id"),
     scope: s.text("scope"),

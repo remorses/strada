@@ -99,20 +99,15 @@ export async function submitOAuthConsent(opts: {
   accept: boolean
   oauthQuery?: string
 }) {
-  const res = await callAuthJson({
-    path: '/api/auth/oauth2/consent',
-    request: opts.request,
-    init: {
-      method: 'POST',
-      body: JSON.stringify({
-        accept: opts.accept,
-        oauth_query: opts.oauthQuery || undefined,
-      }),
+  const auth = getAuth()
+  const result = await auth.api.oauth2Consent({
+    body: {
+      accept: opts.accept,
+      oauth_query: opts.oauthQuery || undefined,
     },
+    headers: opts.request.headers,
   })
-  if (!res.ok) throw new Error(await res.text())
-  const body: { url?: string; redirect_uri?: string } = await res.json()
-  return { redirect_uri: body.url ?? body.redirect_uri }
+  return { redirect_uri: result.url }
 }
 
 export function getAuth() {
@@ -124,6 +119,10 @@ export function getAuth() {
     session: {
       expiresIn: 60 * 60 * 24 * 365,
       updateAge: 60 * 60 * 24,
+      cookieCache: {
+        enabled: true,
+        maxAge: 5 * 60,
+      },
     },
     socialProviders: {
       google: {

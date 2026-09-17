@@ -61,6 +61,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   if (origin && !isAllowedMcpOrigin(origin)) {
     return new Response(null, { status: 403 })
   }
+  // Spiceflow mounts POST /mcp only. Direct GET/DELETE still 405 for MCP 2026-07-28.
   if (request.method !== 'POST') {
     return new Response(null, { status: 405, headers: { Allow: 'POST' } })
   }

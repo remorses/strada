@@ -20,11 +20,13 @@ import { inProcessMcp } from "./mcp-request.ts";
 
 export function createApiClient(opts: {
   baseUrl: string
-  sessionToken: string
+  sessionToken?: string
   fetch?: typeof fetch
 }) {
+  const headers: Record<string, string> = {}
+  if (opts.sessionToken) headers.Authorization = `Bearer ${opts.sessionToken}`
   const safeFetch = createSpiceflowFetch<App>(opts.baseUrl, {
-    headers: { Authorization: `Bearer ${opts.sessionToken}` },
+    headers,
     fetch: opts.fetch,
   });
   return { safeFetch };
@@ -33,7 +35,7 @@ export function createApiClient(opts: {
 /** Create an API client from the stored auth config. Throws if not logged in. */
 export function getApiClient(ctx?: AuthCtx) {
   const mcp = inProcessMcp.getStore();
-  if (mcp) return createApiClient({ baseUrl: mcp.baseUrl, sessionToken: "mcp", fetch: mcp.fetch });
+  if (mcp) return createApiClient({ baseUrl: mcp.baseUrl, fetch: mcp.fetch });
   const auth = requireAuth(ctx);
   return createApiClient({ baseUrl: auth.baseUrl, sessionToken: auth.sessionToken });
 }

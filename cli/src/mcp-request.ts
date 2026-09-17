@@ -1,3 +1,5 @@
+// Request-scoped MCP principal. Set only after requireMcpAuth verifies the JWT.
+// getSession() reads this so /api/v0 never sees the MCP access token.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type InProcessMcp = {

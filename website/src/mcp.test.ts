@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
+import { fetchCimdOnWorkers } from "./cimd-fetch.ts";
 import { handleMcpRequest } from "./mcp.ts";
-import { mcpClientMetadataDocument } from "./mcp-resource.ts";
+import { mcpClientMetadataDocument, mcpClientMetadataUrl } from "./mcp-resource.ts";
 
 async function mcpRequest(init: RequestInit & { url?: string }) {
   return handleMcpRequest(new Request(init.url ?? "http://localhost/mcp", init));
@@ -51,12 +52,18 @@ describe("remote HTTP MCP", () => {
     expect(response.status).toBe(403);
   });
 
-  test("CIMD document is JSON with a JSON content type", async () => {
-    const response = Response.json(mcpClientMetadataDocument());
+  test("CIMD document uses the MCP client metadata URL as client_id", () => {
+    const document = mcpClientMetadataDocument();
+    expect(document.client_id).toContain("/.well-known/oauth-client");
+    expect(document.redirect_uris).toContain("http://127.0.0.1:8765/callback");
+    expect(document.token_endpoint_auth_method).toBe("none");
+  });
+
+  test("CIMD transport returns the local metadata document without sockets", async () => {
+    const response = await fetchCimdOnWorkers(mcpClientMetadataUrl());
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toMatch(/application\/json/);
-    const body: { client_id: string; redirect_uris: string[] } = await response.json();
-    expect(body.client_id).toContain("/.well-known/oauth-client");
-    expect(body.redirect_uris).toContain("http://127.0.0.1:8765/callback");
+    const body = await response.json();
+    expect(body).toMatchObject({ client_id: mcpClientMetadataUrl() });
   });
 });

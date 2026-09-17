@@ -45,7 +45,7 @@ CREATE TABLE `oauth_client` (
 	`dpop_bound_access_tokens` integer DEFAULT false,
 	`reference_id` text,
 	`metadata` text,
-	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE INDEX `oauth_client_user_id_idx` ON `oauth_client` (`user_id`);
