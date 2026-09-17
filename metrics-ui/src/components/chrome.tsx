@@ -156,7 +156,7 @@ export function ChartCard({
   children: ReactNode
 }) {
   return (
-    <section className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-card px-4 pt-3 pb-3">
+    <section className="relative flex flex-col gap-2 overflow-hidden bg-background px-4 pt-3 pb-3">
       <div className="flex min-h-5 items-center justify-center gap-1.5">
         <h2 className="text-[15px] font-medium">{title}</h2>
         {badge && (
@@ -199,7 +199,7 @@ export function KpiCard({
   live?: boolean
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4">
+    <div className="flex flex-col gap-2 bg-background px-5 py-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         {label}
         {live && (

@@ -61,7 +61,7 @@ export function UsagePage() {
           <div className="text-[40px] font-semibold tracking-tight">{formatMoney(6715.12)}</div>
         </div>
 
-        <section className="flex flex-col gap-4 overflow-hidden rounded-xl border border-border bg-card p-5">
+        <section className="flex flex-col gap-4 overflow-hidden bg-background p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-medium">Last Hour Usage: $28.90</h2>
             <div className="flex rounded-md border border-border text-xs">
@@ -86,7 +86,7 @@ export function UsagePage() {
           </div>
         </section>
 
-        <section className="flex flex-col gap-4 overflow-hidden rounded-xl border border-border bg-card p-5">
+        <section className="flex flex-col gap-4 overflow-hidden bg-background p-5">
           <div className="flex items-center justify-between">
             <h2 className="relative z-10 text-[15px] font-medium">Cycle Resource Breakdown</h2>
             <button type="button" className="relative z-10 text-sm text-muted-foreground hover:text-foreground">
@@ -100,7 +100,6 @@ export function UsagePage() {
               height={240}
               yTicks={[0, 200, 400, 600]}
               domainMax={780}
-              cursorX="Thu 10"
               yFormat={formatMoney}
             />
           </div>
@@ -126,7 +125,7 @@ export function UsagePage() {
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
+        <section className="flex flex-col gap-3 bg-background p-5">
           <h2 className="text-[15px] font-medium">Functions</h2>
           <div className="flex flex-col gap-3 text-sm">
             {functionCosts.map((item) => (

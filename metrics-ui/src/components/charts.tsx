@@ -1,15 +1,16 @@
 'use client'
 
-import { areaY, barY, defineChart, dot, lineY, stack } from '@tanstack/charts'
+import { areaY, barY, defineChart, lineY, stack } from '@tanstack/charts'
+import { crosshair } from '@tanstack/charts/crosshair'
 import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
 import { portal } from '@tanstack/charts/tooltip/portal'
 import { scaleUtc } from 'd3-scale'
-import { useMemo, useState, type ReactNode } from 'react'
-import { COLORS } from '../lib/chart-colors.ts'
-import { CURSOR_TIME, RANGE_END, RANGE_START, type TimePoint } from '../lib/metrics-data.ts'
+import { useMemo, type ReactNode } from 'react'
+import { chartCursor, COLORS, cursorHost } from '../lib/chart-colors.ts'
+import { RANGE_END, RANGE_START, type TimePoint } from '../lib/metrics-data.ts'
 import { cn, formatTickTime, formatTooltipTime } from '../lib/utils.ts'
 import { ChartTooltip } from './chart-tooltip.tsx'
 
@@ -77,11 +78,6 @@ function yAxis(
   }
 }
 
-function cursorOffset(cursor: Date) {
-  const span = RANGE_END.getTime() - RANGE_START.getTime()
-  return (cursor.getTime() - RANGE_START.getTime()) / span
-}
-
 function valueOf(row: TimePoint, key: string) {
   return Number(row[key] ?? 0)
 }
@@ -96,7 +92,6 @@ export function TimeSeriesChart({
   yTicks,
   domainMax,
   stacked,
-  cursor = CURSOR_TIME,
 }: {
   data: readonly TimePoint[]
   series: readonly SeriesSpec[]
@@ -107,18 +102,7 @@ export function TimeSeriesChart({
   yTicks?: number[]
   domainMax?: number
   stacked?: boolean
-  cursor?: Date
 }) {
-  const [hasInteractiveFocus, setHasInteractiveFocus] = useState(false)
-  const cursorRow = useMemo(() => {
-    if (data.length === 0) return undefined
-    return data.reduce((closest, row) =>
-      Math.abs(row.time.getTime() - cursor.getTime()) < Math.abs(closest.time.getTime() - cursor.getTime())
-        ? row
-        : closest,
-    )
-  }, [cursor, data])
-
   const definition = useMemo(() => {
     const colorRange = series.map((item) => item.color)
     const colorDomain = series.map((item) => item.key)
@@ -195,23 +179,8 @@ export function TimeSeriesChart({
           ]
         })
 
-    const cursorMarks = cursorRow
-      ? series
-          .filter((item) => item.kind !== 'bar')
-          .map((item) =>
-            dot([{ time: cursor, value: valueOf(cursorRow, item.key), series: item.key }], {
-              x: 'time',
-              y: 'value',
-              fill: item.color,
-              stroke: 'var(--card)',
-              strokeWidth: 1.5,
-              r: 3.5,
-            }),
-          )
-      : []
-
     return defineChart({
-      marks: [...marks, ...cursorMarks],
+      marks: [...marks, crosshair({ x: {}, y: false })],
       scales: {
         x: timeXAxis(),
         y: yAxis([yFormat, yTicks, domainMax, dataMax]),
@@ -227,23 +196,15 @@ export function TimeSeriesChart({
       },
       focus: 'group-x',
       maxFocusDistance: Number.POSITIVE_INFINITY,
+      cursor: {
+        use: cursorHost,
+        controller: chartCursor,
+        mode: 'focus',
+        match: 'x',
+      },
       tooltip: { use: tooltip, portal, className: 'metrics-tooltip' },
     })
-  }, [cursor, cursorRow, data, domainMax, series, stacked, yFormat, yTicks])
-
-  const left = cursorOffset(cursor)
-  const cursorRows = cursorRow
-    ? series.map((item) => {
-        const value = valueOf(cursorRow, item.key)
-        return {
-          color: item.color,
-          label: item.label,
-          value: valueFormat
-            ? valueFormat(value)
-            : value.toLocaleString('en-US', { maximumFractionDigits: 2 }),
-        }
-      })
-    : []
+  }, [data, domainMax, series, stacked, yFormat, yTicks])
 
   return (
     <div className="relative overflow-hidden">
@@ -251,7 +212,6 @@ export function TimeSeriesChart({
         definition={definition}
         height={height}
         ariaLabel={ariaLabel}
-        onFocusChange={(point) => setHasInteractiveFocus(point !== null)}
         renderTooltipBody={({ points }) => {
           const time = points[0]?.datum.time
           if (!time) return null
@@ -270,24 +230,6 @@ export function TimeSeriesChart({
           return <ChartTooltip time={formatTooltipTime(time)} rows={rows} />
         }}
       />
-      {!hasInteractiveFocus && cursorRow && (
-        <>
-          <div
-            className="pointer-events-none absolute top-2 bottom-7 w-1.5 bg-border/70"
-            style={{ left: `calc(44px + (100% - 86px) * ${left} - 3px)` }}
-          />
-          <div
-            className="pointer-events-none absolute top-2 bottom-7 w-px bg-foreground/25"
-            style={{ left: `calc(44px + (100% - 86px) * ${left})` }}
-          />
-          <div
-            className="pointer-events-none absolute top-3 z-10 -translate-x-1/2"
-            style={{ left: `calc(44px + (100% - 86px) * ${left})` }}
-          >
-            <ChartTooltip time={formatTooltipTime(cursor)} rows={cursorRows} />
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -299,7 +241,6 @@ export function CategoryBarChart({
   yFormat,
   yTicks,
   domainMax,
-  cursorX,
   xFormat,
 }: {
   rows: readonly { x: string; series: string; value: number }[]
@@ -308,15 +249,11 @@ export function CategoryBarChart({
   yFormat?: (value: number) => string
   yTicks?: number[]
   domainMax?: number
-  cursorX?: string
   xFormat?: (value: string) => string
 }) {
-  const [hasInteractiveFocus, setHasInteractiveFocus] = useState(false)
   const seriesNames = [...new Set(rows.map((row) => row.series))]
   const colors = seriesNames.map((name) => (name === 'CPU' ? COLORS.usageCpu : COLORS.usageMemory))
   const categories = [...new Set(rows.map((row) => row.x))]
-  const cursorRows = cursorX == null ? [] : rows.filter((row) => row.x === cursorX)
-  const cursorIndex = cursorX == null ? -1 : categories.indexOf(cursorX)
   const dataMax = Math.max(
     0,
     ...categories.map((category) =>
@@ -370,7 +307,6 @@ export function CategoryBarChart({
         definition={definition}
         height={height}
         ariaLabel={ariaLabel}
-        onFocusChange={(point) => setHasInteractiveFocus(point !== null)}
         renderTooltipBody={({ points }) => {
           const heading = points[0]?.xValue
           return (
@@ -385,21 +321,6 @@ export function CategoryBarChart({
           )
         }}
       />
-      {!hasInteractiveFocus && cursorX != null && cursorIndex >= 0 && (
-        <div
-          className="pointer-events-none absolute top-8 z-10 -translate-x-1/2"
-          style={{ left: `calc(48px + (100% - 60px) * ${(cursorIndex + 0.5) / categories.length})` }}
-        >
-          <ChartTooltip
-            time={`${cursorX} UTC`}
-            rows={cursorRows.map((row) => ({
-              color: colors[seriesNames.indexOf(row.series)] ?? COLORS.usageCpu,
-              label: row.series,
-              value: yFormat ? yFormat(row.value) : String(row.value),
-            }))}
-          />
-        </div>
-      )}
     </div>
   )
 }

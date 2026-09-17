@@ -43,7 +43,7 @@ export function SandboxesPage() {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-center text-sm font-medium">Sandboxes created</h2>
-          <div className="relative rounded-xl border border-border bg-card px-2 pt-2 pb-1">
+          <div className="relative px-2 pt-2 pb-1">
             <TimeSeriesChart
               data={sandboxCreated}
               series={[{ key: 'created', label: 'created', color: COLORS.pending, kind: 'bar' }]}
@@ -230,9 +230,7 @@ export function SandboxesPage() {
           </ChartCard>
 
           <ChartCard title="Exit Reasons" info>
-            <div className="relative h-[120px]">
-
-            </div>
+            <div className="h-[120px]" />
           </ChartCard>
         </ChartGrid>
       </PageBody>

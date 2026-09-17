@@ -52,7 +52,7 @@
 
 :root {
   --radius: 0.75rem;
-  --background: #fbfbfa;
+  --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
   --card-foreground: var(--foreground);
