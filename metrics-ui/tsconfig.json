@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"],
+    "paths": {
+      "metrics-ui/src/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

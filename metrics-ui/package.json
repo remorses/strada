@@ -1,0 +1,39 @@
+{
+  "name": "metrics-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Modal-style metrics dashboards for Strada, built with TanStack Charts.",
+  "exports": {
+    "./package.json": "./package.json",
+    "./src/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.4.1",
+    "@tanstack/charts": "^0.18.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "d3-scale": "^4.0.2",
+    "lucide-react": "^0.544.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "spiceflow": "1.26.0-rsc.18",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/d3-scale": "^4.0.9",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

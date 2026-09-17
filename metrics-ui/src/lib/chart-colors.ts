@@ -1,0 +1,16 @@
+export const COLORS = {
+  success: 'var(--chart-success)',
+  live: 'var(--chart-live)',
+  request: 'var(--chart-request)',
+  usedCpu: 'var(--chart-used-cpu)',
+  usedMemory: 'var(--chart-used-memory)',
+  egress: 'var(--chart-egress)',
+  ingress: 'var(--chart-ingress)',
+  slots: 'var(--chart-slots)',
+  pending: 'var(--chart-pending)',
+  running: 'var(--chart-running)',
+  p50: 'var(--chart-p50)',
+  p90: 'var(--chart-p90)',
+  usageCpu: 'var(--chart-usage-cpu)',
+  usageMemory: 'var(--chart-usage-memory)',
+}
