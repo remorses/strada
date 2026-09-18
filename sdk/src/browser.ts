@@ -40,9 +40,8 @@ import {
   type StradaOptions,
   type CaptureExceptionOptions,
   type StradaLogger,
-  applyBeforeSend,
   normalizeError,
-  shouldIgnoreError,
+  prepareErrorForCapture,
   errorToAttributes,
   recordExceptionOnSpan,
   createStradaLogger,
@@ -738,10 +737,7 @@ export function captureException(
   return tryTelemetry({
     operation: "captureException()",
     run: () => {
-      const normalized = normalizeError(error);
-
-      if (_options && shouldIgnoreError(normalized, _options)) return;
-      const prepared = applyBeforeSend(normalized, _options?.beforeSend);
+      const prepared = prepareErrorForCapture(error, _options);
       if (prepared === null) return;
 
       const attributes = errorToAttributes(prepared, opts);

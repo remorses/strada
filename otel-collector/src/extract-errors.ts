@@ -20,6 +20,7 @@ import { ATTR } from "@strada.sh/sdk/src/attrs";
 const CLOUDFLARE_WORKERS_PLATFORM = "cloudflare.workers";
 const CLOUDFLARE_EXCEPTION_OUTCOME = "exception";
 const CLOUDFLARE_WORKER_EXCEPTION_TYPE = "CloudflareWorkerException";
+const KNOWN_ERROR_TYPE = "KnownError";
 
 // ─── Public API ───
 
@@ -43,6 +44,7 @@ export function extractErrorsFromLogs(body: ExportLogsServiceRequest, projectId:
 
         // Skip if no exception data
         if (!exceptionType && !exceptionMessage) continue;
+        if (exceptionType === KNOWN_ERROR_TYPE) continue;
 
         const timestamp =
           log.timeUnixNano && log.timeUnixNano !== "0" ? log.timeUnixNano : (log.observedTimeUnixNano ?? "0");
@@ -102,6 +104,7 @@ export function extractErrorsFromTraces(body: ExportTraceServiceRequest, project
 
           if (!exceptionType && !exceptionMessage) continue;
           extractedStandardException = true;
+          if (exceptionType === KNOWN_ERROR_TYPE) continue;
 
           // Merge span context into event attrs so tags include url.path etc.
           const attrs = { ...spanAttrsForContext, ...eventAttrs };

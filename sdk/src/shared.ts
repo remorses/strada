@@ -574,6 +574,10 @@ export function shouldIgnoreError(
   error: Error,
   options: Pick<StradaOptions, "ignoreErrors" | "denyUrls">,
 ): boolean {
+  if (error?.name === "KnownError" || error?.constructor?.name === "KnownError") {
+    return true;
+  }
+
   const message = error.message || "";
   const stack = error.stack || "";
 
@@ -589,6 +593,20 @@ export function shouldIgnoreError(
   if (denyPatterns.length > 0 && matchesAny(stack, denyPatterns)) return true;
 
   return false;
+}
+
+export function prepareErrorForCapture(
+  error: unknown,
+  options?: Pick<StradaOptions, "ignoreErrors" | "denyUrls" | "beforeSend">,
+): Error | null {
+  const normalized = normalizeError(error);
+  if (shouldIgnoreError(normalized, options ?? {})) return null;
+
+  const prepared = applyBeforeSend(normalized, options?.beforeSend);
+  if (prepared === null || shouldIgnoreError(prepared, options ?? {})) {
+    return null;
+  }
+  return prepared;
 }
 
 // ---------------------------------------------------------------------------
@@ -636,9 +654,9 @@ export function errorToAttributes(
 /**
  * Lightweight captureException that works via the global OTel logger API.
  * Unlike the runtime-specific versions in node.ts/browser.ts/cloudflare.ts,
- * this does not check _options (ignoreErrors, beforeSend) or _logger (the
- * runtime-initialized logger). It uses `logs.getLogger()` directly, which
- * works after `initStrada()` has registered OTel providers.
+ * this has no runtime options or runtime-initialized logger. It applies the
+ * default error filters, then uses `logs.getLogger()` directly, which works
+ * after `initStrada()` has registered OTel providers.
  *
  * Designed for use by plugins (e.g. better-auth plugin) that import from
  * shared.ts and can't import runtime-specific modules.
@@ -650,14 +668,15 @@ export function captureExceptionViaOtel(
   return tryTelemetry({
     operation: "captureExceptionViaOtel()",
     run: () => {
-      const normalized = normalizeError(error);
-      const attributes = errorToAttributes(normalized, opts);
+      const prepared = prepareErrorForCapture(error);
+      if (prepared === null) return;
+      const attributes = errorToAttributes(prepared, opts);
       const logger = logs.getLogger(opts?.loggerName ?? "strada");
       logger.emit({
         eventName: "exception",
         severityNumber: ERROR_SEVERITY,
         severityText: ERROR_SEVERITY_TEXT,
-        body: normalized.message,
+        body: prepared.message,
         attributes,
       });
     },

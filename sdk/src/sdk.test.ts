@@ -15,6 +15,7 @@ import { logs } from "@opentelemetry/api-logs";
 import {
   normalizeError,
   shouldIgnoreError,
+  prepareErrorForCapture,
   errorToAttributes,
   recordExceptionOnSpan,
   normalizeLogInput,
@@ -155,6 +156,23 @@ describe("normalizeError", () => {
 // ---------------------------------------------------------------------------
 
 describe("shouldIgnoreError", () => {
+  it("ignores errors whose constructor is named KnownError", () => {
+    class KnownError extends Error {}
+
+    expect(shouldIgnoreError(new KnownError("expected failure"), {})).toBe(true);
+  });
+
+  it("ignores errors named KnownError", () => {
+    const error = new Error("expected failure");
+    error.name = "KnownError";
+
+    expect(shouldIgnoreError(error, {})).toBe(true);
+  });
+
+  it("does not throw for an error without a prototype", () => {
+    expect(shouldIgnoreError(Object.create(null), {})).toBe(false);
+  });
+
   it("ignores 'Script error.' by default", () => {
     const err = new Error("Script error.");
     expect(shouldIgnoreError(err, {})).toBe(true);
@@ -218,6 +236,20 @@ describe("shouldIgnoreError", () => {
         denyUrls: [/https:\/\/ads\.example\.com/],
       }),
     ).toBe(true);
+  });
+});
+
+describe("prepareErrorForCapture", () => {
+  it("drops an error rewritten to KnownError by beforeSend", () => {
+    const prepared = prepareErrorForCapture(new Error("original"), {
+      beforeSend() {
+        const error = new Error("expected failure");
+        error.name = "KnownError";
+        return error;
+      },
+    });
+
+    expect(prepared).toBeNull();
   });
 });
 

@@ -182,6 +182,23 @@ describe("project-scoped fingerprint_hash", () => {
 });
 
 describe("extractErrorsFromLogs", () => {
+  it("does not extract KnownError logs", () => {
+    const input: ExportLogsServiceRequest = {
+      resourceLogs: [{
+        scopeLogs: [{
+          logRecords: [{
+            attributes: [
+              { key: "exception.type", value: { stringValue: "KnownError" } },
+              { key: "exception.message", value: { stringValue: "expected failure" } },
+            ],
+          }],
+        }],
+      }],
+    };
+
+    expect(extractErrorsFromLogs(input, "acme")).toBe("");
+  });
+
   it("returns empty string when no exceptions in logs", () => {
     const input: ExportLogsServiceRequest = {
       resourceLogs: [
@@ -473,6 +490,42 @@ describe("extractErrorsFromLogs", () => {
 });
 
 describe("extractErrorsFromTraces", () => {
+  it("does not extract KnownError span events", () => {
+    const input: ExportTraceServiceRequest = {
+      resourceSpans: [{
+        resource: {
+          attributes: [
+            { key: "cloud.platform", value: { stringValue: "cloudflare.workers" } },
+          ],
+        },
+        scopeSpans: [{
+          spans: [{
+            traceId: "trace-123",
+            spanId: "span-456",
+            parentSpanId: "",
+            name: "POST /api/rephrase",
+            startTimeUnixNano: "1000000000",
+            endTimeUnixNano: "2000000000",
+            status: { code: 2, message: "expected failure" },
+            attributes: [
+              { key: "cloudflare.outcome", value: { stringValue: "exception" } },
+            ],
+            events: [{
+              timeUnixNano: "1500000000",
+              name: "exception",
+              attributes: [
+                { key: "exception.type", value: { stringValue: "KnownError" } },
+                { key: "exception.message", value: { stringValue: "expected failure" } },
+              ],
+            }],
+          }],
+        }],
+      }],
+    };
+
+    expect(extractErrorsFromTraces(input, "acme")).toBe("");
+  });
+
   it("returns empty string when no exception events", () => {
     const input: ExportTraceServiceRequest = {
       resourceSpans: [
