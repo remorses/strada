@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -103,21 +103,26 @@
   --sidebar-border: --alpha(var(--foreground) / 8%);
   --canvas: #f6f6f7;
   --page-max-width: 1180px;
+  color-scheme: light;
   scrollbar-width: thin;
   scrollbar-color: gray transparent;
   scrollbar-gutter: stable;
 
   @variant dark {
-    --background: #0f0f0e;
-    --foreground: #f5f5f4;
-    --card: #171716;
-    --muted-foreground: #a3a3a3;
+    color-scheme: dark;
+    --background: #1f1e1c;
+    --foreground: #f2efea;
+    --card: #2a2927;
+    --primary: #f2efea;
+    --primary-foreground: #1f1e1c;
+    --muted-foreground: #9b9a98;
     --destructive: #f87171;
-    --chart-request: #525252;
-    --sidebar: #171716;
-    --sidebar-foreground: #f5f5f4;
+    --warning-foreground: #1f1e1c;
+    --chart-request: #9b9a98;
+    --sidebar: #2a2927;
+    --sidebar-foreground: #f2efea;
     --sidebar-accent: --alpha(#ffffff / 8%);
-    --canvas: #0f0f0e;
+    --canvas: #1f1e1c;
   }
 }
 

@@ -10,12 +10,18 @@ import { UsagePage } from './pages/usage-page.tsx'
 export const app = new Spiceflow()
   .layout('/*', async ({ children }) => {
     return (
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
         <head>
           <meta charSet="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
         </head>
         <body>
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                '(function(){try{var t=localStorage.getItem("metrics-ui-theme");var d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}})()',
+            }}
+          />
           <ProgressBar />
           {children}
         </body>

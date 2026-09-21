@@ -110,7 +110,7 @@ function ComboboxContent({
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           data-chips={!!anchor}
-          className={cn("group/combobox-content relative max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+--spacing(7))] origin-(--transform-origin) overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg ring-0 duration-100 outline-none data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1.5 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:rounded-md *:data-[slot=input-group]:border-transparent *:data-[slot=input-group]:bg-muted *:data-[slot=input-group]:shadow-none *:data-[slot=input-group]:ring-0 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          className={cn("group/combobox-content relative max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+--spacing(7))] origin-(--transform-origin) overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_12px_32px_rgb(0_0_0/0.55)] ring-0 duration-100 outline-none data-[chips=true]:min-w-(--anchor-width) *:data-[slot=input-group]:m-1.5 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:rounded-md *:data-[slot=input-group]:border-transparent *:data-[slot=input-group]:bg-muted *:data-[slot=input-group]:shadow-none *:data-[slot=input-group]:ring-0 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
           {...props}
         />
       </ComboboxPrimitive.Positioner>
@@ -194,6 +194,16 @@ function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
         "hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex",
         className
       )}
+      {...props}
+    />
+  )
+}
+
+function ComboboxFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="combobox-footer"
+      className={cn("flex flex-col gap-0.5 border-t border-border px-1.5 pt-1.5 pb-1.5", className)}
       {...props}
     />
   )
@@ -287,6 +297,7 @@ export {
   ComboboxLabel,
   ComboboxCollection,
   ComboboxEmpty,
+  ComboboxFooter,
   ComboboxSeparator,
   ComboboxChips,
   ComboboxChip,

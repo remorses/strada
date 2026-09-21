@@ -6,7 +6,7 @@ export type TooltipRow = {
 
 export function ChartTooltip({ time, rows }: { time: string; rows: TooltipRow[] }) {
   return (
-    <div className="min-w-[188px] rounded-lg border border-border bg-card px-3 py-2 text-[12px] leading-4 shadow-[0_8px_24px_--alpha(var(--foreground)/10%)]">
+    <div className="min-w-[188px] rounded-lg border border-border bg-card px-3 py-2 text-[12px] leading-4 shadow-[0_8px_24px_rgb(0_0_0/0.45)]">
       <div className="mb-1.5 whitespace-nowrap text-muted-foreground">{time}</div>
       <div className="flex flex-col gap-1">
         {rows.map((row) => (

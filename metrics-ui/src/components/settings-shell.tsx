@@ -6,10 +6,12 @@ import { STORES, StoreMark, USERS, useWorkspace, WorkspaceProvider } from '../li
 import { cn } from '../lib/utils.ts'
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar.tsx'
 import { Button } from './ui/button.tsx'
+import { ThemeSwitcher } from '../lib/theme.tsx'
 import {
   Combobox,
   ComboboxContent,
   ComboboxEmpty,
+  ComboboxFooter,
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
@@ -42,8 +44,9 @@ function SettingsFrame({ items, children }: { items: SettingsNavItem[]; children
 
   return (
     <div className="flex min-h-screen bg-canvas text-foreground">
-      <aside className="sticky top-0 flex h-dvh w-[220px] shrink-0 flex-col bg-sidebar">
-        <div className="px-3 pt-3.5">
+      <aside className="sticky top-0 h-dvh w-[232px] shrink-0 p-2">
+        <div className="flex h-full flex-col rounded-xl bg-sidebar">
+          <div className="px-2 pt-2">
           <EntityPicker
             label="Switch store"
             items={STORES}
@@ -57,15 +60,15 @@ function SettingsFrame({ items, children }: { items: SettingsNavItem[]; children
                   <StoreMark id={item.mark} />
                 </span>
                 <span className="min-w-0 flex-1 leading-[1.15]">
-                  {place === 'trigger' ? <span className="block text-[11px] font-normal text-[#9ca3af]">Store</span> : null}
+                  {place === 'trigger' ? <span className="block text-[11px] font-normal text-muted-foreground">Store</span> : null}
                   <span className="block truncate text-[13px] font-medium text-foreground">{item.name}</span>
-                  {place === 'item' ? <span className="block text-[11px] text-[#9ca3af]">{item.plan}</span> : null}
+                  {place === 'item' ? <span className="block text-[11px] text-muted-foreground">{item.plan}</span> : null}
                 </span>
               </>
             )}
           </EntityPicker>
-        </div>
-        <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-3">
+          </div>
+          <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-2">
           {items.map((item) => {
             const active = pathname === item.href
             return (
@@ -73,25 +76,26 @@ function SettingsFrame({ items, children }: { items: SettingsNavItem[]; children
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] text-[#6b7280] hover:bg-sidebar-accent hover:text-foreground',
-                  active && 'bg-[#ececee] font-medium text-foreground',
+                  'flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+                  active && 'bg-sidebar-accent font-medium text-foreground',
                 )}
               >
-                <span className={cn('flex size-4 items-center justify-center text-[#9ca3af]', active && 'text-foreground')}>
+                <span className={cn('flex size-4 items-center justify-center text-muted-foreground', active && 'text-foreground')}>
                   {item.icon}
                 </span>
                 {item.label}
               </Link>
             )
           })}
-        </nav>
-        <div className="px-3 pb-3">
+          </nav>
+          <div className="px-2 pb-2">
           <EntityPicker
             label="Switch account"
             items={USERS}
             value={user}
             onValueChange={(next) => setUserId(next.id)}
             empty="No accounts"
+            footer={<ThemeSwitcher />}
           >
             {(item, place) => (
               <>
@@ -100,17 +104,16 @@ function SettingsFrame({ items, children }: { items: SettingsNavItem[]; children
                   <AvatarFallback>{item.name.slice(0, 1)}</AvatarFallback>
                 </Avatar>
                 <span className="min-w-0 flex-1 leading-[1.15]">
-                  <span className="block text-[11px] font-normal text-[#9ca3af]">{place === 'trigger' ? item.role : item.email}</span>
+                  <span className="block text-[11px] font-normal text-muted-foreground">{place === 'trigger' ? item.role : item.email}</span>
                   <span className="block truncate text-[13px] font-medium text-foreground">{item.name}</span>
                 </span>
               </>
             )}
           </EntityPicker>
+          </div>
         </div>
       </aside>
-      <div className="min-w-0 flex-1 py-3 pr-3">
-        <div className="min-h-[calc(100dvh-1.5rem)] rounded-lg border border-black/6 bg-background">{children}</div>
-      </div>
+      <div className="min-w-0 flex-1 bg-background">{children}</div>
     </div>
   )
 }
@@ -121,6 +124,7 @@ function EntityPicker<T extends { id: string; name: string }>({
   value,
   onValueChange,
   empty,
+  footer,
   children,
 }: {
   label: string
@@ -128,6 +132,7 @@ function EntityPicker<T extends { id: string; name: string }>({
   value: T
   onValueChange: (value: T) => void
   empty: string
+  footer?: ReactNode
   children: (item: T, place: 'trigger' | 'item') => ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -166,6 +171,7 @@ function EntityPicker<T extends { id: string; name: string }>({
             </ComboboxItem>
           )}
         </ComboboxList>
+        {footer ? <ComboboxFooter>{footer}</ComboboxFooter> : null}
       </ComboboxContent>
     </Combobox>
   )

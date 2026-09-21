@@ -25,8 +25,8 @@ export function PlanCards({ plans }: { plans: PlanColumn[] }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       {plans.map((plan) => (
-        <article key={plan.id} className="flex flex-col gap-3 rounded-xl border border-black/8 bg-card p-1">
-          <div className="flex items-center justify-between rounded-lg bg-[#f3f4f6] px-3 py-1.5">
+        <article key={plan.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-1">
+          <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-1.5">
             <span className="text-[13px] font-medium">{plan.name}</span>
             <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               Yearly

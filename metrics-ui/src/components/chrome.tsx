@@ -131,7 +131,7 @@ export function ChartCard({
       <div className="flex min-h-5 items-center justify-center gap-1.5">
         <h2 className="text-[15px] font-medium">{title}</h2>
         {badge && (
-          <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
+          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">
             {badge}
           </span>
         )}
