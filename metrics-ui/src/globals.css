@@ -118,13 +118,14 @@
 }
 
 .ts-chart-host {
-  --ts-chart-tooltip-background: var(--popover);
+  --ts-chart-tooltip-background: transparent;
   --ts-chart-tooltip-color: var(--popover-foreground);
-  --ts-chart-tooltip-border: 1px solid var(--border);
-  --ts-chart-tooltip-border-radius: 0.375rem;
-  --ts-chart-tooltip-shadow: 0 4px 16px --alpha(var(--foreground) / 8%);
-  --ts-chart-tooltip-padding: 0.5rem 0.75rem;
+  --ts-chart-tooltip-border: none;
+  --ts-chart-tooltip-border-radius: 0;
+  --ts-chart-tooltip-shadow: none;
+  --ts-chart-tooltip-padding: 0;
   --ts-chart-tooltip-font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+  --ts-chart-crosshair-marker-fill: var(--background);
   color: var(--muted-foreground);
 }
 

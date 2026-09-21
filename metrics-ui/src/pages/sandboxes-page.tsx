@@ -3,7 +3,6 @@
 import {
   Breadcrumbs,
   ChartCard,
-  EmptyReadyState,
   KpiCard,
   MetricTabs,
   PageBody,
@@ -203,10 +202,6 @@ export function SandboxesPage() {
             </div>
           </ChartCard>
 
-          <ChartCard title="Time to Ready" info>
-            <EmptyReadyState />
-          </ChartCard>
-
           <ChartCard title="Network">
             <TimeSeriesChart
               data={sandboxNetwork}
@@ -220,10 +215,6 @@ export function SandboxesPage() {
               yFormat={(value) => `${value}%`}
               height={120}
             />
-          </ChartCard>
-
-          <ChartCard title="Exit Reasons" info>
-            <div className="h-[120px]" />
           </ChartCard>
         </ChartGrid>
       </PageBody>

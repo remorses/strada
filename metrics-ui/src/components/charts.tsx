@@ -6,7 +6,6 @@ import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { scaleLinear } from '@tanstack/charts/scales/linear'
 import { tooltip } from '@tanstack/charts/tooltip'
-import { portal } from '@tanstack/charts/tooltip/portal'
 import { scaleUtc } from 'd3-scale'
 import { useMemo, type ReactNode } from 'react'
 import { chartCursor, COLORS, cursorHost } from '../lib/chart-colors.ts'
@@ -182,14 +181,32 @@ export function TimeSeriesChart({
         })
 
     return defineChart({
-      marks: [...marks, crosshair({ x: {}, y: false })],
+      marks: [
+        ...marks,
+        crosshair({
+          x: {
+            stroke: 'var(--foreground)',
+            strokeOpacity: 0.16,
+            strokeWidth: 1,
+            band: hasBar
+              ? { fill: 'var(--border)', fillOpacity: 0.85, inset: 0 }
+              : false,
+          },
+          y: false,
+          marker: {
+            radius: 3.5,
+            fill: 'var(--background)',
+            strokeWidth: 1.5,
+          },
+        }),
+      ],
       scales: {
         x: timeXAxis(),
         y: yAxis([yFormat, yTicks, domainMax, dataMax]),
       },
       color: { domain: colorDomain, range: colorRange },
-      margin: margin ?? { top: 10, right: 42, bottom: 24, left: 44 },
-      clip: hasBar,
+      margin: margin ?? { top: 8, right: 16, bottom: 24, left: 36 },
+      clip: false,
       theme: {
         foreground: 'var(--muted-foreground)',
         muted: 'var(--muted-foreground)',
@@ -197,6 +214,7 @@ export function TimeSeriesChart({
         background: 'transparent',
       },
       focus: 'group-x',
+      focusRing: false,
       maxFocusDistance: Number.POSITIVE_INFINITY,
       cursor: {
         use: cursorHost,
@@ -204,12 +222,12 @@ export function TimeSeriesChart({
         mode: 'focus',
         match: 'x',
       },
-      tooltip: { use: tooltip, portal, className: 'metrics-tooltip' },
+      tooltip: { use: tooltip, className: 'metrics-tooltip' },
     })
   }, [data, domainMax, margin, series, stacked, yFormat, yTicks])
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative">
       <Chart
         definition={definition}
         height={height}
@@ -290,10 +308,11 @@ export function CategoryBarChart({
         range: colors,
       },
       margin: { top: 12, right: 12, bottom: 24, left: 48 },
-      clip: true,
+      clip: false,
       focus: 'group-x',
+      focusRing: false,
       maxFocusDistance: Number.POSITIVE_INFINITY,
-      tooltip: { use: tooltip, portal, className: 'metrics-tooltip' },
+      tooltip: { use: tooltip, className: 'metrics-tooltip' },
       theme: {
         foreground: 'var(--muted-foreground)',
         muted: 'var(--muted-foreground)',
@@ -304,7 +323,7 @@ export function CategoryBarChart({
   }, [colors, dataMax, domainMax, rows, seriesNames, xFormat, yFormat, yTicks])
 
   return (
-    <div className="overflow-hidden">
+    <div className="relative">
       <Chart
         definition={definition}
         height={height}
@@ -384,7 +403,7 @@ export function PercentileChart({
   }, [rows])
 
   return (
-    <div className="overflow-hidden">
+    <div className="relative">
       <Chart definition={definition} height={height} ariaLabel={ariaLabel} />
     </div>
   )

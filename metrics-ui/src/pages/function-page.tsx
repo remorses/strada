@@ -7,7 +7,6 @@ import {
   PageBody,
   PageShell,
   PageTitle,
-  StatusPills,
   TimeRangeBar,
 } from '../components/chrome.tsx'
 import { ChartGrid, PercentileChart, TimeSeriesChart } from '../components/charts.tsx'
@@ -41,12 +40,6 @@ export function FunctionPage() {
         />
         <PageTitle copied>{FUNCTION_NAME}</PageTitle>
         <TimeRangeBar />
-        <StatusPills
-          items={[
-            { label: 'Containers', value: '26 live (+654 draining)' },
-            { label: 'Calls', value: '680 running' },
-          ]}
-        />
 
         <section className="flex flex-col gap-3">
           <h2 className="text-center text-sm font-medium">Function call results</h2>

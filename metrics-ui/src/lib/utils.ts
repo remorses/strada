@@ -17,7 +17,7 @@ export function formatClock(date: Date) {
   const hour = parts.find((part) => part.type === 'hour')?.value ?? ''
   const minute = parts.find((part) => part.type === 'minute')?.value ?? ''
   const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value ?? ''
-  return `${hour}:${minute} ${dayPeriod}`
+  return `${hour.padStart(2, '0')}:${minute} ${dayPeriod}`
 }
 
 export function formatTickTime(date: Date) {

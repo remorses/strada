@@ -1,6 +1,6 @@
 'use client'
 
-import { CopyIcon, InfoIcon, Maximize2Icon, SearchIcon } from 'lucide-react'
+import { CopyIcon, InfoIcon, Maximize2Icon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'spiceflow/react'
 import { cn } from '../lib/utils.ts'
@@ -62,37 +62,18 @@ export function TimeRangeBar() {
   const [range, setRange] = useState('1h')
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <NativeSelect value={range} onChange={(event) => setRange(event.target.value)} aria-label="Time range">
+      <NativeSelect
+        size="sm"
+        value={range}
+        onChange={(event) => setRange(event.target.value)}
+        aria-label="Time range"
+      >
         {TIME_RANGES.map((item) => (
           <NativeSelectOption key={item.value} value={item.value}>
             {item.label}
           </NativeSelectOption>
         ))}
       </NativeSelect>
-      <Button size="icon" variant="outline" aria-label="Search">
-        <SearchIcon />
-      </Button>
-    </div>
-  )
-}
-
-export function StatusPills({
-  items,
-}: {
-  items: { label: string; value: string; tone?: 'success' | 'muted' }[]
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="flex h-8 items-center gap-2 rounded-full border border-border bg-card px-3 text-[13px]"
-        >
-          <span className="text-muted-foreground">{item.label}:</span>
-          {item.tone === 'success' && <span className="size-1.5 rounded-full bg-success" />}
-          <span className="font-medium">{item.value}</span>
-        </div>
-      ))}
     </div>
   )
 }
@@ -146,7 +127,7 @@ export function ChartCard({
   children: ReactNode
 }) {
   return (
-    <section className="relative flex flex-col gap-2 overflow-hidden bg-background px-4 pt-3 pb-3">
+    <section className="relative flex flex-col gap-2 bg-background px-4 pt-3 pb-3">
       <div className="flex min-h-5 items-center justify-center gap-1.5">
         <h2 className="text-[15px] font-medium">{title}</h2>
         {badge && (
@@ -204,17 +185,4 @@ export function KpiCard({
   )
 }
 
-export function EmptyReadyState() {
-  return (
-    <div className="flex h-[164px] flex-col items-center justify-center gap-3 text-center text-balance">
-      <p className="text-sm text-muted-foreground">Track how long sandboxes take to become ready.</p>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-3 py-1.5 text-sm text-success"
-      >
-        Try readiness probes
-        <span>↗</span>
-      </button>
-    </div>
-  )
-}
+
