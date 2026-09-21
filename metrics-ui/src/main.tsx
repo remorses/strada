@@ -2,7 +2,9 @@ import './globals.css'
 import { Spiceflow } from 'spiceflow'
 import { Head, ProgressBar } from 'spiceflow/react'
 import { FunctionPage } from './pages/function-page.tsx'
+import { PlansPage } from './pages/plans-page.tsx'
 import { SandboxesPage } from './pages/sandboxes-page.tsx'
+import { SettingsSectionPage } from './pages/settings-page.tsx'
 import { UsagePage } from './pages/usage-page.tsx'
 
 export const app = new Spiceflow()
@@ -47,6 +49,27 @@ export const app = new Spiceflow()
           <Head.Title>Usage · Metrics</Head.Title>
         </Head>
         <UsagePage />
+      </>
+    )
+  })
+  .page('/settings/:section', async ({ params }) => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Settings</Head.Title>
+        </Head>
+        <SettingsSectionPage section={params.section} />
+      </>
+    )
+  })
+  .page('/plans', async () => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Plans · Settings</Head.Title>
+          <Head.Meta name="description" content="Choose the plan that best fits your store's needs." />
+        </Head>
+        <PlansPage />
       </>
     )
   })

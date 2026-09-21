@@ -2,13 +2,14 @@
 
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Breadcrumbs, ChartCard, PageBody, PageShell, PageTitle } from '../components/chrome.tsx'
+import { ChartCard } from '../components/chrome.tsx'
+import { SettingsPage, SettingsShell } from '../components/settings-shell.tsx'
+import { SETTINGS_NAV } from '../lib/settings-nav.tsx'
 import { CategoryBarChart, TimeSeriesChart } from '../components/charts.tsx'
 import { COLORS } from '../lib/chart-colors.ts'
 import { Button } from '../components/ui/button.tsx'
 import { Tabs, TabsList, TabsTab } from '../components/ui/tabs.tsx'
 import {
-  APP_NAME,
   cycleUsage,
   functionCosts,
   lastHourUsage,
@@ -42,13 +43,9 @@ export function UsagePage() {
   }, [])
 
   return (
-    <PageShell>
-      <PageBody>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <Breadcrumbs items={[{ label: 'Apps', href: '/sandboxes' }, { label: APP_NAME }]} />
-            <PageTitle>Usage</PageTitle>
-          </div>
+    <SettingsShell items={SETTINGS_NAV}>
+      <SettingsPage>
+        <div className="flex items-start justify-end gap-4">
           <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm">
             <Button
               size="icon-sm"
@@ -156,7 +153,7 @@ export function UsagePage() {
             ))}
           </div>
         </section>
-      </PageBody>
-    </PageShell>
+      </SettingsPage>
+    </SettingsShell>
   )
 }

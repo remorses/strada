@@ -1,24 +1,16 @@
 'use client'
 
-import {
-  Breadcrumbs,
-  ChartCard,
-  MetricTabs,
-  PageBody,
-  PageShell,
-  PageTitle,
-  TimeRangeBar,
-} from '../components/chrome.tsx'
+import { ChartCard, MetricTabs, TimeRangeBar } from '../components/chrome.tsx'
+import { SettingsPage, SettingsShell } from '../components/settings-shell.tsx'
+import { SETTINGS_NAV } from '../lib/settings-nav.tsx'
 import { ChartGrid, PercentileChart, TimeSeriesChart } from '../components/charts.tsx'
 import { COLORS } from '../lib/chart-colors.ts'
 import {
-  APP_NAME,
   cpuSeries,
   containerSeries,
   executionPercentiles,
   executionTimeSeries,
   functionCallResults,
-  FUNCTION_NAME,
   memorySeries,
   networkSeries,
   pendingCallsSeries,
@@ -29,16 +21,8 @@ import { formatCores, formatDuration, formatGiB, formatRate } from '../lib/utils
 
 export function FunctionPage() {
   return (
-    <PageShell>
-      <PageBody>
-        <Breadcrumbs
-          items={[
-            { label: 'Apps', href: '/sandboxes' },
-            { label: APP_NAME, href: '/sandboxes' },
-            { label: 'Functions' },
-          ]}
-        />
-        <PageTitle copied>{FUNCTION_NAME}</PageTitle>
+    <SettingsShell items={SETTINGS_NAV}>
+      <SettingsPage>
         <TimeRangeBar />
 
         <section className="flex flex-col gap-3">
@@ -247,7 +231,7 @@ export function FunctionPage() {
         <ChartCard title="Execution time (percentile vs. secs)">
           <PercentileChart rows={executionPercentiles} ariaLabel="Execution time percentiles" />
         </ChartCard>
-      </PageBody>
-    </PageShell>
+      </SettingsPage>
+    </SettingsShell>
   )
 }

@@ -1,19 +1,11 @@
 'use client'
 
-import {
-  Breadcrumbs,
-  ChartCard,
-  KpiCard,
-  MetricTabs,
-  PageBody,
-  PageShell,
-  PageTitle,
-  TimeRangeBar,
-} from '../components/chrome.tsx'
+import { ChartCard, KpiCard, MetricTabs, TimeRangeBar } from '../components/chrome.tsx'
+import { SettingsPage, SettingsShell } from '../components/settings-shell.tsx'
+import { SETTINGS_NAV } from '../lib/settings-nav.tsx'
 import { ChartGrid, TimeSeriesChart } from '../components/charts.tsx'
 import { COLORS } from '../lib/chart-colors.ts'
 import {
-  APP_NAME,
   sandboxCpu,
   sandboxCpuPer,
   sandboxCreated,
@@ -28,10 +20,8 @@ import { formatCompactDuration, formatCores, formatGiB } from '../lib/utils.ts'
 
 export function SandboxesPage() {
   return (
-    <PageShell>
-      <PageBody>
-        <Breadcrumbs items={[{ label: 'Apps', href: '/' }, { label: APP_NAME }]} />
-        <PageTitle>Sandboxes</PageTitle>
+    <SettingsShell items={SETTINGS_NAV}>
+      <SettingsPage>
         <TimeRangeBar />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -217,7 +207,7 @@ export function SandboxesPage() {
             />
           </ChartCard>
         </ChartGrid>
-      </PageBody>
-    </PageShell>
+      </SettingsPage>
+    </SettingsShell>
   )
 }
