@@ -955,11 +955,11 @@ To read tinybird docs you can find pages here https://www.tinybird.co/docs/sitem
 
 ### Authenticating with `tb` CLI
 
-The Strada workspace is on `us-east (aws)` (`https://api.us-east.aws.tinybird.co`). To authenticate:
+The live org workspace is `eu-west-1 (aws)` (`https://api.eu-west-1.aws.tinybird.co`). Confirm it from the org database config (`tinybirdEndpoint`), not from a local `.tinyb` leftover. To authenticate:
 
 ```bash
 # Launch browser login in a background session (keeps it alive for the callback)
-bunx tuistory launch "tb --cloud login --method browser" -s tb-login --no-wait
+bunx tuistory launch "tb --cloud login --method browser --host https://api.eu-west-1.aws.tinybird.co" -s tb-login --no-wait
 
 # Wait for the browser prompt
 bunx tuistory -s tb-login wait "/Opening browser|manually/i" --timeout 15000
