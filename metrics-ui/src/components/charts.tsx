@@ -9,7 +9,7 @@ import { tooltip } from '@tanstack/charts/tooltip'
 import { scaleUtc } from 'd3-scale'
 import { useMemo, type ReactNode } from 'react'
 import { chartCursor, COLORS, cursorHost } from '../lib/chart-colors.ts'
-import { RANGE_END, RANGE_START, type TimePoint } from '../lib/metrics-data.ts'
+import type { TimePoint } from '../lib/mock-data.ts'
 import { cn, formatTickTime, formatTooltipTime } from '../lib/utils.ts'
 import { ChartTooltip } from './chart-tooltip.tsx'
 
@@ -22,20 +22,33 @@ export type SeriesSpec = {
   strokeWidth?: number
 }
 
-const TICK_TIMES = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(
-  (minute) => new Date(RANGE_START.getTime() + minute * 60_000),
-)
+const DAY_MS = 86_400_000
 
-function timeXAxis() {
+// Buckets of a day or more (analytics, usage) show dates instead of clock times.
+function isDaily(data: readonly TimePoint[]) {
+  const first = data[0]?.time.getTime() ?? 0
+  const second = data[1]?.time.getTime() ?? first
+  return second - first >= DAY_MS
+}
+
+// Bars are centered on their timestamp, so pad the domain by half a bucket to keep
+// the first and last bars inside the plot instead of overlapping the y axis labels.
+function timeXAxis(data: readonly TimePoint[], hasBar: boolean) {
+  const start = data[0]?.time.getTime() ?? 0
+  const end = data.at(-1)?.time.getTime() ?? start
+  const half = hasBar ? ((data[1]?.time.getTime() ?? start) - start) / 2 : 0
+  const daily = isDaily(data)
+  const scale = scaleUtc().domain([new Date(start - half), new Date(end + half)])
+  // Pass the instance, not a factory: factories get their domain re-inferred from data.
   return {
-    scale: () => scaleUtc().domain([RANGE_START, RANGE_END]),
+    scale,
     axis: {
       line: { stroke: 'var(--border)', strokeOpacity: 0.8 },
       ticks: {
-        values: TICK_TIMES,
+        values: scale.ticks(daily ? 6 : 8),
         size: 0,
         padding: 7,
-        format: (value: Date) => formatTickTime(value),
+        format: (value: Date) => formatTickTime(value, daily),
       },
       tickLabels: {
         fontSize: 11,
@@ -201,7 +214,7 @@ export function TimeSeriesChart({
         }),
       ],
       scales: {
-        x: timeXAxis(),
+        x: timeXAxis(data, hasBar),
         y: yAxis([yFormat, yTicks, domainMax, dataMax]),
       },
       color: { domain: colorDomain, range: colorRange },
@@ -247,7 +260,7 @@ export function TimeSeriesChart({
                   : value.toLocaleString('en-US', { maximumFractionDigits: 2 }),
               }
             })
-          return <ChartTooltip time={formatTooltipTime(time)} rows={rows} />
+          return <ChartTooltip time={formatTooltipTime(time, isDaily(data))} rows={rows} />
         }}
       />
     </div>
@@ -262,8 +275,10 @@ export function CategoryBarChart({
   yTicks,
   domainMax,
   xFormat,
+  colors: colorMap,
 }: {
   rows: readonly { x: string; series: string; value: number }[]
+  colors: Record<string, string>
   ariaLabel: string
   height?: number
   yFormat?: (value: number) => string
@@ -272,7 +287,7 @@ export function CategoryBarChart({
   xFormat?: (value: string) => string
 }) {
   const seriesNames = [...new Set(rows.map((row) => row.series))]
-  const colors = seriesNames.map((name) => (name === 'CPU' ? COLORS.usageCpu : COLORS.usageMemory))
+  const colors = seriesNames.map((name) => colorMap[name] ?? COLORS.primary)
   const categories = [...new Set(rows.map((row) => row.x))]
   const dataMax = Math.max(
     0,
@@ -334,7 +349,7 @@ export function CategoryBarChart({
             <ChartTooltip
               time={String(heading ?? '')}
               rows={points.map((point) => ({
-                color: colors[seriesNames.indexOf(String(point.datum.series))] ?? COLORS.usageCpu,
+                color: colors[seriesNames.indexOf(String(point.datum.series))] ?? COLORS.primary,
                 label: String(point.datum.series),
                 value: yFormat ? yFormat(point.datum.value) : String(point.datum.value),
               }))}
@@ -342,69 +357,6 @@ export function CategoryBarChart({
           )
         }}
       />
-    </div>
-  )
-}
-
-export function PercentileChart({
-  rows,
-  ariaLabel,
-  height = 168,
-}: {
-  rows: readonly { duration: number; percentile: number }[]
-  ariaLabel: string
-  height?: number
-}) {
-  const definition = useMemo(() => {
-    return defineChart({
-      marks: [
-        lineY(rows, {
-          x: 'duration',
-          y: 'percentile',
-          stroke: COLORS.p50,
-          strokeWidth: 2,
-        }),
-      ],
-      scales: {
-        x: {
-          scale: scaleLinear().domain([0, 19320]),
-          axis: {
-            ticks: {
-              values: [100, 1000, 9960],
-              size: 0,
-              format: (value: number) => {
-                if (value < 120) return '1m 40s'
-                if (value < 2000) return '16m 40s'
-                return '2h 46m'
-              },
-            },
-          },
-        },
-        y: {
-          scale: scaleLinear().domain([0, 100]),
-          axis: {
-            ticks: {
-              values: [0, 50, 100],
-              size: 0,
-              format: (value: number) => `${value}%`,
-            },
-          },
-        },
-      },
-      margin: { top: 10, right: 16, bottom: 22, left: 40 },
-      theme: {
-        foreground: 'var(--muted-foreground)',
-        muted: 'var(--muted-foreground)',
-        grid: 'var(--border)',
-        background: 'transparent',
-      },
-      tooltip: { use: tooltip, visibility: 'pinned' },
-    })
-  }, [rows])
-
-  return (
-    <div className="relative">
-      <Chart definition={definition} height={height} ariaLabel={ariaLabel} />
     </div>
   )
 }
