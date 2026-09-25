@@ -38,9 +38,10 @@ async function resolvePublicAddresses(hostname: string, signal?: AbortSignal) {
     fetch(ipv4, { headers, signal }),
     fetch(ipv6, { headers, signal }),
   ])
-  const [aBody, aaaaBody]: Array<{ Answer?: Array<{ data: string; type: number }> }> = await Promise.all([
-    aRes.json(),
-    aaaaRes.json(),
+  type DnsJson = { Answer?: Array<{ data: string; type: number }> }
+  const [aBody, aaaaBody] = await Promise.all([
+    aRes.json() as Promise<DnsJson>,
+    aaaaRes.json() as Promise<DnsJson>,
   ])
   const addresses = [
     ...(aBody.Answer ?? []).filter((row) => row.type === 1).map((row) => row.data),

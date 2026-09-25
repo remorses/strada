@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.0
+
+1. **Health check status in the CLI** — `strada checks list` shows each check's state (`pending`, `up`, `down`, `alerting`, `disabled`), last run, status code, latency, and 24h uptime. The new `strada checks view <id>` prints recent runs and the response body of the last failure:
+
+   ```bash
+   strada checks list
+   strada checks view 01M3BS7NRAP1WVD4DBQCM7X2T3 -n 50
+   ```
+
+   It also warns when the org has no alert destinations, since failures are then recorded but never sent. `checks_view` is exposed as an MCP tool too.
+
+2. **Health check alerts fire on the configured failure count** — with `--failures 2`, the alert used to arrive on the 3rd failure because the just-written result was not readable yet. Checks queued past their cron minute are no longer skipped. Existing checks get the fix with the website deploy; no action needed.
+
+3. **Remote HTTP MCP at `https://strada.sh/mcp`** — Cursor, Claude, and VS Code can add that URL as an MCP server. The client logs in with Google, consents once, then uses the same CLI tools over HTTP: `issues_list`, `logs`, `query`, traces, analytics, alerts, and checks.
+
+   ```json
+   {
+     "mcpServers": {
+       "strada": {
+         "url": "https://strada.sh/mcp"
+       }
+     }
+   }
+   ```
+
+   Local `strada mcp` over stdio still works. HTTP MCP uses OAuth JWTs bound to `/mcp`; it does not reuse the CLI device-flow session. Consent shows the client, scopes, resource, and redirect. Third-party client metadata URLs are resolved once, special-use addresses are rejected, and the IP is pinned. Docs: [MCP overview](https://strada.sh/docs/mcp) and [install](https://strada.sh/docs/mcp/install).
+
 ## 0.8.0
 
 1. **Raw telemetry is kept by default** — traces, logs, errors, and metrics no longer expire at 14 / 30 / 90 days. Set a custom TTL only when you want that signal to expire:

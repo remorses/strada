@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+1. **Health check fixes and status API** — alerts fire on the configured consecutive failure count instead of one run late, checks use the cron tick time so queued runs are not skipped, and workflow logs reach Strada. `GET /api/v0/orgs/:orgId/checks` returns each check's latest result, 24h uptime, and alert state. New `GET /api/v0/orgs/:orgId/checks/:checkId/results` returns recent runs. Docs list the check states.
+
+2. **Remote HTTP MCP at `/mcp`** — Better Auth OAuth with MCP, CIMD, and JWT plugins. Same-origin CIMD returns the Worker metadata document; third-party CIMD resolves DNS once, rejects RFC 6890 special-use addresses, pins the IP, and keeps TLS SNI. Consent uses `auth.api.oauth2Consent`.
+
 ## 0.3.0
 
 1. **Raw telemetry is kept by default** — traces, logs, errors, and metrics no longer expire at 14 / 30 / 90 days. Set a custom TTL from the CLI or the project retention API. Pass `-1` (CLI) or `null` (API) to keep a signal forever. Analytics and health checks stay at 90 days. After this website deploy, run `strada database upgrade` so Tinybird drops the old default TTLs.

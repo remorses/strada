@@ -68,6 +68,7 @@ describe("mcp command", () => {
         "alerts_test",
         "checks_create",
         "checks_list",
+        "checks_view",
         "checks_delete",
         "checks_enable",
         "checks_disable",
