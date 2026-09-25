@@ -280,3 +280,74 @@ test("reuses keep-alive connections across flushes", async () => {
     ]
   `);
 });
+
+test("instrument: fetch, http-client, http-server spans link through traceparent without patching", async () => {
+  const receiver = await startReceiver();
+  expect(
+    initStrada({
+      projectId: "",
+      endpoint: receiver.endpoint,
+      service: "api",
+      enabled: true,
+      captureUncaughtErrors: false,
+      instrument: ["fetch", "http-client", "http-server"],
+    }),
+  ).toBeUndefined();
+  const app = http.createServer((req, res) => {
+    getLogger("handler").info(`handled ${req.url}`);
+    res.statusCode = req.url === "/missing" ? 404 : 200;
+    res.end("ok");
+  });
+  await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+
+  await startSpan({ name: "job" }, async () => {
+    await (await fetch(`${base}/via-fetch?x=1`)).text();
+    await new Promise<void>((resolve) => {
+      http.get(`${base}/missing`, (res) => {
+        res.resume();
+        res.on("end", resolve);
+      });
+    });
+  });
+  // The server span ends on 'close', after the client already got the response.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  app.close();
+  expect(await shutdown()).toBeUndefined();
+  receiver.close();
+
+  type Span = { name: string; kind: number; spanId: string; parentSpanId?: string; attributes: KeyValue[]; status: { code: number } };
+  const spans = receiver.requests
+    .filter((request) => request.url === "/v1/traces")
+    .flatMap((request) => (request.body.resourceSpans as Array<{ scopeSpans: Array<{ spans: Span[] }> }>)[0]!.scopeSpans.flatMap((scope) => scope.spans));
+  const logs = receiver.requests
+    .filter((request) => request.url === "/v1/logs")
+    .flatMap((request) => (request.body.resourceLogs as Array<{ scopeLogs: Array<{ logRecords: Array<{ spanId?: string; body: { stringValue: string } }> }> }>)[0]!.scopeLogs.flatMap((scope) => scope.logRecords));
+  const byId = new Map(spans.map((span) => [span.spanId, span]));
+  const describe = (span: Span | undefined): string => {
+    if (!span) return "none";
+    const attrs = decodeAttributes(span.attributes);
+    const kind = ["", "internal", "server", "client"][span.kind];
+    return `${kind} ${span.name} ${attrs["url.full"] ?? attrs["url.path"] ?? ""} ${attrs["http.response.status_code"] ?? ""} status=${span.status.code}`.replace(/127\.0\.0\.1:\d+/, "app");
+  };
+  expect({
+    spans: spans.map((span) => `${describe(span)} <- ${describe(byId.get(span.parentSpanId ?? ""))}`).sort(),
+    logsInServerSpan: logs.map((log) => `${log.body.stringValue} in ${describe(byId.get(log.spanId ?? ""))}`).sort(),
+    exportRequestsTraced: spans.some((span) => String(decodeAttributes(span.attributes)["url.full"] ?? "").includes("/v1/")),
+  }).toMatchInlineSnapshot(`
+    {
+      "exportRequestsTraced": false,
+      "logsInServerSpan": [
+        "handled /missing in server GET /missing 404 status=0",
+        "handled /via-fetch?x=1 in server GET /via-fetch 200 status=0",
+      ],
+      "spans": [
+        "client GET http://app/missing 404 status=2 <- internal job   status=0",
+        "client GET http://app/via-fetch?x=1 200 status=0 <- internal job   status=0",
+        "internal job   status=0 <- none",
+        "server GET /missing 404 status=0 <- client GET http://app/missing 404 status=2",
+        "server GET /via-fetch 200 status=0 <- client GET http://app/via-fetch?x=1 200 status=0",
+      ],
+    }
+  `);
+});

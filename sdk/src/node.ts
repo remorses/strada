@@ -11,6 +11,8 @@
  * - Buffered telemetry is flushed on `beforeExit`. The SDK installs no
  *   SIGINT/SIGTERM handlers, so Ctrl+C keeps its default behavior; call
  *   `flush()` in your own shutdown handler.
+ * - `instrument: ["fetch", "http-client", "http-server"]` adds HTTP spans
+ *   through diagnostics_channel (instrument-http.ts). Off by default.
  * - On Vercel, every record registers a `waitUntil` flush through the native
  *   request context (`Symbol.for('@vercel/request-context')`), because Vercel
  *   freezes the process between requests and batch timers never fire.
@@ -19,7 +21,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { AsyncContextManager, runtimeHooks, setContextManager, type Context } from "./api.ts";
 import { ATTR } from "./attrs.ts";
-import { captureException, flush } from "./client.ts";
+import { captureException, flush, shutdown as shutdownClient } from "./client.ts";
+import { instrumentHttp } from "./instrument-http.ts";
 import { serverHooks } from "./server.ts";
 import { initCore, normalizeError, resolveReleaseAttributes, tryTelemetry, type StradaOptions } from "./shared.ts";
 
@@ -90,11 +93,22 @@ export function initStrada(options: StradaOptions): Error | undefined {
         },
       });
       if (!started) return;
-      setContextManager(new AsyncContextManager(new AsyncLocalStorage<Context>()));
+      const storage = new AsyncLocalStorage<Context>();
+      setContextManager(new AsyncContextManager(storage));
       runtimeHooks.onSpanStart = serverHooks.onSpanStart;
       runtimeHooks.onLogEmit = serverHooks.onLogEmit;
       runtimeHooks.afterRecord = scheduleVercelFlush;
       installProcessHandlers(options);
+      uninstrumentHttp = options.instrument?.length ? instrumentHttp({ instrument: options.instrument, storage }) : undefined;
     },
   });
+}
+
+let uninstrumentHttp: (() => void) | undefined;
+
+/** Flush, stop exporting, and unsubscribe HTTP instrumentation. */
+export async function shutdown(): Promise<Error | undefined> {
+  uninstrumentHttp?.();
+  uninstrumentHttp = undefined;
+  return shutdownClient();
 }

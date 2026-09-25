@@ -594,18 +594,24 @@ import { initStrada, captureException, track, trace, logs, metrics } from "@stra
 - `setTags(tags)` sets tags merged into subsequent error attributes
 - `flush()` / `shutdown()` for manual lifecycle control
 
-### OpenTelemetry auto-instrumentation
+### HTTP spans and OpenTelemetry libraries
 
-The SDK never patches modules by itself. For automatic spans (HTTP, fetch, express, pg, redis, kafka, ...), install `@strada.sh/instrumentation` and preload it. It is one package with a curated set of OTel instrumentations, close to Sentry's Node defaults:
+The SDK never patches modules and needs no preload. For HTTP spans on Node, opt in with `instrument`. It subscribes to `node:diagnostics_channel`, so it works with bundled apps and any import order:
 
-```bash
-pnpm add @strada.sh/instrumentation
-node --import @strada.sh/instrumentation/register server.js
+```ts
+initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api", instrument: ["fetch", "http-client", "http-server"] })
 ```
 
-The preload is required because Node loads the whole import graph before app code runs: registering from `server.js`, even on the first line, leaves `http`, `pg`, and `express` unpatched. Keep `initStrada()` in your app as usual.
+Outgoing `fetch` and `http` requests get client spans and `traceparent` / `baggage` headers; incoming requests get a server span that is active for the whole handler. Nothing is enabled by default.
 
-Libraries that only call the OTel API at runtime (Vercel AI SDK, Prisma) need no preload: call `registerOpenTelemetry()` from `@strada.sh/instrumentation/otel` anywhere at startup. See the [SDK docs](./website/src/docs/sdk.mdx#auto-instrumentation-optional) for the default instrumentation list, Spiceflow in Docker, and Next.js.
+For libraries that emit spans through `@opentelemetry/api` (Vercel AI SDK, Prisma), register Strada as the global OTel provider:
+
+```ts
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel" // needs @opentelemetry/api and @opentelemetry/api-logs
+registerOpenTelemetry()
+```
+
+See the [SDK docs](./website/src/docs/sdk.mdx#auto-instrumentation-optional) for details.
 
 ### Automatic context propagation
 
@@ -627,7 +633,7 @@ GET /api/orders (url.path="/api/orders", http.method="GET")
 
 The SDK also normalizes **old OTel semantic conventions** (`http.target`, `http.url`) into `url.path` so errors show a clean path regardless of which instrumentation version you use.
 
-**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity. The browser SDK does not patch `fetch`: add the headers with `propagation.inject(context.active(), headers)`, or register `@opentelemetry/instrumentation-fetch` as shown above. The server reads them with `propagation.extract()` or an OTel HTTP instrumentation.
+**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity. The browser SDK does not patch `fetch`: add the headers with `propagation.inject(context.active(), headers)`. On a Node server, `instrument: ["http-server"]` reads them, or call `propagation.extract()` yourself.
 
 See the full [SDK documentation](./website/src/docs/sdk.mdx) for detailed API reference, auto-instrumentation setup, batching config, and browser/server context propagation.
 

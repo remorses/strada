@@ -48,6 +48,19 @@ export const ATTR = {
   /** Referrer URL. From document.referrer. Useful for entry page attribution. */
   "http.request.header.referer": "http.request.header.referer",
 
+  // -- HTTP spans (OTel HTTP semantic conventions), set by the `instrument` option --
+
+  /** HTTP method, e.g. "GET". */
+  "http.request.method": "http.request.method",
+  /** HTTP response status code, e.g. 200. */
+  "http.response.status_code": "http.response.status_code",
+  /** Host of an outgoing request, e.g. "api.stripe.com". */
+  "server.address": "server.address",
+  /** Port of an outgoing request, e.g. 443. */
+  "server.port": "server.port",
+  /** Error class for a failed request, e.g. "ECONNREFUSED" or "500". */
+  "error.type": "error.type",
+
   // -- Custom events (track API) --
 
   /** Structured event name that distinguishes custom events from ordinary logs, e.g. "signup_started". */

@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { trace as otelTrace } from "@opentelemetry/api";
+import { context as otelContext, metrics as otelMetrics, propagation as otelPropagation, ProxyTracerProvider, trace as otelTrace, type TracerProvider } from "@opentelemetry/api";
 import { logs as otelLogs, SeverityNumber as OtelSeverityNumber } from "@opentelemetry/api-logs";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { expect, test } from "vitest";
-import { initStrada, shutdown, startSpan } from "@strada.sh/sdk";
+import { loggerProvider, meterProvider } from "./api.ts";
+import { initStrada, shutdown, startSpan } from "./node.ts";
 import { registerOpenTelemetry } from "./otel.ts";
 
 type KeyValue = { key: string; value: Record<string, unknown> };
@@ -101,4 +102,29 @@ test("OTel instrumentations and API users export through Strada with shared cont
       "serverParentIsClient": true,
     }
   `);
+});
+
+test("registerOpenTelemetry is all or nothing when another OTel SDK owns a global", () => {
+  for (const api of [otelTrace, otelContext, otelPropagation, otelMetrics, otelLogs]) api.disable();
+  const otherSdk: TracerProvider = new ProxyTracerProvider();
+  otelTrace.setGlobalTracerProvider(otherSdk);
+
+  const error = registerOpenTelemetry();
+  expect({
+    error: error?.message,
+    // The logger was set before the tracer failed and must be rolled back.
+    loggerIsStrada: otelLogs.getLoggerProvider() === loggerProvider,
+    tracerStillOther: (otelTrace.getTracerProvider() as ProxyTracerProvider).getDelegate() === otherSdk,
+    meterIsStrada: otelMetrics.getMeterProvider() === meterProvider,
+    propagatorFields: otelPropagation.fields(),
+  }).toMatchInlineSnapshot(`
+    {
+      "error": "another OpenTelemetry SDK already registered the global tracer provider. Use only one OTel SDK.",
+      "loggerIsStrada": false,
+      "meterIsStrada": false,
+      "propagatorFields": [],
+      "tracerStillOther": true,
+    }
+  `);
+  otelTrace.disable();
 });

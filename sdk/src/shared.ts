@@ -97,6 +97,14 @@ export interface StradaOptions {
    * apps that own their crash handling.
    */
   captureUncaughtErrors?: boolean;
+  /**
+   * Node.js 22.12+ only. Opt-in HTTP spans through `node:diagnostics_channel`,
+   * no module patching and no preload. Default: none.
+   * - `fetch`: outgoing `fetch()` (undici), adds traceparent + baggage
+   * - `http-client`: outgoing `http.request` / `https.request`, adds headers
+   * - `http-server`: incoming `http.createServer` requests, reads headers
+   */
+  instrument?: Array<"fetch" | "http-client" | "http-server">;
   /** Batching and export cadence options. */
   telemetry?: StradaTelemetryOptions;
   /**

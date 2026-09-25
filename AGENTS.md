@@ -301,9 +301,9 @@ The SDK lives in `sdk/` and is the main package users install. It has **zero run
 1. `api.ts` is OTel-shaped: code written against `@opentelemetry/api` works when it imports `trace`, `logs`, `metrics`, `context`, `propagation` from `@strada.sh/sdk`
 2. `export.ts` batches records, reads every response body (keep-alive reuse), sends endpoints sequentially, and unrefs timers
 3. Runtime entries (`node.ts`, `browser.ts`, `cloudflare.ts`) call `initCore()` (shared.ts) and set `runtimeHooks` for enrichment (`onSpanStart`, `onLogEmit`), flush scheduling (`afterRecord`), and the Cloudflare span bridge (`wrapActiveSpan`)
-4. `@strada.sh/sdk/otel` exports `otelProviders` (no OTel imports). The separate package `instrumentation/` (`@strada.sh/instrumentation`) owns every OTel dependency: `registerOpenTelemetry()` (all or nothing, rolls back on conflict), the curated `getInstrumentations()`, and the `/register` preload
-5. Never add a runtime dependency to `sdk/`. Never auto-patch modules; auto-instrumentation is the user's opt-in through `/otel`
-6. The preload is `node --import @strada.sh/instrumentation/register app.js` (`@strada.sh/sdk/register` forwards to it and warns once when it is missing). It must be a preload because Node links the whole static import graph before app code runs; registering from app code leaves modules unpatched (`instrumentation/src/register.test.ts` proves it). Curated set: no fs/dns/net, logger instrumentations only correlate (no log sending)
+4. `@strada.sh/sdk/otel` (`registerOpenTelemetry()`) registers these providers into the real `@opentelemetry/api` globals, all or nothing (rolls back on conflict with another OTel SDK). `@opentelemetry/api` and `api-logs` are **optional peer deps**, imported only by this entry
+5. Never add a runtime dependency to `sdk/`. Never patch modules and never ship a preload
+6. HTTP spans come from `node:diagnostics_channel` (`sdk/src/instrument-http.ts`), opt-in with `initStrada({ instrument: ["fetch", "http-client", "http-server"] })`, off by default. Channels are process-global, so this works with any import order and in bundled apps. Requests to the ingest origin are skipped, otherwise every export would trace itself forever. `http.client.request.created` (Node 22.12+) is used because headers are already serialized at `.start`
 
 Context keys use `Symbol.for()` with the exact OTel descriptions (`OpenTelemetry Context Key SPAN`, `OpenTelemetry Baggage Key`) so spans and baggage set by `@opentelemetry/api` helpers are visible to the SDK. `src/otel.test.ts` verifies this with the real `@opentelemetry/instrumentation-http`.
 
@@ -375,9 +375,9 @@ The Node entry (`sdk/src/node.ts`):
 
 The SDK propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
 
-**Browser side:** The `PageviewContextManager` puts a Baggage object containing `strada.session.id` and `user.id` into the active context. The SDK does not patch `fetch`: headers are written by `propagation.inject(context.active(), headers)` or by `@opentelemetry/instrumentation-fetch` registered through `/otel`.
+**Browser side:** The `PageviewContextManager` puts a Baggage object containing `strada.session.id` and `user.id` into the active context. The SDK does not patch `fetch`: headers are written by `propagation.inject(context.active(), headers)`.
 
-**Server side:** after `propagation.extract()` (or an OTel HTTP instrumentation) puts the incoming baggage into the context, `serverHooks` sets `session.id` and `user.id` on every span and log record in that request.
+**Server side:** after `propagation.extract()` (or `instrument: ["http-server"]`) puts the incoming baggage into the context, `serverHooks` sets `session.id` and `user.id` on every span and log record in that request.
 
 **Result:** Backend spans and logs carry the same `session.id` and `user.id` as browser telemetry. No app code needed. The data lands in the same ClickHouse attribute maps (`SpanAttributes`, `LogAttributes`), so existing SQL queries that filter by `session.id` or `user.id` automatically return both browser and backend rows. `ServiceName` distinguishes the origin.
 
@@ -441,11 +441,11 @@ HTTP Handler Span (url.path="/api/orders", http.method="GET")
 
 | Package | Needed by |
 |---------|-----------|
-| `@strada.sh/instrumentation` | `@strada.sh/sdk/register` only |
+| `@opentelemetry/api`, `@opentelemetry/api-logs` | `@strada.sh/sdk/otel` only |
 | `better-auth` | `@strada.sh/sdk/better-auth` only |
 | `vite` | `@strada.sh/sdk/vite` only |
 
-The SDK never imports `@opentelemetry/*`. Everything OTel lives in `instrumentation/`.
+No other entry imports `@opentelemetry/*`.
 
 ## Project isolation
 

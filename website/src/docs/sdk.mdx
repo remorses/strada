@@ -1279,7 +1279,7 @@ ORDER BY Timestamp ASC
 
 - The browser SDK registers a `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator`
 - The `PageviewContextManager` injects current baggage (session.id + user.id) into the OTel context on every outgoing request
-- The server reads incoming baggage with `propagation.extract()` or an OTel HTTP instrumentation registered through `@strada.sh/instrumentation`
+- The server reads incoming baggage with `propagation.extract()` or `instrument: ["http-server"]`
 - Spans and log records started in that context get `session.id` / `user.id` as attributes
 
 Baggage updates live. When `identifyUser()` or cookie `strada_uid` changes, the next outgoing request carries the updated `user.id`. Cookie `strada_vid` is the visitor and is not in baggage.
@@ -1320,172 +1320,72 @@ The Workers build is minimal and opt-in only:
 
 ## Auto-instrumentation (optional)
 
-The SDK has **zero dependencies** and never patches modules. Its `trace`, `context`, `propagation`, `logs`, and `metrics` objects have the same shape as `@opentelemetry/api`, but OTel instrumentations and OTel-instrumented libraries read the **global** `@opentelemetry/api` singletons. `@strada.sh/instrumentation` connects the two. It is one package that holds every OTel dependency, so the SDK stays small for apps that do not need it.
+The SDK has **zero dependencies**, never patches modules, and needs **no preload**. There are two opt-in ways to get automatic spans.
 
-```bash
-pnpm add @strada.sh/instrumentation
-```
-
-| Entry | Use for |
+| Need | Use |
 | --- | --- |
-| `node --import @strada.sh/instrumentation/register` | automatic spans for HTTP, fetch, frameworks, databases, queues (Node) |
-| `registerOpenTelemetry()` from `@strada.sh/instrumentation/otel` | libraries that call the OTel API themselves (Vercel AI SDK, Prisma) in any runtime |
+| HTTP server, `http` client, and `fetch` spans on Node | `initStrada({ instrument: [...] })` |
+| Spans from libraries that use `@opentelemetry/api` (Vercel AI SDK, Prisma) | `registerOpenTelemetry()` from `@strada.sh/sdk/otel` |
+| Framework request spans | the framework tracer, for example `new Spiceflow({ tracer: trace.getTracer("api") })` |
+| KV, D1, Durable Object spans on Workers | Cloudflare built-in tracing |
 
-`registerOpenTelemetry()` is all or nothing: when another OTel SDK (`@vercel/otel`, `@opentelemetry/sdk-node`, Sentry) already owns a global, it rolls back and returns an error, so the process never mixes two providers.
+### HTTP spans on Node
 
-### Libraries that use the OTel API
-
-The Vercel AI SDK (`experimental_telemetry`), Prisma tracing, and similar libraries call `trace.getTracer()` from `@opentelemetry/api` at runtime. Their tracers are proxies, so registering anywhere at startup is enough:
+Node's `http` module and `fetch` (undici) publish events on `node:diagnostics_channel` for every request. The SDK subscribes to them, so there is nothing to patch and nothing to install:
 
 ```ts
 import { initStrada } from "@strada.sh/sdk"
-import { registerOpenTelemetry } from "@strada.sh/instrumentation/otel"
+
+initStrada({
+  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  service: "api",
+  instrument: ["fetch", "http-client", "http-server"],
+})
+```
+
+| Name | Spans | Headers |
+| --- | --- | --- |
+| `fetch` | outgoing `fetch()` | adds `traceparent` and `baggage` |
+| `http-client` | outgoing `http.request` / `https.request` | adds `traceparent` and `baggage` |
+| `http-server` | incoming `http.createServer` requests, active for the whole handler | reads `traceparent` and `baggage` |
+
+Nothing is enabled by default. CLIs and bots usually want none: every API call would become a span. Server apps usually want `fetch` and `http-client`. Skip `http-server` when the framework already creates request spans (Spiceflow `tracer`, Next.js), or each request gets two spans.
+
+Because channels are process-global, this works no matter when modules are imported and inside bundled apps (Vite, Next), since `http` and `fetch` are Node built-ins. The SDK skips its own export requests. Requires Node 22.12+.
+
+Databases and frameworks publish no diagnostics channels today (pg, express, hono). Wrap those calls in `startSpan()`:
+
+```ts
+const rows = await startSpan({ name: "db.users.find", attributes: { "db.system": "postgresql" } }, () => {
+  return db.query("SELECT * FROM users WHERE id = $1", [id])
+})
+```
+
+### Libraries that use the OTel API
+
+The Vercel AI SDK (`experimental_telemetry`), Prisma tracing, and similar libraries call `trace.getTracer()` from `@opentelemetry/api`. Register Strada as the global OTel provider:
+
+```bash
+pnpm add @opentelemetry/api @opentelemetry/api-logs
+```
+
+```ts
+import { initStrada } from "@strada.sh/sdk"
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
 
 initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api" })
 registerOpenTelemetry()
 ```
 
-### Node auto-instrumentation
+Their tracers are proxies that resolve the provider on first use, so this can run anywhere at startup. Metric instruments a library creates **before** registration stay no-ops.
 
-Instrumentations **patch modules when they load**, so they must be registered **before the app is imported**. Preload the register entry with `--import`:
+`registerOpenTelemetry()` is all or nothing: when another OTel SDK (`@vercel/otel`, `@opentelemetry/sdk-node`, Sentry) already owns a global, it rolls back and returns an error, so the process never mixes two providers.
 
-```bash
-node --import @strada.sh/instrumentation/register server.js
-```
+`@opentelemetry/instrumentation-*` packages also export through Strada after `registerOpenTelemetry()`. They patch modules at load time, so follow their own preload setup (`node --import`); the SDK does not ship one.
 
-`node --import @strada.sh/sdk/register` does the same: it forwards to `@strada.sh/instrumentation/register`, and when that package is not installed it prints one warning and the app runs without auto-instrumentation.
+### Cloudflare Workers
 
-Keep `initStrada()` in your app as usual. The register entry only does the OTel part, once per process: the ESM loader hook, `registerOpenTelemetry()`, and the instrumentations below.
-
-The default set is close to Sentry's Node defaults: requests and I/O, no low-level noise.
-
-| Group | Instrumentations |
-| --- | --- |
-| HTTP | `http` (incoming and outgoing), `undici` (fetch) |
-| Frameworks | `express`, `koa`, `hapi`, `connect`, `router`, `nestjs-core`, `graphql` |
-| Databases | `pg`, `mysql`, `mysql2`, `mongodb`, `mongoose`, `redis`, `ioredis`, `knex`, `tedious` |
-| Queues and pools | `kafkajs`, `amqplib`, `dataloader`, `generic-pool`, `lru-memoizer` |
-| Runtime metrics | `runtime-node` (event loop delay and utilization, GC) |
-| Loggers | `pino`, `winston`, `bunyan`: trace ids in log lines only, logs are **not** forwarded |
-| AI | `openai` (prompt content is not recorded) |
-
-Not included: `fs`, `dns`, and `net` (a span per file, lookup, or socket), `fastify` (use `@fastify/otel`), and Prisma (use `@prisma/instrumentation`). Database spans include the query text in `db.query.text`.
-
-Narrow the set with the standard env vars, using short names:
-
-```bash
-OTEL_NODE_ENABLED_INSTRUMENTATIONS=http,undici,pg node --import @strada.sh/instrumentation/register server.js
-OTEL_NODE_DISABLED_INSTRUMENTATIONS=runtime-node,openai node --import @strada.sh/instrumentation/register server.js
-```
-
-For full control, call `getInstrumentations({ enabled, disabled })` from `@strada.sh/instrumentation` in your own preload file.
-
-#### Why a preload is required
-
-Node **loads and links the whole static import graph before any code runs**. By the time the first line of `server.js` executes, `http`, `pg`, and `express` are already loaded. Registering instrumentations from app code, even as the first import, is too late:
-
-| Setup | Instrumentation spans |
-| --- | --- |
-| `node --import @strada.sh/instrumentation/register server.js` | yes |
-| `import "@strada.sh/instrumentation/register"` as first line of `server.js` | no |
-| no preload | no |
-
-What gets lost without the preload:
-
-- spans for HTTP servers, HTTP clients, databases, queues
-- `traceparent` and `baggage` on outgoing requests, so traces break between services
-- `url.path` and `http.route` on errors thrown inside those requests
-- metric instruments that a library creates at import time (they stay no-ops)
-
-What keeps working: `captureException`, `track`, `getLogger`, `startSpan`, framework tracers such as Spiceflow's `tracer` option, and libraries that call the OTel API at runtime (Vercel AI SDK, Prisma tracing).
-
-Use `--import`, not `-r`: `-r` loads the preload twice when it registers loader hooks. `NODE_OPTIONS="--import @strada.sh/instrumentation/register"` works too.
-
-#### Spiceflow in Docker
-
-Spiceflow builds a self-contained `dist/` with traced runtime dependencies in `dist/node_modules/`, following the [Spiceflow Docker guide](https://getspiceflow.com/docker). Dependencies stay external, so instrumentations can patch them.
-
-Import the register entry once in the server entry. It does nothing extra at runtime (same module, runs once), but it makes the dependency tracer copy it and the instrumentation packages into `dist/node_modules/`:
-
-```ts
-// src/main.tsx
-import "@strada.sh/instrumentation/register"
-import { initStrada, trace } from "@strada.sh/sdk"
-import { Spiceflow } from "spiceflow"
-
-initStrada({ projectId: process.env.STRADA_PROJECT_ID!, service: "web", enabled: !import.meta.hot })
-
-export const app = new Spiceflow({ tracer: trace.getTracer("web") })
-```
-
-Then preload that traced copy by path. `dist/` has no top-level `node_modules/`, so a bare specifier would not resolve:
-
-```dockerfile
-FROM --platform=linux/amd64 node:24-slim
-
-WORKDIR /app
-
-# Before building, install Linux native modules:
-#   pnpm install --os linux --cpu x64
-
-COPY dist/ ./dist/
-COPY public/ ./public/
-
-EXPOSE 3000
-CMD ["node", "--import", "./dist/node_modules/@strada.sh/instrumentation/dist/register.js", "dist/rsc/index.js"]
-```
-
-Spiceflow request spans come from the `tracer` option with or without the preload. The preload adds spans for outgoing HTTP, databases, and other external packages.
-
-#### Next.js
-
-Next.js has its own preload: `instrumentation.ts` in the project root (or `src/`). Next calls its `register()` before loading the app, so no `--import` flag is needed:
-
-```ts
-// instrumentation.ts
-export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return
-  const { initStrada } = await import("@strada.sh/sdk")
-  initStrada({ projectId: process.env.STRADA_PROJECT_ID!, service: "web" })
-  await import("@strada.sh/instrumentation/register")
-}
-```
-
-The `nodejs` check keeps it out of the Edge runtime, which has no `node:module`. Next bundles server code by default, and bundled packages cannot be patched. List the packages you want spans for in `serverExternalPackages` in `next.config.ts`. Use either Strada or `@vercel/otel`, not both: only one can own the global OTel providers.
-
-### Browser auto-instrumentation
-
-Automatically creates spans for `fetch`, `XMLHttpRequest`, document load timing, and user interactions (clicks, navigation). Useful for seeing how long page loads and API calls take without adding manual spans.
-
-```bash
-pnpm add @strada.sh/instrumentation @opentelemetry/instrumentation @opentelemetry/auto-instrumentations-web
-```
-
-```ts
-import { getWebAutoInstrumentations } from "@opentelemetry/auto-instrumentations-web"
-import { registerInstrumentations } from "@opentelemetry/instrumentation"
-import { initStrada } from "@strada.sh/sdk"
-import { registerOpenTelemetry } from "@strada.sh/instrumentation/otel"
-
-initStrada({
-  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
-  service: "frontend",
-})
-
-registerOpenTelemetry()
-registerInstrumentations({
-  instrumentations: [getWebAutoInstrumentations()],
-})
-```
-
-This adds spans for:
-- **fetch / XHR** — every `fetch()` and `XMLHttpRequest` call becomes a span with URL, method, status code, and duration
-- **document load** — spans for DNS, TCP, TLS, request, response, DOM processing, and load event timing
-- **user interaction** — spans for click events on interactive elements
-
-### Cloudflare Workers auto-instrumentation
-
-Workers use Cloudflare's **built-in tracing** instead of a JS instrumentation package. It instruments at the runtime level (inside workerd), so it has zero bundle size impact and zero per-request overhead:
+Workers use Cloudflare's **built-in tracing**. It instruments at the runtime level (inside workerd), with zero bundle size and zero per-request overhead:
 
 ```jsonc
 // wrangler.jsonc
@@ -1496,11 +1396,7 @@ Workers use Cloudflare's **built-in tracing** instead of a JS instrumentation pa
 }
 ```
 
-This auto-instruments KV, D1, Durable Objects, fetch, handler invocations, and more. It supports OTLP export to external backends. Use it alongside the Strada SDK: built-in tracing for automatic spans, the SDK for error capture and custom events.
-
-### Why it's not built in
-
-Auto-instrumentation packages are large. The Node metapackage pulls in ~30 instrumentation libraries, AWS/GCP resource detectors, gRPC bindings, and polyfills, adding **~2MB** to the bundle. The browser package adds **~70kB**. The SDK itself has zero dependencies and is about 30 kB minified. The Workers entry has **no auto-instrumentation at all** since Cloudflare's built-in tracing handles it at the runtime level with zero bundle cost. By keeping auto-instrumentation opt-in, the SDK stays small for CLIs, libraries, and apps that only need error tracking, custom events, or manual tracing.
+This covers KV, D1, Durable Objects, fetch, and handler invocations. Custom spans from `startActiveSpan()` show in the same Cloudflare waterfall.
 
 ## Error handling semantics
 

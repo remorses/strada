@@ -190,6 +190,16 @@ export function stopPipeline(): void {
   spanQueue = [];
 }
 
+/** Ingest origin, so HTTP instrumentation can skip the SDK's own export requests. */
+export function getExportOrigin(): string | undefined {
+  if (!config?.endpoint) return undefined;
+  try {
+    return new URL(config.endpoint).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export function isExporting(): boolean {
   return Boolean(config?.endpoint);
 }

@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
-    "@strada.sh/instrumentation": "workspace:^",
+    "@opentelemetry/api": "^1.9.1",
     "@strada.sh/sdk": "workspace:^",
     "ai": "^6.0.168",
     "zod": "^4.6.5"
