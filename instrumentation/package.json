@@ -1,0 +1,92 @@
+{
+  "name": "@strada.sh/instrumentation",
+  "version": "0.1.0",
+  "description": "OpenTelemetry auto-instrumentation for @strada.sh/sdk: one install with a curated set of Node instrumentations (HTTP, fetch, frameworks, databases, queues) and a --import preload.",
+  "keywords": [
+    "strada",
+    "opentelemetry",
+    "instrumentation",
+    "auto-instrumentation",
+    "tracing"
+  ],
+  "homepage": "https://github.com/remorses/strada",
+  "bugs": "https://github.com/remorses/strada/issues",
+  "license": "MIT",
+  "author": "remorses <beats.by.morse@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remorses/strada",
+    "directory": "instrumentation"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/register.js",
+    "./src/register.ts"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./otel": {
+      "types": "./dist/otel.d.ts",
+      "default": "./dist/otel.js"
+    },
+    "./register": {
+      "types": "./dist/register.d.ts",
+      "default": "./dist/register.js"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "!**/*.test.*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build",
+    "test": "vitest run src",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.214.0",
+    "@opentelemetry/instrumentation": "^0.214.0",
+    "@opentelemetry/instrumentation-amqplib": "^0.61.0",
+    "@opentelemetry/instrumentation-bunyan": "^0.59.0",
+    "@opentelemetry/instrumentation-connect": "^0.57.0",
+    "@opentelemetry/instrumentation-dataloader": "^0.31.0",
+    "@opentelemetry/instrumentation-express": "^0.62.0",
+    "@opentelemetry/instrumentation-generic-pool": "^0.57.0",
+    "@opentelemetry/instrumentation-graphql": "^0.62.0",
+    "@opentelemetry/instrumentation-hapi": "^0.60.0",
+    "@opentelemetry/instrumentation-http": "^0.214.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.62.0",
+    "@opentelemetry/instrumentation-kafkajs": "^0.23.0",
+    "@opentelemetry/instrumentation-knex": "^0.58.0",
+    "@opentelemetry/instrumentation-koa": "^0.62.0",
+    "@opentelemetry/instrumentation-lru-memoizer": "^0.58.0",
+    "@opentelemetry/instrumentation-mongodb": "^0.67.0",
+    "@opentelemetry/instrumentation-mongoose": "^0.60.0",
+    "@opentelemetry/instrumentation-mysql": "^0.60.0",
+    "@opentelemetry/instrumentation-mysql2": "^0.60.0",
+    "@opentelemetry/instrumentation-nestjs-core": "^0.60.0",
+    "@opentelemetry/instrumentation-openai": "^0.12.0",
+    "@opentelemetry/instrumentation-pg": "^0.66.0",
+    "@opentelemetry/instrumentation-pino": "^0.60.0",
+    "@opentelemetry/instrumentation-redis": "^0.62.0",
+    "@opentelemetry/instrumentation-router": "^0.58.0",
+    "@opentelemetry/instrumentation-runtime-node": "^0.27.0",
+    "@opentelemetry/instrumentation-tedious": "^0.33.0",
+    "@opentelemetry/instrumentation-undici": "^0.24.0",
+    "@opentelemetry/instrumentation-winston": "^0.58.0"
+  },
+  "devDependencies": {
+    "@strada.sh/sdk": "workspace:^",
+    "@types/node": "^25.9.6",
+    "rimraf": "^6.1.3"
+  }
+}

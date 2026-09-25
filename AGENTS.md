@@ -301,8 +301,9 @@ The SDK lives in `sdk/` and is the main package users install. It has **zero run
 1. `api.ts` is OTel-shaped: code written against `@opentelemetry/api` works when it imports `trace`, `logs`, `metrics`, `context`, `propagation` from `@strada.sh/sdk`
 2. `export.ts` batches records, reads every response body (keep-alive reuse), sends endpoints sequentially, and unrefs timers
 3. Runtime entries (`node.ts`, `browser.ts`, `cloudflare.ts`) call `initCore()` (shared.ts) and set `runtimeHooks` for enrichment (`onSpanStart`, `onLogEmit`), flush scheduling (`afterRecord`), and the Cloudflare span bridge (`wrapActiveSpan`)
-4. `@strada.sh/sdk/otel` (`registerOpenTelemetry()`) registers these providers into the real `@opentelemetry/api` globals. `@opentelemetry/api` and `api-logs` are **optional peer deps**, only needed by that entry
+4. `@strada.sh/sdk/otel` exports `otelProviders` (no OTel imports). The separate package `instrumentation/` (`@strada.sh/instrumentation`) owns every OTel dependency: `registerOpenTelemetry()` (all or nothing, rolls back on conflict), the curated `getInstrumentations()`, and the `/register` preload
 5. Never add a runtime dependency to `sdk/`. Never auto-patch modules; auto-instrumentation is the user's opt-in through `/otel`
+6. The preload is `node --import @strada.sh/instrumentation/register app.js` (`@strada.sh/sdk/register` forwards to it and warns once when it is missing). It must be a preload because Node links the whole static import graph before app code runs; registering from app code leaves modules unpatched (`instrumentation/src/register.test.ts` proves it). Curated set: no fs/dns/net, logger instrumentations only correlate (no log sending)
 
 Context keys use `Symbol.for()` with the exact OTel descriptions (`OpenTelemetry Context Key SPAN`, `OpenTelemetry Baggage Key`) so spans and baggage set by `@opentelemetry/api` helpers are visible to the SDK. `src/otel.test.ts` verifies this with the real `@opentelemetry/instrumentation-http`.
 
@@ -440,11 +441,11 @@ HTTP Handler Span (url.path="/api/orders", http.method="GET")
 
 | Package | Needed by |
 |---------|-----------|
-| `@opentelemetry/api`, `@opentelemetry/api-logs` | `@strada.sh/sdk/otel` only |
+| `@strada.sh/instrumentation` | `@strada.sh/sdk/register` only |
 | `better-auth` | `@strada.sh/sdk/better-auth` only |
 | `vite` | `@strada.sh/sdk/vite` only |
 
-Auto-instrumentation packages (`@opentelemetry/auto-instrumentations-node`, `-web`) are never imported by the SDK. Users register them after `registerOpenTelemetry()`.
+The SDK never imports `@opentelemetry/*`. Everything OTel lives in `instrumentation/`.
 
 ## Project isolation
 

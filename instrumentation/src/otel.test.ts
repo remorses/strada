@@ -5,21 +5,37 @@ import { logs as otelLogs, SeverityNumber as OtelSeverityNumber } from "@opentel
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { expect, test } from "vitest";
-import { takeQueuedRecords } from "./export.ts";
-import { initStrada, shutdown, startSpan } from "./node.ts";
+import { initStrada, shutdown, startSpan } from "@strada.sh/sdk";
 import { registerOpenTelemetry } from "./otel.ts";
 
 type KeyValue = { key: string; value: Record<string, unknown> };
+type OtlpSpan = { traceId: string; spanId: string; parentSpanId?: string; name: string; kind: number; attributes: KeyValue[] };
+type OtlpLog = { spanId?: string; body?: { stringValue?: string } };
+type Received<T> = { scope: string; record: T };
 
 function attributes(list: KeyValue[]): Record<string, unknown> {
   return Object.fromEntries(list.map(({ key, value }) => [key, value.stringValue ?? value.intValue ?? value.boolValue]));
 }
 
 test("OTel instrumentations and API users export through Strada with shared context", async () => {
-  // Spans and logs are read from the queue; the sink only answers the final metrics flush.
+  // Real OTLP/HTTP JSON receiver: the test only sees what the SDK exported.
+  const spans: Array<Received<OtlpSpan>> = [];
+  const logs: Array<Received<OtlpLog>> = [];
   const sink = createServer((req, res) => {
-    req.resume();
-    req.on("end", () => res.end("{}"));
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const parsed = JSON.parse(body);
+      for (const resource of parsed.resourceSpans ?? []) {
+        for (const scope of resource.scopeSpans) spans.push(...scope.spans.map((record: OtlpSpan) => ({ scope: scope.scope.name, record })));
+      }
+      for (const resource of parsed.resourceLogs ?? []) {
+        for (const scope of resource.scopeLogs) logs.push(...scope.logRecords.map((record: OtlpLog) => ({ scope: scope.scope.name, record })));
+      }
+      res.end("{}");
+    });
   });
   await new Promise<void>((resolve) => sink.listen(0, "127.0.0.1", resolve));
   const sinkEndpoint = `http://127.0.0.1:${(sink.address() as { port: number }).port}`;
@@ -50,8 +66,9 @@ test("OTel instrumentations and API users export through Strada with shared cont
   otelTrace.getTracer("lib").startSpan("from-otel-api").end();
   server.close();
   disable();
+  expect(await shutdown()).toBeUndefined();
+  sink.close();
 
-  const { spans, logs } = takeQueuedRecords();
   const byName = (name: string) => spans.find((span) => span.record.name === name)!;
   const job = byName("job").record;
   const client = spans.find((span) => span.record.kind === 3)!.record;
@@ -66,7 +83,7 @@ test("OTel instrumentations and API users export through Strada with shared cont
     oneTrace: new Set([job.traceId, client.traceId, serverSpan.traceId]).size === 1,
     logInServerSpan: handledLog.record.spanId === serverSpan.spanId,
     logScope: handledLog.scope,
-    serverAttributes: attributes(serverSpan.attributes as KeyValue[])["http.target"],
+    serverAttributes: attributes(serverSpan.attributes)["http.target"],
     otelApiSpan: byName("from-otel-api").scope,
   }).toMatchInlineSnapshot(`
     {
@@ -84,6 +101,4 @@ test("OTel instrumentations and API users export through Strada with shared cont
       "serverParentIsClient": true,
     }
   `);
-  expect(await shutdown()).toBeUndefined();
-  sink.close();
 });

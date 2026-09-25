@@ -596,24 +596,16 @@ import { initStrada, captureException, track, trace, logs, metrics } from "@stra
 
 ### OpenTelemetry auto-instrumentation
 
-The SDK never patches modules by itself. To get automatic spans from **OTel instrumentations** (http, express, pg, fetch, ...) or from libraries that use `@opentelemetry/api` (Vercel AI SDK, Prisma), register Strada as the global OTel provider with `@strada.sh/sdk/otel`:
+The SDK never patches modules by itself. For automatic spans (HTTP, fetch, express, pg, redis, kafka, ...), install `@strada.sh/instrumentation` and preload it. It is one package with a curated set of OTel instrumentations, close to Sentry's Node defaults:
 
 ```bash
-pnpm add @opentelemetry/api @opentelemetry/api-logs @opentelemetry/instrumentation @opentelemetry/auto-instrumentations-node
+pnpm add @strada.sh/instrumentation
+node --import @strada.sh/instrumentation/register server.js
 ```
 
-```ts
-import { initStrada } from "@strada.sh/sdk"
-import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
-import { registerInstrumentations } from "@opentelemetry/instrumentation"
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+The preload is required because Node loads the whole import graph before app code runs: registering from `server.js`, even on the first line, leaves `http`, `pg`, and `express` unpatched. Keep `initStrada()` in your app as usual.
 
-initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api" })
-registerOpenTelemetry()
-registerInstrumentations({ instrumentations: [getNodeAutoInstrumentations()] })
-```
-
-Instrumentation spans share context with `startSpan()`, carry `traceparent` and `baggage` between services, and export through the same Strada pipeline. In browsers use `@opentelemetry/auto-instrumentations-web` the same way. `registerOpenTelemetry()` returns an error if another OTel SDK (for example `@vercel/otel`) already owns the globals.
+Libraries that only call the OTel API at runtime (Vercel AI SDK, Prisma) need no preload: call `registerOpenTelemetry()` from `@strada.sh/instrumentation/otel` anywhere at startup. See the [SDK docs](./website/src/docs/sdk.mdx#auto-instrumentation-optional) for the default instrumentation list, Spiceflow in Docker, and Next.js.
 
 ### Automatic context propagation
 
