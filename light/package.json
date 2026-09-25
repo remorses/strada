@@ -1,6 +1,6 @@
 {
   "name": "@strada.sh/light",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Zero-dependency Strada SDK subset for product events, user profiles, and handled errors. Drop-in for @strada.sh/sdk: same names, same options, no OpenTelemetry.",
   "keywords": [
     "strada",

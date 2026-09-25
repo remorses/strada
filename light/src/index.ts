@@ -382,6 +382,9 @@ async function post({ current, path, body }: { current: LightState; path: string
       },
       body: JSON.stringify(body),
     });
+    // Read the body so fetch returns the socket to its keep-alive pool.
+    // An unread body pins the socket and every flush opens a new TLS connection.
+    await response.arrayBuffer();
     if (!response.ok) return failure(`Strada ingest ${path} responded ${response.status}`);
     return undefined;
   } catch (cause) {
@@ -405,23 +408,22 @@ async function send({
       logRecords: logs.filter((log) => log.scope === name).map((log) => log.record),
     };
   });
-  const results = await Promise.all([
+  // Sequential on purpose: parallel requests to one origin open a second connection.
+  const logsError =
     logs.length > 0
-      ? post({ current, path: "/v1/logs", body: { resourceLogs: [{ resource: { attributes: current.resource }, scopeLogs }] } })
-      : undefined,
+      ? await post({ current, path: "/v1/logs", body: { resourceLogs: [{ resource: { attributes: current.resource }, scopeLogs }] } })
+      : undefined;
+  const spansError =
     spans.length > 0
-      ? post({
+      ? await post({
           current,
           path: "/v1/traces",
           body: {
             resourceSpans: [{ resource: { attributes: current.resource }, scopeSpans: [{ scope: { name: "strada" }, spans }] }],
           },
         })
-      : undefined,
-  ]);
-  return results.find((result) => {
-    return result instanceof Error;
-  });
+      : undefined;
+  return logsError ?? spansError;
 }
 
 /** Returns the live state only when exporting, so callers can skip building records. */

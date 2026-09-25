@@ -475,3 +475,38 @@ test("light sends events, profiles, errors, logs, and nested spans in the full S
     ]
   `);
 });
+
+test("light reuses keep-alive connections across flushes", async () => {
+  const sockets = new Set<number>();
+  const server = http.createServer((req, res) => {
+    sockets.add(req.socket.remotePort ?? 0);
+    req.resume();
+    req.on("end", () => {
+      // A body larger than one chunk: an unread response body would pin the socket.
+      res.end(JSON.stringify({ partialSuccess: {}, padding: "x".repeat(256 * 1024) }));
+    });
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address() as { port: number };
+
+  expect(light.initStrada({ projectId: "", endpoint: `http://127.0.0.1:${port}`, service: "cli", enabled: true })).toBeUndefined();
+  const socketsAfterRound: number[] = [];
+  for (const round of [1, 2, 3]) {
+    expect(light.track("round", { round })).toBeUndefined();
+    expect(light.trackPageview({ path: `/${round}`, sessionId: "s" })).toBeUndefined();
+    expect(await light.flush()).toBeUndefined();
+    socketsAfterRound.push(sockets.size);
+  }
+  expect(await light.shutdown()).toBeUndefined();
+  server.close();
+  // Round 1 may open one socket per endpoint; later flushes must reuse them.
+  expect(socketsAfterRound).toMatchInlineSnapshot(`
+    [
+      2,
+      2,
+      2,
+    ]
+  `);
+});
