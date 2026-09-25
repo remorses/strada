@@ -10,11 +10,11 @@ prompt: |
 
 # @strada.sh/sdk
 
-**OpenTelemetry-first error tracking, tracing, logs, metrics, and browser analytics for Strada.**
+**Zero-dependency error tracking, tracing, logs, metrics, and browser analytics for Strada, with an OpenTelemetry-compatible API.**
 
 Import from `@strada.sh/sdk` in every runtime. The package uses export conditions so browsers get the browser runtime, Cloudflare Workers get the Workers runtime, and servers get the Node runtime.
 
-Always import OpenTelemetry APIs from `@strada.sh/sdk`, not from `@opentelemetry/*` packages directly. The SDK is a thin wrapper around those packages and re-exports the same APIs, so `trace.getTracer()`, `logs.getLogger()`, `metrics.getMeter()`, `context`, and `propagation` work the same way while staying connected to Strada's configured providers.
+Import OpenTelemetry-style APIs from `@strada.sh/sdk`. The SDK implements `trace.getTracer()`, `logs.getLogger()`, `metrics.getMeter()`, `context`, and `propagation` with the same shapes as `@opentelemetry/api`, without depending on the OTel packages, and exports everything as OTLP JSON. To connect libraries that import `@opentelemetry/api` themselves, see [Auto-instrumentation](#auto-instrumentation-optional).
 
 ```ts
 import { initStrada, captureException } from "@strada.sh/sdk"
@@ -877,43 +877,6 @@ ORDER BY n DESC
 LIMIT 50
 ```
 
-### Light package (explicit only, no OpenTelemetry)
-
-For **CLIs, daemons, libraries, and small apps**, install `@strada.sh/light` and change the import. It is a **drop-in subset**: same function names, same option names, same rows in `otel_logs` and `otel_traces`. It has **zero dependencies** (about 10 kB minified), so it does not pull the ~12 MB of OpenTelemetry packages into your users' installs.
-
-```ts
-import { initStrada, track, captureException, getLogger, startSpan, flush } from "@strada.sh/light"
-
-initStrada({
-  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
-  service: "my-cli",
-  version: "1.0.0",
-  enabled: process.env.DO_NOT_TRACK !== "1",
-})
-
-track("command_run", { command: "deploy" })
-await startSpan({ name: "deploy" }, async (span) => {
-  span.setAttribute("files", 12)
-  getLogger("deploy").info({ message: "uploaded", files: 12 })
-})
-await flush() // the timer is unref'd, flush before a short-lived process exits
-```
-
-The same code is also available as `@strada.sh/sdk/light` when the full SDK is already installed.
-
-**Explicit only.** Nothing is captured unless you call it: no uncaught error handlers, no fetch patching, no browser pageview span, no resource detectors (hostname and OS username are never sent).
-
-| Feature | Light |
-| --- | --- |
-| `track`, `identifyUser`, `trackPageview` | yes |
-| `captureException`, `setTags`, `ignoreErrors`, `denyUrls`, `beforeSend` | yes |
-| `getLogger()` with `trace` ... `fatal` | yes, no OTel `emit()` |
-| `startSpan`, `startInactiveSpan`, `SpanStatusCode` | yes, nesting across `await` needs Node 20.16+, Bun, or Workers |
-| `flush`, `shutdown` | yes |
-| automatic error handlers, browser pageviews, metrics, OTel re-exports, baggage | no, import fails to compile |
-
-Unsupported exports and options are **compile errors**, so a switch never silently drops data. Omit `token` in code shipped to users; anonymous ingest is rate limited per IP.
-
 ## What it sends
 
 ```diagram
@@ -1127,11 +1090,11 @@ The Workers entry requires the `nodejs_compat` compatibility flag for `AsyncLoca
 
 `@strada.sh/sdk` resolves differently by runtime:
 
-- **browser bundlers** get the browser implementation (WebTracerProvider, session management, pageview spans)
-- **Cloudflare Workers** get the Workers implementation (BasicTracerProvider, auto-flush via waitUntil, no automatic spans)
-- **Node.js / Bun / Deno** get the server implementation (NodeTracerProvider, process handlers, resource detection)
+- **browser bundlers** get the browser implementation (session management, pageview spans, window error listeners)
+- **Cloudflare Workers** get the Workers implementation (auto-flush via waitUntil, native span bridge, no automatic spans)
+- **Node.js / Bun / Deno** get the server implementation (AsyncLocalStorage context, process error handlers)
 
-That means the same import path can configure different OTel SDKs without user changes.
+That means the same import path works everywhere without user changes.
 
 ## Exporters, batching, and flush behavior
 
@@ -1207,11 +1170,13 @@ The SDK exposes:
 
 On **Node.js**, the SDK registers process handlers so buffered telemetry is not lost on exit:
 
-- `uncaughtException` captures the error, flushes logs + traces + metrics, then exits
-- `SIGTERM` / `SIGINT` call `shutdown()`
+- `uncaughtException` captures the error, flushes logs + traces + metrics, then exits with code 1
+- `unhandledRejection` captures the error
+- Set `captureUncaughtErrors: false` to skip both, for CLIs and apps that own their crash handling
+- No `SIGTERM` / `SIGINT` handlers, so Ctrl+C keeps its default behavior. Call `await flush()` in your own shutdown handler
 - `beforeExit` calls `flush()` for **natural** exits (event loop drains, a CLI calls `process.exit()` from a later tick, or a short-lived script finishes). This is the case that signals miss
 
-- `telemetry.metrics` is currently only meaningful on Node.js. Workers do not configure a metric exporter; `metrics.getMeter()` returns a noop on Workers
+- `telemetry.metrics` works on every runtime. Metrics are cumulative and exported as OTLP JSON every `exportIntervalMillis` and on every `flush()`. On Workers they are flushed with the request's `waitUntil`
 
 #### Process lifetime and span export
 
@@ -1314,9 +1279,8 @@ ORDER BY Timestamp ASC
 
 - The browser SDK registers a `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator`
 - The `PageviewContextManager` injects current baggage (session.id + user.id) into the OTel context on every outgoing request
-- The Node SDK registers the same composite propagator to extract baggage from incoming requests
-- `BaggageSpanProcessor` reads the baggage and sets `session.id` / `user.id` as span attributes
-- `BaggageLogProcessor` does the same for log records
+- The server reads incoming baggage with `propagation.extract()` or an OTel HTTP instrumentation registered through `@strada.sh/sdk/otel`
+- Spans and log records started in that context get `session.id` / `user.id` as attributes
 
 Baggage updates live. When `identifyUser()` or cookie `strada_uid` changes, the next outgoing request carries the updated `user.id`. Cookie `strada_vid` is the visitor and is not in baggage.
 
@@ -1324,65 +1288,74 @@ Baggage updates live. When `identifyUser()` or cookie `strada_uid` changes, the 
 
 The browser build sets up:
 
-- `WebTracerProvider`
-- `LoggerProvider`
-- OTLP HTTP exporters for traces and logs
-- W3C Baggage propagation for session.id and user.id
-- global `error` and `unhandledrejection` handlers
-- pageview span lifecycle
+- a synchronous context stack, with the current pageview span as the default parent
+- W3C Baggage with `session.id` and `user.id` for `propagation.inject()`
+- global `error` and `unhandledrejection` listeners (skip with `captureUncaughtErrors: false`)
+- pageview span lifecycle, ended and flushed with `keepalive` when the page is hidden
 - SPA navigation detection via the Navigation API
-- log filtering for noisy browser junk like `Script error.` and extension frames
+- default filters for noisy browser junk like `Script error.` and extension frames
 
 ## Node runtime
 
 The server build sets up:
 
-- `NodeTracerProvider` for traces with `AsyncLocalStorageContextManager`
-- `MeterProvider` for metrics
-- `LoggerProvider` for logs
-- OTLP HTTP exporters for traces, logs, metrics
-- W3C Baggage extraction with `BaggageSpanProcessor` and `BaggageLogProcessor`
-- Resource detection (`telemetry.sdk.*`, `process.*`, `host.*`, `OTEL_RESOURCE_ATTRIBUTES`)
+- AsyncLocalStorage context, so spans nest across `await`
+- request enrichment: child spans and logs inherit `url.path`, `http.route`, `http.method` from the parent span, and `session.id` / `user.id` from baggage
+- resource from your options plus release env vars. No `host.*` or `process.*` detection, so hostname and OS username are never sent
 - global `uncaughtException` and `unhandledRejection` handlers
+- `waitUntil` flush on Vercel
 - `flush()` and `shutdown()` helpers for graceful process exit
 
 ## Workers runtime
 
 The Workers build is minimal and opt-in only:
 
-- `BasicTracerProvider` for traces with `AsyncLocalStorage` context manager (requires `nodejs_compat`)
-- `LoggerProvider` for logs
-- OTLP HTTP exporters for traces and logs
-- W3C Baggage extraction with `BaggageSpanProcessor` and `BaggageLogProcessor`
-- Auto-flush via `waitUntil` from `cloudflare:workers` (no manual flush needed)
+- AsyncLocalStorage context (requires `nodejs_compat`)
+- the same request enrichment as Node
+- auto-flush via `waitUntil` from `cloudflare:workers` (no manual flush needed)
+- native Cloudflare span bridge for `startActiveSpan()` when `tracing.enterSpan` exists
 - `cloud.provider: cloudflare` and `cloud.platform: cloudflare.workers` resource attributes
-- No automatic spans, no process handlers
-- No metrics provider. `metrics.getMeter()` returns a noop on Workers. Use Cloudflare Analytics Engine or Workers Observability for metrics instead
-- Zero HTTP requests to the collector unless user code creates telemetry
+- no automatic spans, no process handlers
+- zero HTTP requests to the collector unless user code creates telemetry
 
 ## Auto-instrumentation (optional)
 
-The SDK does **not** include auto-instrumentation by default. It only sets up providers, exporters, and error handlers. If you want automatic spans for HTTP requests, database queries, or browser interactions, install the OTel auto-instrumentation packages separately.
+The SDK has **zero dependencies** and never patches modules. Its `trace`, `context`, `propagation`, `logs`, and `metrics` objects have the same shape as `@opentelemetry/api`, but OTel instrumentations and OTel-instrumented libraries (Vercel AI SDK, Prisma) read the **global** `@opentelemetry/api` singletons. Register Strada there with `@strada.sh/sdk/otel`, once, after `initStrada()`:
+
+```bash
+pnpm add @opentelemetry/api @opentelemetry/api-logs
+```
+
+```ts
+import { initStrada } from "@strada.sh/sdk"
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
+
+initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api" })
+registerOpenTelemetry()
+```
+
+After that, instrumentation spans share context with `startSpan()`, `traceparent` and `baggage` headers flow between services, and everything exports through the Strada pipeline. `registerOpenTelemetry()` returns an error when another OTel SDK (for example `@vercel/otel` or `@opentelemetry/sdk-node`) already owns the globals.
 
 ### Node auto-instrumentation
 
 Automatically creates spans for outgoing/incoming HTTP requests, database queries (pg, mysql, mongodb, redis), gRPC calls, and more. No code changes needed; it monkey-patches Node.js modules at import time.
 
 ```bash
-pnpm add @opentelemetry/auto-instrumentations-node
+pnpm add @opentelemetry/api @opentelemetry/api-logs @opentelemetry/instrumentation @opentelemetry/auto-instrumentations-node
 ```
 
 ```ts
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { initStrada } from "@strada.sh/sdk"
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
   service: "api",
 })
 
-// Call after initStrada() so the global providers are registered
+registerOpenTelemetry()
 registerInstrumentations({
   instrumentations: [getNodeAutoInstrumentations()],
 })
@@ -1395,19 +1368,21 @@ This adds spans for `http`, `https`, `fetch`, `express`, `fastify`, `koa`, `pg`,
 Automatically creates spans for `fetch`, `XMLHttpRequest`, document load timing, and user interactions (clicks, navigation). Useful for seeing how long page loads and API calls take without adding manual spans.
 
 ```bash
-pnpm add @opentelemetry/auto-instrumentations-web
+pnpm add @opentelemetry/api @opentelemetry/api-logs @opentelemetry/instrumentation @opentelemetry/auto-instrumentations-web
 ```
 
 ```ts
 import { getWebAutoInstrumentations } from "@opentelemetry/auto-instrumentations-web"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { initStrada } from "@strada.sh/sdk"
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
   service: "frontend",
 })
 
+registerOpenTelemetry()
 registerInstrumentations({
   instrumentations: [getWebAutoInstrumentations()],
 })
@@ -1435,7 +1410,7 @@ This auto-instruments KV, D1, Durable Objects, fetch, handler invocations, and m
 
 ### Why it's not built in
 
-Auto-instrumentation packages are large. The Node metapackage pulls in ~30 instrumentation libraries, AWS/GCP resource detectors, gRPC bindings, and polyfills, adding **~2MB** to the bundle. The browser package adds **~70kB**. The Workers entry has **no auto-instrumentation at all** since Cloudflare's built-in tracing handles it at the runtime level with zero bundle cost. By keeping auto-instrumentation opt-in, the SDK stays lightweight for users who only need error tracking, custom events, or manual tracing.
+Auto-instrumentation packages are large. The Node metapackage pulls in ~30 instrumentation libraries, AWS/GCP resource detectors, gRPC bindings, and polyfills, adding **~2MB** to the bundle. The browser package adds **~70kB**. The SDK itself has zero dependencies and is about 30 kB minified. The Workers entry has **no auto-instrumentation at all** since Cloudflare's built-in tracing handles it at the runtime level with zero bundle cost. By keeping auto-instrumentation opt-in, the SDK stays small for CLIs, libraries, and apps that only need error tracking, custom events, or manual tracing.
 
 ## Error handling semantics
 

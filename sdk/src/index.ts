@@ -1,56 +1,7 @@
 /**
- * Default entry point for @strada.sh/sdk.
- *
- * In Node.js / Bun / Deno this re-exports the Node runtime implementation.
- * In browsers, bundlers resolve the "browser" condition in package.json
- * exports to browser.ts instead of this file.
- *
- * After initStrada(), standard OTel APIs work: trace.getTracer(),
- * logs.getLogger(), metrics.getMeter(). The SDK just configures them
- * correctly for Strada. captureException/track are optional sugar.
- *
- * Users who want explicit control can import from:
- * - "@strada.sh/sdk/node"
- * - "@strada.sh/sdk/browser"
+ * Default entry point for @strada.sh/sdk (Node.js, Bun, Deno).
+ * Browsers resolve the "browser" export condition to browser.ts and
+ * Cloudflare Workers resolve "workerd" to cloudflare.ts.
  */
 
-export {
-  initStrada,
-  captureException,
-  track,
-  trackPageview,
-  identifyUser,
-  startSpan,
-  startInactiveSpan,
-  getLogger,
-  flush,
-  shutdown,
-  setTags,
-  type StradaOptions,
-  type StradaTelemetryOptions,
-  type TrackPageviewOptions,
-  type StradaUserIdentity,
-  type CaptureExceptionOptions,
-  type StartSpanOptions,
-  type DisposableSpan,
-  type StradaLogger,
-  type BatchSpanProcessorBrowserConfig,
-  type BatchLogRecordProcessorBrowserConfig,
-  type PeriodicExportingMetricReaderOptions,
-  // OTel API re-exports
-  trace,
-  context,
-  metrics,
-  propagation,
-  diag,
-  SpanStatusCode,
-  SpanKind,
-  SeverityNumber,
-  logs,
-  type Tracer,
-  type Span,
-  type SpanContext,
-  type SpanOptions,
-  type SpanAttributes,
-  type Logger,
-} from "./node.ts";
+export * from "./node.ts";

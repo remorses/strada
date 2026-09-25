@@ -13,16 +13,32 @@
  * into `context.context.responseHeaders`.
  */
 
-import { logs, SeverityNumber } from "@opentelemetry/api-logs";
 import type { BetterAuthPlugin } from "better-auth";
+import { logs, SeverityNumber } from "./api.ts";
 import { ATTR } from "./attrs.ts";
 import {
   DEFAULT_USER_ID_COOKIE,
   emitUserIdentifyLog,
-  captureExceptionViaOtel,
+  ERROR_SEVERITY,
+  ERROR_SEVERITY_TEXT,
+  errorToAttributes,
+  prepareErrorForCapture,
   tryTelemetry,
   tryTelemetryAsync,
 } from "./shared.ts";
+
+/** captureException with the plugin's own logger scope. */
+function captureAuthError(error: unknown): void {
+  const prepared = prepareErrorForCapture(error);
+  if (prepared === null) return;
+  logs.getLogger("strada-better-auth").emit({
+    eventName: "exception",
+    severityNumber: ERROR_SEVERITY,
+    severityText: ERROR_SEVERITY_TEXT,
+    body: prepared.message,
+    attributes: errorToAttributes(prepared, { tags: { source: "better-auth" } }),
+  });
+}
 
 export interface StradaBetterAuthOptions {
   /** Disable all cookie and event behavior while keeping the plugin registered. */
@@ -156,10 +172,7 @@ export function strataBetterAuth(options: StradaBetterAuthOptions = {}) {
               void tryTelemetry({
                 operation: "betterAuth onAPIError",
                 run: () => {
-                  void captureExceptionViaOtel(error, {
-                    tags: { source: "better-auth" },
-                    loggerName: "strada-better-auth",
-                  });
+                  captureAuthError(error);
                   console.error(
                     "[better-auth]",
                     error instanceof Error ? error.message : String(error),

@@ -220,7 +220,7 @@ Four packages in a pnpm monorepo, sharing a single D1 database:
 - **website/** — Cloudflare Worker (Spiceflow + BetterAuth). Handles auth (Google social login, device flow for CLI), org/project management API, database config storage, and query bridge to Tinybird/ClickHouse. The control plane.
 - **otel-collector/** — Cloudflare Worker (Spiceflow). Receives OTLP HTTP/JSON and forwards to Tinybird or ClickHouse as NDJSON. Shares the D1 binding with the website to resolve project config at ingest time. No env vars for credentials; everything comes from D1.
 - **cli/** — CLI tool (`strada`). Authenticates via device flow, manages projects, runs queries through the website API. Uses spiceflow typed fetch client with the website App type.
-- **sdk/** — OTel-first SDK for Node.js and browser.
+- **sdk/** — zero-dependency SDK with an OTel-compatible API for Node.js, browsers, and Workers.
 - **tinybird/** — Tinybird datasource definitions and materialized views, deployed with `tb deploy` via the CLI database create command.
 
 ## Website multi-tenant security
@@ -294,36 +294,21 @@ The only Strada addition is `ProjectId` as the first column in every table for p
 
 ## SDK (`@strada.sh/sdk`)
 
-The SDK lives in `sdk/` and is the main package users install. It is **OTel-first**: after `initStrada()`, the global OTel providers are registered and users can use standard OTel APIs (`trace.getTracer()`, `logs.getLogger()`, `metrics.getMeter()`) directly. The SDK re-exports these from `@opentelemetry/api` so users don't need to install it separately.
+The SDK lives in `sdk/` and is the main package users install. It has **zero runtime dependencies**. It implements the OpenTelemetry API surface itself (`sdk/src/api.ts`: context, trace, W3C propagation, logs, metrics) with the same shapes as `@opentelemetry/api`, and exports OTLP JSON with `fetch` (`sdk/src/export.ts`).
 
 ### Design principle
 
-The SDK is a **configuration and convenience layer**, not a replacement for OTel. It:
+1. `api.ts` is OTel-shaped: code written against `@opentelemetry/api` works when it imports `trace`, `logs`, `metrics`, `context`, `propagation` from `@strada.sh/sdk`
+2. `export.ts` batches records, reads every response body (keep-alive reuse), sends endpoints sequentially, and unrefs timers
+3. Runtime entries (`node.ts`, `browser.ts`, `cloudflare.ts`) call `initCore()` (shared.ts) and set `runtimeHooks` for enrichment (`onSpanStart`, `onLogEmit`), flush scheduling (`afterRecord`), and the Cloudflare span bridge (`wrapActiveSpan`)
+4. `@strada.sh/sdk/otel` (`registerOpenTelemetry()`) registers these providers into the real `@opentelemetry/api` globals. `@opentelemetry/api` and `api-logs` are **optional peer deps**, only needed by that entry
+5. Never add a runtime dependency to `sdk/`. Never auto-patch modules; auto-instrumentation is the user's opt-in through `/otel`
 
-1. Configures OTel providers, exporters, and processors for the Strada endpoint
-2. Installs global error handlers (uncaughtException, unhandledrejection, window.error)
-3. Provides convenience helpers (`captureException`, `track`, `setTags`)
-4. Injects Strada-specific context (session.id, visitor.id, url.*, user.id) into every span and log
+Context keys use `Symbol.for()` with the exact OTel descriptions (`OpenTelemetry Context Key SPAN`, `OpenTelemetry Baggage Key`) so spans and baggage set by `@opentelemetry/api` helpers are visible to the SDK. `src/otel.test.ts` verifies this with the real `@opentelemetry/instrumentation-http`.
 
-Users migrating from raw OTel code only need to replace their provider setup with `initStrada()`. Their existing `tracer.startSpan()`, `logger.emit()`, `meter.createCounter()` code works unchanged.
+### OTel-shaped exports
 
-### Re-exported OTel APIs
-
-These are re-exported from all entry points (`@strada.sh/sdk`, `@strada.sh/sdk/node`, `@strada.sh/sdk/browser`):
-
-| Export | From | Purpose |
-|--------|------|---------|
-| `trace` | `@opentelemetry/api` | `trace.getTracer()` to create spans |
-| `context` | `@opentelemetry/api` | Context propagation |
-| `metrics` | `@opentelemetry/api` | `metrics.getMeter()` for counters, histograms |
-| `propagation` | `@opentelemetry/api` | Trace context propagation |
-| `diag` | `@opentelemetry/api` | OTel diagnostic logging |
-| `logs` | `@opentelemetry/api-logs` | `logs.getLogger()` for log records |
-| `SpanStatusCode` | `@opentelemetry/api` | Span status enum (OK, ERROR, UNSET) |
-| `SpanKind` | `@opentelemetry/api` | Span kind enum (SERVER, CLIENT, etc.) |
-| `SeverityNumber` | `@opentelemetry/api-logs` | Log severity enum (INFO, ERROR, etc.) |
-
-Plus types: `Tracer`, `Span`, `SpanContext`, `SpanOptions`, `SpanAttributes`, `Logger`.
+Exported from every entry point: `trace`, `context`, `propagation`, `logs`, `metrics`, `SpanStatusCode`, `SpanKind`, `SeverityNumber`, `ROOT_CONTEXT`, plus types `Tracer`, `Span`, `SpanContext`, `SpanOptions`, `Context`, `Logger`, `Meter`, `Baggage`. There is no `diag`.
 
 ### Convenience helpers (optional sugar)
 
@@ -368,7 +353,7 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 
 **ContextLogProcessor.** Wraps the log processor chain and injects `session.id`, `visitor.id`, `url.path`, `url.full`, `user.id` into every log record.
 
-**FilteringLogProcessor.** Drops known browser noise at the processor level: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
+**Default error filters.** `DEFAULT_IGNORE_ERRORS` and `DEFAULT_DENY_URLS` in `shared.ts` drop known browser noise in `captureException()`: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
 
 **Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. A Navigation API `navigate` listener cycles pageviews only for `destination.sameDocument`.
 
@@ -376,24 +361,22 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 
 ### Node-specific features
 
-The Node entry (`sdk/src/node.ts`) wraps `@opentelemetry/sdk-node`:
+The Node entry (`sdk/src/node.ts`):
 
-- Configures OTLP HTTP exporters for traces, logs, and metrics
-- Configures W3C Baggage extraction via `BaggageSpanProcessor` and `BaggageLogProcessor`
-- Parent-to-child span context propagation (url.path, http.route, etc.)
-- Old HTTP semconv normalization (http.target, http.url → url.path)
-- Installs `process.on('uncaughtException')` and `process.on('unhandledRejection')`
-- Flushes and exits on fatal errors
-- Graceful shutdown on SIGTERM/SIGINT
-- Auto-instrumentation via `@opentelemetry/auto-instrumentations-node` (optional peer dep, loaded via dynamic import)
+- AsyncLocalStorage context manager
+- request enrichment through `serverHooks` (`sdk/src/server.ts`): parent-to-child request attrs (url.path, http.route, ...), old HTTP semconv normalization, `session.id` / `user.id` from baggage
+- `process.on('uncaughtException')` (capture, flush, exit 1) and `unhandledRejection`, skipped with `captureUncaughtErrors: false`
+- `beforeExit` flush. **No SIGINT/SIGTERM handlers**: a listener would stop Ctrl+C from exiting the process
+- Vercel `waitUntil` flush through `Symbol.for('@vercel/request-context')`
+- no host/process resource detectors (privacy: no hostname or OS username)
 
 ### Browser-to-server context propagation (W3C Baggage)
 
 The SDK propagates `session.id` and `user.id` from the browser to the backend using **W3C Baggage**. This is a standard OTel mechanism that carries key-value pairs in a `baggage` HTTP header alongside `traceparent`.
 
-**Browser side:** The `PageviewContextManager` injects a Baggage object containing `strada.session.id` and `user.id` into the active OTel context. A `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator` serializes both headers on every outgoing `fetch`/`XHR`.
+**Browser side:** The `PageviewContextManager` puts a Baggage object containing `strada.session.id` and `user.id` into the active context. The SDK does not patch `fetch`: headers are written by `propagation.inject(context.active(), headers)` or by `@opentelemetry/instrumentation-fetch` registered through `/otel`.
 
-**Node side:** `BaggageSpanProcessor` reads the baggage from the incoming request context and sets `session.id` and `user.id` as span attributes. `BaggageLogProcessor` does the same for log records. This happens automatically for every backend span/log within a browser-initiated request.
+**Server side:** after `propagation.extract()` (or an OTel HTTP instrumentation) puts the incoming baggage into the context, `serverHooks` sets `session.id` and `user.id` on every span and log record in that request.
 
 **Result:** Backend spans and logs carry the same `session.id` and `user.id` as browser telemetry. No app code needed. The data lands in the same ClickHouse attribute maps (`SpanAttributes`, `LogAttributes`), so existing SQL queries that filter by `session.id` or `user.id` automatically return both browser and backend rows. `ServiceName` distinguishes the origin.
 
@@ -403,7 +386,7 @@ Browser request (session.id = abc, user.id = user_123)
   | headers: traceparent: ..., baggage: strada.session.id=abc,user.id=user_123
   |
   v
-Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
+Backend (serverHooks read session.id + user.id from baggage)
   +-- span: POST /api/checkout     -> session.id=abc, user.id=user_123
   +-- log: "purchase" event        -> session.id=abc, user.id=user_123
 ```
@@ -412,17 +395,17 @@ Backend (BaggageSpanProcessor + BaggageLogProcessor extract from baggage)
 
 **No SQL changes needed.** Baggage is only a transport mechanism. Once extracted, the values become regular span/log attributes stored in the same Map columns, indexed by the same bloom filters.
 
-### Server-side request context propagation (BaggageSpanProcessor + BaggageLogProcessor)
+### Server-side request context propagation (serverHooks)
 
 Beyond baggage, the server SDK processors also propagate **request-scoped context attributes** so that `captureException()`, `track()`, and manual logs inside any HTTP handler automatically carry the request URL without app code doing anything.
 
-**BaggageSpanProcessor** does two things on every `onStart`:
+**`serverHooks.onSpanStart`** (`sdk/src/server.ts`) does two things on every span start:
 
 1. **Parent-to-child propagation.** Copies curated request-context attributes (`url.path`, `url.full`, `http.route`, `http.method`, etc.) from the parent span to the child span, but only if the child doesn't already have them. This means a DB query span nested inside an HTTP handler span inherits the handler's `url.path`. A child span that has its own URL attrs (e.g., an HTTP client call to Stripe) keeps its own values.
 
 2. **Old semconv normalization.** If neither the child nor the parent has `url.path` but has `http.target` (old OTel semconv) or `http.url`, the processor derives `url.path` from them. `http.target` gets its query string stripped; `http.url` gets parsed as a URL and the pathname extracted. The `deriveUrlPath()` helper in `shared.ts` handles this.
 
-**BaggageLogProcessor** reads the active span's attributes and injects curated context keys into every log record. The curated list is `SPAN_CONTEXT_ATTR_KEYS` in `shared.ts`. It also normalizes old semconv into `url.path` via `deriveUrlPath()`. Only sets values not already present on the log record (uses `hasOwnProperty` check).
+**`serverHooks.onLogEmit`** reads the active span's attributes and injects curated context keys into every log record. The curated list is `SPAN_CONTEXT_ATTR_KEYS` in `shared.ts`. It also normalizes old semconv into `url.path` via `deriveUrlPath()`. Only sets values not already present on the log record (uses `hasOwnProperty` check).
 
 ```
 HTTP Handler Span (url.path="/api/orders", http.method="GET")
@@ -432,7 +415,7 @@ HTTP Handler Span (url.path="/api/orders", http.method="GET")
   │     └── captureException(err)
   │           │
   │           ▼
-  │         BaggageLogProcessor reads active span (DB Query)
+  │         onLogEmit reads active span (DB Query)
   │         → url.path="/api/orders" injected into log record
   │         → error row in otel_errors has Tags["url.path"]="/api/orders"
   │
@@ -441,7 +424,7 @@ HTTP Handler Span (url.path="/api/orders", http.method="GET")
         └── captureException(err)
               │
               ▼
-            BaggageLogProcessor reads active span (HTTP Client)
+            onLogEmit reads active span (HTTP Client)
             → url.path="/v1/payment_intents" (child's own, NOT parent's)
 ```
 
@@ -455,12 +438,13 @@ HTTP Handler Span (url.path="/api/orders", http.method="GET")
 
 ### Optional peer dependencies
 
-| Package | What it adds | Loaded via |
-|---------|-------------|------------|
-| `@opentelemetry/auto-instrumentations-node` | Auto-instrument http, express, pg, mysql, redis, etc. | `import()` in node.ts |
-| `@opentelemetry/auto-instrumentations-web` | Auto-instrument fetch, XHR, document load, user interaction | `import()` in browser.ts |
+| Package | Needed by |
+|---------|-----------|
+| `@opentelemetry/api`, `@opentelemetry/api-logs` | `@strada.sh/sdk/otel` only |
+| `better-auth` | `@strada.sh/sdk/better-auth` only |
+| `vite` | `@strada.sh/sdk/vite` only |
 
-Both are loaded with dynamic `import()` so the package stays ESM-clean and works without them installed.
+Auto-instrumentation packages (`@opentelemetry/auto-instrumentations-node`, `-web`) are never imported by the SDK. Users register them after `registerOpenTelemetry()`.
 
 ## Project isolation
 

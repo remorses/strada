@@ -354,11 +354,11 @@ The log record is automatically correlated with the active pageview span via `Tr
 
 ### Backend custom events
 
-The same pattern works on the backend. When you emit a log inside an active span's context, the OTel SDK automatically stamps the log record with the span's `TraceId` and `SpanId`. No extra code needed.
+The same pattern works on the backend. When you emit a log inside an active span's context, the SDK automatically stamps the log record with the span's `TraceId` and `SpanId`. No extra code needed.
 
 ```typescript
 // Node.js backend
-import { logs } from '@opentelemetry/api-logs'
+import { logs } from '@strada.sh/sdk'
 
 const logger = logs.getLogger('my-api')
 
@@ -426,8 +426,8 @@ initStrada({
 The SDK:
 1. Generates or restores `session.id` from `sessionStorage`
 2. Generates or restores `visitor.id` from cookie `strada_vid`
-3. Initializes `WebTracerProvider` with `BatchSpanProcessor`
-4. Attaches a span processor that injects `session.id`, `visitor.id`, and `user.id` onto every span
+3. Starts the batched OTLP JSON exporter
+4. Adds a span hook that injects `session.id`, `visitor.id`, and `user.id` onto every span
 5. Starts the first pageview span
 
 ---

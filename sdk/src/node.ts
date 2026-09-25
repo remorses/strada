@@ -1,719 +1,100 @@
 /**
- * Node.js runtime entry for @strada.sh/sdk.
+ * Node.js, Bun, and Deno entry for @strada.sh/sdk. Zero dependencies.
  *
- * Wires OTel providers directly (NodeTracerProvider, MeterProvider,
- * LoggerProvider) instead of using @opentelemetry/sdk-node which pulls in
- * every exporter variant (gRPC, proto, zipkin, prometheus), YAML config
- * parsing, and ~2MB of unnecessary dependencies. We only need HTTP/JSON.
- *
- * Vercel auto-detection: when VERCEL=1 is set, the SDK switches from
- * timer-based batch flushing to per-span/log waitUntil flushing. Vercel
- * freezes the Node.js process between requests so batch timers never fire,
- * and kills it on scale-to-zero so buffered data is lost. waitUntil keeps
- * the function alive until telemetry is delivered. No extra imports needed —
- * Vercel exposes waitUntil via globalThis[Symbol.for('@vercel/request-context')].
+ * - Context survives `await` through AsyncLocalStorage.
+ * - Resource is only what you configure plus release metadata from env
+ *   (STRADA_RELEASE_*, VERCEL_GIT_*, GITHUB_SHA, ...). No hostname, OS
+ *   username, or command args.
+ * - Uncaught exceptions and unhandled rejections are captured unless
+ *   `captureUncaughtErrors: false`. An uncaught exception still exits with
+ *   code 1 after a flush, like Node without a handler.
+ * - Buffered telemetry is flushed on `beforeExit`. The SDK installs no
+ *   SIGINT/SIGTERM handlers, so Ctrl+C keeps its default behavior; call
+ *   `flush()` in your own shutdown handler.
+ * - On Vercel, every record registers a `waitUntil` flush through the native
+ *   request context (`Symbol.for('@vercel/request-context')`), because Vercel
+ *   freezes the process between requests and batch timers never fire.
  */
 
-// Trace + log exporters come from @strada.sh/otlp-json (JSON-only, no
-// protobufjs) so the whole SDK shares one exporter implementation. The metrics
-// exporter is still the official one — node.ts never runs under workerd, so its
-// protobuf transitive dep is harmless here.
-import { OTLPTraceExporter, OTLPLogExporter } from "@strada.sh/otlp-json";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
-import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import {
-  type BatchLogRecordProcessorBrowserConfig,
-  LoggerProvider,
-  BatchLogRecordProcessor,
-} from "@opentelemetry/sdk-logs";
-import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import type { Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import {
-  defaultResource,
-  detectResources,
-  envDetector,
-  processDetector,
-  hostDetector,
-  resourceFromAttributes,
-} from "@opentelemetry/resources";
-import { logs } from "@opentelemetry/api-logs";
-import type { Logger } from "@opentelemetry/api-logs";
-import { context as otelContext, metrics, propagation, trace } from "@opentelemetry/api";
-import type { Context } from "@opentelemetry/api";
-import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncContextManager, runtimeHooks, setContextManager, type Context } from "./api.ts";
+import { ATTR } from "./attrs.ts";
+import { captureException, flush } from "./client.ts";
+import { serverHooks } from "./server.ts";
+import { initCore, normalizeError, resolveReleaseAttributes, tryTelemetry, type StradaOptions } from "./shared.ts";
 
-import {
-  type BatchSpanProcessorBrowserConfig,
-  type StradaOptions,
-  type CaptureExceptionOptions,
-  type StradaTelemetryOptions,
-  type TrackPageviewOptions,
-  type StradaLogger,
-  normalizeError,
-  prepareErrorForCapture,
-  errorToAttributes,
-  recordExceptionOnSpan,
-  createStradaLogger,
-  setTags,
-  resetContext,
-  resolveMetricReaderOptions,
-  resolveBatchOptions,
-  resolveEndpoint,
-  resolveIngestHeaders,
-  resolveReleaseAttributes,
-  shouldExportTelemetry,
-  tryTelemetry,
-  tryTelemetryAsync,
-  emitUserIdentifyLog,
-  buildPageviewAttributes,
-  ATTR,
-  BAGGAGE_SESSION_ID,
-  BAGGAGE_USER_ID,
-  SPAN_CONTEXT_ATTR_KEYS,
-  readSpanAttributes,
-  deriveUrlPath,
-  type StradaUserIdentity,
-  ERROR_SEVERITY,
-  ERROR_SEVERITY_TEXT,
-  INFO_SEVERITY,
-  INFO_SEVERITY_TEXT,
-} from "./shared.ts";
+export * from "./client.ts";
+export { identifyUser, trackPageview } from "./server.ts";
 
-// Re-export shared types, helpers, and OTel primitives so users only need one import
-export {
-  type StradaOptions,
-  type CaptureExceptionOptions,
-  type StradaTelemetryOptions,
-  type TrackPageviewOptions,
-  type StradaUserIdentity,
-  type StartSpanOptions,
-  type DisposableSpan,
-  setTags,
-  startSpan,
-  startInactiveSpan,
-  type BatchSpanProcessorBrowserConfig,
-  type BatchLogRecordProcessorBrowserConfig,
-  type PeriodicExportingMetricReaderOptions,
-  // OTel API re-exports
-  trace,
-  context,
-  metrics,
-  propagation,
-  diag,
-  SpanStatusCode,
-  SpanKind,
-  SeverityNumber,
-  logs,
-  type Tracer,
-  type Span,
-  type SpanContext,
-  type SpanOptions,
-  type SpanAttributes,
-  type Logger,
-} from "./shared.ts";
-export type { StradaLogger } from "./shared.ts";
+const VERCEL_REQUEST_CONTEXT = Symbol.for("@vercel/request-context");
 
-// ---------------------------------------------------------------------------
-// Vercel waitUntil (no package import — reads from native request context)
-// ---------------------------------------------------------------------------
-// Vercel populates globalThis[Symbol.for('@vercel/request-context')] on every
-// request. Calling .waitUntil() on it keeps the function alive after the HTTP
-// response is sent, preventing buffered telemetry from being dropped on freeze
-// or scale-to-zero.
-//
-// Detection: we read the native request context directly rather than checking
-// process.env.VERCEL, because Vercel only sets that env var when "System
-// Environment Variables" are enabled in project settings — a valid Vercel
-// deployment can have the request context without the env var.
-//
-// Pattern from spiceflow's wait-until.ts and @vercel/functions source:
-//   https://npmx.dev/package-code/@vercel/functions/v/3.4.3/wait-until.js
+type VercelRequestContext = { get?: () => { waitUntil?: (promise: Promise<unknown>) => void } | undefined };
 
-const _VERCEL_CTX = Symbol.for("@vercel/request-context");
-
-function getNativeVercelWaitUntil(): ((p: Promise<unknown>) => void) | undefined {
-  return (globalThis as any)[_VERCEL_CTX]?.get?.()?.waitUntil;
+function getVercelWaitUntil(): ((promise: Promise<unknown>) => void) | undefined {
+  const holder = (globalThis as Record<symbol, VercelRequestContext | undefined>)[VERCEL_REQUEST_CONTEXT];
+  return holder?.get?.()?.waitUntil;
 }
 
-// ---------------------------------------------------------------------------
-// Auto-flush processors (always installed, no-op when not on Vercel)
-// ---------------------------------------------------------------------------
-// BatchSpanProcessor timers are suspended when Vercel freezes the process
-// between requests. AutoFlushSpanProcessor and AutoFlushLogProcessor call
-// scheduleFlush() after each span/log. scheduleFlush() checks for the native
-// Vercel waitUntil at call time — if it's present (i.e. we're inside a Vercel
-// request), it registers a flush that keeps the function alive. If not (local
-// dev, long-running server), it's a no-op so batch timers handle export as usual.
+let flushScheduled = false;
 
-class AutoFlushSpanProcessor implements SpanProcessor {
-  onStart(): void {}
-
-  onEnd(): void {
-    scheduleFlush();
-  }
-
-  forceFlush(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  shutdown(): Promise<void> {
-    return Promise.resolve();
-  }
-}
-
-class AutoFlushLogProcessor implements LogRecordProcessor {
-  constructor(private readonly inner: LogRecordProcessor) {}
-
-  onEmit(...args: Parameters<LogRecordProcessor["onEmit"]>): void {
-    this.inner.onEmit(...args);
-    scheduleFlush();
-  }
-
-  forceFlush(): Promise<void> {
-    return this.inner.forceFlush();
-  }
-
-  shutdown(): Promise<void> {
-    return this.inner.shutdown();
-  }
-}
-
-let _flushScheduled = false;
-
-function scheduleFlush(): void {
-  // Only activate when Vercel's native waitUntil is present in the current
-  // request context. On a regular long-running Node.js server this returns
-  // undefined and we skip the flush — batch timers handle export as usual.
-  const waitUntil = getNativeVercelWaitUntil();
-  if (!waitUntil) return;
-
-  if (_flushScheduled) return;
-  _flushScheduled = true;
+/** No-op outside a Vercel request: batch timers handle export as usual. */
+function scheduleVercelFlush(): void {
+  const waitUntil = getVercelWaitUntil();
+  if (!waitUntil || flushScheduled) return;
+  flushScheduled = true;
   waitUntil(
     Promise.resolve().then(async () => {
-      _flushScheduled = false;
-      await Promise.all([
-        _tracerProvider?.forceFlush(),
-        _loggerProvider?.forceFlush(),
-        _meterProvider?.forceFlush(),
-      ]);
+      flushScheduled = false;
+      // flush() already warned about failures; nobody else can handle them here.
+      void (await flush());
     }),
   );
 }
 
-// ---------------------------------------------------------------------------
-// Baggage-extracting span processor
-// ---------------------------------------------------------------------------
+let processHandlersInstalled = false;
 
-/**
- * Reads session.id and user.id from incoming W3C Baggage (propagated by the
- * browser SDK) and sets them as span attributes. Also propagates curated
- * request-context attributes (url.path, http.route, etc.) from parent spans
- * to child spans so nested spans inherit the HTTP handler's URL context.
- *
- * Without parent propagation, captureException() inside a child span
- * (e.g. a DB query span) would not see url.path because only the parent
- * HTTP handler span has it.
- */
-class BaggageSpanProcessor implements SpanProcessor {
-  onStart(span: Span, parentContext: Context): void {
-    // Read the child span's own attributes (set via options.attributes
-    // before processors run) so we don't overwrite them with parent values.
-    const spanAttrs = readSpanAttributes(span) ?? {};
-    const has = (key: string) =>
-      Object.prototype.hasOwnProperty.call(spanAttrs, key);
+function installProcessHandlers(options: StradaOptions): void {
+  if (processHandlersInstalled || typeof process === "undefined" || typeof process.on !== "function") return;
+  processHandlersInstalled = true;
 
-    // Normalize the child's own old HTTP semconv into url.path first,
-    // so a child span with http.target but no url.path gets normalized
-    // before parent propagation fills in the gap.
-    if (!has(ATTR["url.path"])) {
-      const derivedFromChild = deriveUrlPath(spanAttrs);
-      if (derivedFromChild) span.setAttribute(ATTR["url.path"], derivedFromChild);
-    }
+  // beforeExit fires when the event loop drains (not on process.exit() or
+  // signals) and can run async work. One shot, so a flush cannot loop.
+  const beforeExitHandler = () => {
+    process.removeListener("beforeExit", beforeExitHandler);
+    void flush();
+  };
+  process.on("beforeExit", beforeExitHandler);
 
-    // Propagate curated context attrs from parent span to child.
-    // Only set if the child doesn't already have the key, so a client
-    // span "POST /v1/payment_intents" is not overwritten by the parent
-    // server span "GET /checkout".
-    const parentSpan = trace.getSpan(parentContext);
-    if (parentSpan) {
-      const parentAttrs = readSpanAttributes(parentSpan);
-      if (parentAttrs) {
-        for (const key of SPAN_CONTEXT_ATTR_KEYS) {
-          const value = parentAttrs[key];
-          if (value != null && !has(key)) {
-            span.setAttribute(key, String(value));
-          }
-        }
-        // Derive url.path from parent's old semconv if child still has none
-        if (!has(ATTR["url.path"]) && !spanAttrs[ATTR["url.path"]]) {
-          const derivedFromParent = deriveUrlPath(parentAttrs);
-          if (derivedFromParent) span.setAttribute(ATTR["url.path"], derivedFromParent);
-        }
-      }
-    }
-
-    const baggage = propagation.getBaggage(parentContext);
-    if (!baggage) return;
-
-    const sessionId = baggage.getEntry(BAGGAGE_SESSION_ID)?.value;
-    if (sessionId) {
-      span.setAttribute(ATTR["session.id"], sessionId);
-    }
-
-    const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
-    if (userId) {
-      span.setAttribute(ATTR["user.id"], userId);
-    }
-  }
-
-  onEnd(): void {
-    // no-op
-  }
-
-  forceFlush(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  shutdown(): Promise<void> {
-    return Promise.resolve();
-  }
+  if (options.captureUncaughtErrors === false) return;
+  // The SDK's own handlers drop the Error that captureException and flush
+  // return: there is nobody left to report it to, and it was already warned.
+  process.on("uncaughtException", (error) => {
+    void captureException(error, { handled: false, mechanism: "uncaughtException" });
+    void flush().finally(() => process.exit(1));
+  });
+  process.on("unhandledRejection", (reason) => {
+    void captureException(normalizeError(reason), { handled: false, mechanism: "unhandledRejection" });
+  });
 }
 
-// ---------------------------------------------------------------------------
-// Baggage-extracting log processor
-// ---------------------------------------------------------------------------
-
-/**
- * Wraps another LogRecordProcessor and injects session.id and user.id from
- * incoming W3C Baggage into every log record. This means backend custom
- * events (track()) and error logs within a browser-initiated request are
- * automatically correlated to the browser session.
- */
-class BaggageLogProcessor implements LogRecordProcessor {
-  constructor(private readonly inner: LogRecordProcessor) {}
-
-  onEmit(...args: Parameters<LogRecordProcessor["onEmit"]>): void {
-    const record = args[0];
-    const baggage = propagation.getBaggage(otelContext.active());
-    if (baggage) {
-      const sessionId = baggage.getEntry(BAGGAGE_SESSION_ID)?.value;
-      if (sessionId) {
-        record.setAttribute(ATTR["session.id"], sessionId);
-      }
-
-      const userId = baggage.getEntry(BAGGAGE_USER_ID)?.value;
-      if (userId) {
-        record.setAttribute(ATTR["user.id"], userId);
-      }
-    }
-
-    // Inject request-scoped context from the active span (url.path,
-    // http.route, etc.) so captureException() and track() calls inside
-    // HTTP handlers automatically carry the request URL.
-    const activeSpan = trace.getSpan(otelContext.active());
-    if (activeSpan) {
-      const spanAttrs = readSpanAttributes(activeSpan);
-      if (spanAttrs) {
-        for (const key of SPAN_CONTEXT_ATTR_KEYS) {
-          const value = spanAttrs[key];
-          if (value != null && !Object.prototype.hasOwnProperty.call(record.attributes, key)) {
-            record.setAttribute(key, String(value));
-          }
-        }
-        // Normalize old HTTP semconv into url.path if not already set
-        if (!Object.prototype.hasOwnProperty.call(record.attributes, ATTR["url.path"])) {
-          const derived = deriveUrlPath(spanAttrs);
-          if (derived) record.setAttribute(ATTR["url.path"], derived);
-        }
-      }
-    }
-
-    this.inner.onEmit(...args);
-  }
-
-  forceFlush(): Promise<void> {
-    return this.inner.forceFlush();
-  }
-
-  shutdown(): Promise<void> {
-    return this.inner.shutdown();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Module state
-// ---------------------------------------------------------------------------
-
-let _tracerProvider: NodeTracerProvider | undefined;
-let _meterProvider: MeterProvider | undefined;
-let _loggerProvider: LoggerProvider | undefined;
-let _logger: Logger | undefined;
-let _options: StradaOptions | undefined;
-
-export function getLogger(name = "strada"): StradaLogger {
-  return createStradaLogger((loggerName) => _loggerProvider?.getLogger(loggerName), undefined, name);
-}
-
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
-
-/**
- * Initialize Strada for Node.js. Call this once at app startup, before any
- * application code runs (ideally in a separate instrumentation.ts loaded
- * via --import).
- *
- * On Vercel, automatically switches to waitUntil-based flushing so telemetry
- * is not lost when the function freezes or scales to zero. Detected via
- * Vercel's native request context (not process.env.VERCEL which is unreliable).
- * No extra imports or config needed — works automatically.
- *
- * This sets up:
- * - NodeTracerProvider with BaggageSpanProcessor + BatchSpanProcessor (HTTP/JSON)
- * - MeterProvider with PeriodicExportingMetricReader (HTTP/JSON)
- * - LoggerProvider with BaggageLogProcessor + BatchLogRecordProcessor (HTTP/JSON)
- * - W3C TraceContext + Baggage propagation
- * - Auto-instrumentation (http, express, pg, mysql, redis, etc.) if installed
- * - Global uncaughtException / unhandledRejection handlers
- * - captureException() for manual error reporting
- */
 export function initStrada(options: StradaOptions): Error | undefined {
   return tryTelemetry({
     operation: "initStrada()",
     run: () => {
-      setupStrada(options);
-    },
-  });
-}
-
-/**
- * The real setup. Split out so the public entry point can turn a throw into a
- * returned Error: a broken telemetry setup must never stop an app from
- * booting. The app runs with telemetry off instead.
- */
-function setupStrada(options: StradaOptions): void {
-  if (_tracerProvider) {
-    console.warn(
-      "[@strada.sh/sdk] initStrada() was already called. Ignoring duplicate init.",
-    );
-    return;
-  }
-
-  _options = options;
-
-  // Build resource by merging layers, same as NodeSDK did:
-  // 1. defaultResource() adds telemetry.sdk.* attributes
-  // 2. detectResources() adds process.*, host.*, and OTEL_RESOURCE_ATTRIBUTES
-  // 3. Our custom service.* attributes take highest priority (last merge wins)
-  const resource = defaultResource()
-    .merge(detectResources({ detectors: [envDetector, processDetector, hostDetector] }))
-    .merge(
-      resourceFromAttributes({
-        [ATTR["service.name"]]: options.service,
-        ...resolveReleaseAttributes(options, process.env),
-        ...(options.environment
-          ? { [ATTR["deployment.environment.name"]]: options.environment }
-          : {}),
-      }),
-    );
-
-  const exportTelemetry = shouldExportTelemetry(options);
-  const endpoint = exportTelemetry ? resolveEndpoint(options) : undefined;
-  const ingestHeaders = resolveIngestHeaders(options);
-
-  // Log provider (used for both logs and error capture).
-  // Wrapped in BaggageLogProcessor to extract session.id and user.id from
-  // incoming W3C Baggage (propagated by the browser SDK via fetch headers).
-  // AutoFlushLogProcessor calls scheduleFlush() on every emit — scheduleFlush()
-  // is a no-op unless Vercel's native waitUntil is present in the request context,
-  // so this adds zero overhead on regular long-running servers.
-  _loggerProvider = new LoggerProvider({
-    resource,
-    processors: exportTelemetry
-      ? [
-          new AutoFlushLogProcessor(
-            new BaggageLogProcessor(
-              new BatchLogRecordProcessor(
-                new OTLPLogExporter({ url: `${endpoint}/v1/logs`, headers: ingestHeaders }),
-                resolveBatchOptions(options.telemetry?.logs),
-              ),
-            ),
-          ),
-        ]
-      : [],
-  });
-  logs.setGlobalLoggerProvider(_loggerProvider);
-  _logger = _loggerProvider.getLogger("strada");
-
-  // Tracer provider with BaggageSpanProcessor to extract session.id and
-  // user.id from incoming W3C Baggage, plus BatchSpanProcessor for export.
-  // AutoFlushSpanProcessor calls scheduleFlush() on every span end — no-op
-  // unless Vercel's native waitUntil is present in the current request context.
-  const spanProcessors: SpanProcessor[] = [
-    new BaggageSpanProcessor(),
-    ...(exportTelemetry
-      ? [
-          new BatchSpanProcessor(
-            new OTLPTraceExporter({ url: `${endpoint}/v1/traces`, headers: ingestHeaders }),
-            resolveBatchOptions(options.telemetry?.traces),
-          ),
-          new AutoFlushSpanProcessor(),
-        ]
-      : []),
-  ];
-
-  _tracerProvider = new NodeTracerProvider({ resource, spanProcessors });
-  // register() sets global tracer provider, enables AsyncLocalStorageContextManager,
-  // and configures W3C TraceContext + Baggage propagation.
-  _tracerProvider.register({
-    propagator: new CompositePropagator({
-      propagators: [
-        new W3CTraceContextPropagator(),
-        new W3CBaggagePropagator(),
-      ],
-    }),
-  });
-
-  // Meter provider for metrics export via HTTP/JSON.
-  _meterProvider = new MeterProvider({
-    resource,
-    readers: exportTelemetry
-      ? [
-          new PeriodicExportingMetricReader({
-            exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics`, headers: ingestHeaders }),
-            ...resolveMetricReaderOptions(options),
-          }),
-        ]
-      : [],
-  });
-  metrics.setGlobalMeterProvider(_meterProvider);
-
-  // The SDK's own handlers deliberately drop the Error that captureException
-  // and flush return: there is nobody left to report it to, and tryTelemetry
-  // already logged it. Reporting it again here would recurse.
-  process.on("uncaughtException", (error) => {
-    void captureException(error, {
-      handled: false,
-      mechanism: "uncaughtException",
-    });
-    void flush().finally(() => process.exit(1));
-  });
-
-  process.on("unhandledRejection", (reason) => {
-    const error = normalizeError(reason);
-    void captureException(error, {
-      handled: false,
-      mechanism: "unhandledRejection",
-    });
-  });
-
-  // Graceful shutdown
-  const shutdownHandler = () => {
-    shutdown().catch(() => {});
-  };
-  process.on("SIGTERM", shutdownHandler);
-  process.on("SIGINT", shutdownHandler);
-
-  // Flush on natural process exit. SIGTERM/SIGINT are handled above, but a
-  // process can also end without a signal: the event loop drains, a CLI calls
-  // process.exit(), or a short-lived script finishes. In those cases buffered
-  // spans/logs/metrics in the batch processors would be lost. `beforeExit`
-  // fires on natural exit and (unlike `exit`) can run async work, so we flush
-  // here. It does not fire on process.exit() or signals, and it cannot fire on
-  // SIGKILL — that case is unflushable by design.
-  //
-  // `beforeExit` can fire repeatedly if a handler keeps the loop alive, so we
-  // guard with a one-shot flag and remove the listener to avoid a flush loop.
-  let beforeExitFlushed = false;
-  const beforeExitHandler = () => {
-    if (beforeExitFlushed) return;
-    beforeExitFlushed = true;
-    process.removeListener("beforeExit", beforeExitHandler);
-    flush().catch(() => {});
-  };
-  process.on("beforeExit", beforeExitHandler);
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Capture an exception and send it to Strada as an OTel log record.
- * The ingest worker extracts exception.* attributes and writes a
- * denormalized row to otel_errors for issue grouping.
- */
-export function captureException(
-  error: unknown,
-  opts?: CaptureExceptionOptions,
-): Error | undefined {
-  return tryTelemetry({
-    operation: "captureException()",
-    run: () => {
-      const prepared = prepareErrorForCapture(error, _options);
-      if (prepared === null) return;
-
-      const attributes = errorToAttributes(prepared, opts);
-      if (opts?.handled === false) {
-        recordExceptionOnSpan(prepared);
-      }
-
-      if (!_logger) {
-        console.warn(
-          "[@strada.sh/sdk] captureException called before initStrada(). Error was not sent.",
-        );
-        return;
-      }
-
-      _logger.emit({
-        eventName: "exception",
-        severityNumber: ERROR_SEVERITY,
-        severityText: ERROR_SEVERITY_TEXT,
-        body: prepared.message,
-        attributes,
+      const started = initCore({
+        options,
+        resource: {
+          [ATTR["service.name"]]: options.service,
+          ...resolveReleaseAttributes(options, typeof process === "undefined" ? undefined : process.env),
+          [ATTR["deployment.environment.name"]]: options.environment,
+        },
       });
+      if (!started) return;
+      setContextManager(new AsyncContextManager(new AsyncLocalStorage<Context>()));
+      runtimeHooks.onSpanStart = serverHooks.onSpanStart;
+      runtimeHooks.onLogEmit = serverHooks.onLogEmit;
+      runtimeHooks.afterRecord = scheduleVercelFlush;
+      installProcessHandlers(options);
     },
   });
-}
-
-export function track(
-  name: string,
-  properties?: Record<string, string | number | boolean>,
-): Error | undefined {
-  return tryTelemetry({
-    operation: "track()",
-    run: () => {
-      if (!_logger) {
-        console.warn(
-          "[@strada.sh/sdk] track() called before initStrada(). Event was not sent.",
-        );
-        return;
-      }
-
-      const attributes: Record<string, string | number | boolean> = {
-        [ATTR["event.name"]]: name,
-      };
-
-      if (properties) {
-        for (const [key, value] of Object.entries(properties)) {
-          attributes[`custom.${key}`] = value;
-        }
-      }
-
-      _logger.emit({
-        eventName: name,
-        severityNumber: INFO_SEVERITY,
-        severityText: INFO_SEVERITY_TEXT,
-        body: name,
-        attributes,
-      });
-    },
-  });
-}
-
-/**
- * Track a server-side pageview as an OTel span. Emits a zero-duration span
- * with SpanName = 'pageview' and pageview.source = 'server', which flows
- * through the same analytics materialized views as browser pageview spans.
- *
- * Use this for traffic the browser SDK can't see: bots, AI crawlers,
- * JS-blocked visitors, or SSR-only pages. For normal browser visitors,
- * the JS SDK already tracks pageviews automatically.
- *
- * session.id and user.id are read from W3C Baggage on the active OTel
- * context when not passed explicitly, so browser-initiated requests
- * automatically inherit the browser session identity.
- *
- * @example
- * ```ts
- * app.use((req, res, next) => {
- *   trackPageview({ path: req.path, url: req.url, referrer: req.headers.referer })
- *   next()
- * })
- * ```
- */
-export function trackPageview(opts: TrackPageviewOptions): Error | undefined {
-  return tryTelemetry({
-    operation: "trackPageview()",
-    run: () => {
-      if (!_tracerProvider) {
-        console.warn(
-          "[@strada.sh/sdk] trackPageview() called before initStrada(). Pageview was not sent.",
-        );
-        return;
-      }
-
-      const baggage = propagation.getBaggage(otelContext.active());
-      const attributes = buildPageviewAttributes(opts, baggage);
-
-      const span = trace.getTracer("strada").startSpan("pageview", { attributes });
-      span.end();
-    },
-  });
-}
-
-/**
- * Emit a trusted user profile event over OTLP logs.
- * The collector stores the raw event in otel_logs and extracts the latest
- * profile into otel_users for joins from issue/session views.
- */
-export function identifyUser(user: StradaUserIdentity): Error | undefined {
-  return tryTelemetry({
-    operation: "identifyUser()",
-    run: () => {
-      if (!_logger) {
-        console.warn(
-          "[@strada.sh/sdk] identifyUser() called before initStrada(). User profile was not sent.",
-        );
-        return;
-      }
-
-      emitUserIdentifyLog(_logger, user);
-    },
-  });
-}
-
-/**
- * Flush all buffered telemetry (logs, traces, metrics).
- * Call this before process exit to ensure nothing is lost.
- */
-export async function flush(): Promise<Error | undefined> {
-  return tryTelemetryAsync({
-    operation: "flush()",
-    run: async () => {
-      await Promise.all([
-        _loggerProvider?.forceFlush(),
-        _tracerProvider?.forceFlush(),
-        _meterProvider?.forceFlush(),
-      ]);
-    },
-  });
-}
-
-/**
- * Shut down the SDK and flush remaining telemetry.
- */
-export async function shutdown(): Promise<Error | undefined> {
-  const error = await tryTelemetryAsync({
-    operation: "shutdown()",
-    run: async () => {
-      await Promise.all([
-        _tracerProvider?.shutdown(),
-        _meterProvider?.shutdown(),
-        _loggerProvider?.shutdown(),
-      ]);
-    },
-  });
-  // Reset even when the providers failed to shut down, otherwise a failed
-  // shutdown leaves the SDK half alive and initStrada() cannot recover it.
-  _tracerProvider = undefined;
-  _meterProvider = undefined;
-  _loggerProvider = undefined;
-  _logger = undefined;
-  _options = undefined;
-  resetContext();
-  return error;
 }

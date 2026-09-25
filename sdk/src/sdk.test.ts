@@ -1,17 +1,22 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { ROOT_CONTEXT, trace, context, propagation } from "@opentelemetry/api";
 import {
-  BasicTracerProvider,
-  InMemorySpanExporter,
-  SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+  AsyncContextManager,
+  ROOT_CONTEXT,
+  StackContextManager,
+  propagation,
+  runtimeHooks,
+  setContextManager,
+  trace,
+  type Context,
+} from "./api.ts";
 import {
-  InMemoryLogRecordExporter,
-  LoggerProvider,
-  SimpleLogRecordProcessor,
-} from "@opentelemetry/sdk-logs";
-import { logs } from "@opentelemetry/api-logs";
+  startPipeline,
+  stopPipeline,
+  takeQueuedRecords,
+  type OtlpAnyValue,
+  type OtlpKeyValue,
+} from "./export.ts";
 import {
   normalizeError,
   shouldIgnoreError,
@@ -55,6 +60,82 @@ import {
 beforeEach(() => {
   resetContext();
 });
+
+// ---------------------------------------------------------------------------
+// Capture fixture: the real OTLP pipeline with flushing pushed out of reach,
+// read back with takeQueuedRecords() and decoded from OTLP JSON.
+// ---------------------------------------------------------------------------
+
+function decodeAnyValue(value: OtlpAnyValue): unknown {
+  if (value.stringValue !== undefined) return value.stringValue;
+  if (value.boolValue !== undefined) return value.boolValue;
+  if (value.intValue !== undefined) return Number(value.intValue);
+  if (value.doubleValue !== undefined) return value.doubleValue;
+  if (value.arrayValue) return value.arrayValue.values.map(decodeAnyValue);
+  if (value.kvlistValue) return decodeKeyValues(value.kvlistValue.values);
+  return undefined;
+}
+
+function decodeKeyValues(keyValues: OtlpKeyValue[]): Record<string, unknown> {
+  return Object.fromEntries(keyValues.map((kv) => [kv.key, decodeAnyValue(kv.value)]));
+}
+
+/** Remove queued spans and logs from the pipeline, decoded from OTLP. */
+function takeFinished() {
+  const { spans, logs } = takeQueuedRecords();
+  return {
+    spans: spans.map(({ record }) => ({
+      name: record.name,
+      spanId: record.spanId,
+      traceId: record.traceId,
+      parentSpanId: record.parentSpanId,
+      // OTLP kind is the API SpanKind + 1
+      kind: record.kind - 1,
+      attributes: decodeKeyValues(record.attributes),
+      status: record.status,
+      events: record.events.map((event) => ({
+        name: event.name,
+        attributes: decodeKeyValues(event.attributes),
+      })),
+    })),
+    logs: logs.map(({ record }) => ({
+      body: record.body === undefined ? undefined : decodeAnyValue(record.body),
+      severityNumber: record.severityNumber,
+      eventName: record.eventName,
+      traceId: record.traceId,
+      spanId: record.spanId,
+      attributes: decodeKeyValues(record.attributes),
+    })),
+  };
+}
+
+function takeFinishedSpans() {
+  return takeFinished().spans;
+}
+
+/** Start the capture pipeline with an async context manager for the enclosing describe. */
+function useCapturePipeline(): void {
+  const batch = { scheduledDelayMillis: 60_000, maxExportBatchSize: 10_000, maxQueueSize: 10_000, exportTimeoutMillis: 1000 };
+  beforeEach(() => {
+    startPipeline({
+      endpoint: "http://127.0.0.1:9",
+      headers: {},
+      resource: [],
+      logs: batch,
+      traces: batch,
+      metrics: { exportIntervalMillis: 60_000, exportTimeoutMillis: 1000 },
+    });
+    setContextManager(new AsyncContextManager(new AsyncLocalStorage<Context>()));
+  });
+  afterEach(() => {
+    stopPipeline();
+    runtimeHooks.onSpanStart = undefined;
+    runtimeHooks.onLogEmit = undefined;
+    runtimeHooks.afterRecord = undefined;
+    runtimeHooks.wrapActiveSpan = undefined;
+    setContextManager(new StackContextManager());
+  });
+}
 
 describe("ATTR visitor keys", () => {
   it("has visitor.id so pageview spans can set the attribute", () => {
@@ -381,19 +462,16 @@ describe("errorToAttributes", () => {
 // ---------------------------------------------------------------------------
 
 describe("recordExceptionOnSpan", () => {
-  it("records the exception event and marks the span as errored", async () => {
-    const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
-    });
-    const span = provider.getTracer("strada-test").startSpan("checkout");
+  useCapturePipeline();
+
+  it("records the exception event and marks the span as errored", () => {
+    const span = trace.getTracer("strada-test").startSpan("checkout");
     const err = new TypeError("payment failed");
 
     recordExceptionOnSpan(err, span);
     span.end();
-    await provider.forceFlush();
 
-    const finished = exporter.getFinishedSpans()[0]!;
+    const finished = takeFinishedSpans()[0]!;
     expect(finished.status).toMatchInlineSnapshot(`
       {
         "code": 2,
@@ -467,14 +545,12 @@ describe("resolveMetricReaderOptions", () => {
         telemetry: {
           metrics: {
             exportIntervalMillis: 2500,
-            exportTimeoutMillis: 1500,
           },
         },
       }),
     ).toMatchInlineSnapshot(`
       {
         "exportIntervalMillis": 2500,
-        "exportTimeoutMillis": 1500,
       }
     `);
   });
@@ -1334,14 +1410,11 @@ describe("createStradaBaggage", () => {
 
 describe("baggage round-trip propagation", () => {
   it("serializes and deserializes session.id and user.id through headers", () => {
-    const { W3CBaggagePropagator } = require("@opentelemetry/core");
-    const prop = new W3CBaggagePropagator();
-
     // Simulate browser side: create baggage and inject into headers
     const baggage = createStradaBaggage("browser-session-abc", "user_123");
     const ctxWithBaggage = propagation.setBaggage(ROOT_CONTEXT, baggage);
     const headers: Record<string, string> = {};
-    prop.inject(ctxWithBaggage, headers, {
+    propagation.inject(ctxWithBaggage, headers, {
       set(carrier: Record<string, string>, key: string, value: string) {
         carrier[key] = value;
       },
@@ -1353,7 +1426,7 @@ describe("baggage round-trip propagation", () => {
     expect(headers["baggage"]).toContain("user.id=user_123");
 
     // Simulate server side: extract baggage from headers
-    const serverCtx = prop.extract(ROOT_CONTEXT, headers, {
+    const serverCtx = propagation.extract(ROOT_CONTEXT, headers, {
       get(carrier: Record<string, string>, key: string) {
         return carrier[key];
       },
@@ -1370,13 +1443,10 @@ describe("baggage round-trip propagation", () => {
   });
 
   it("works without user.id (anonymous session)", () => {
-    const { W3CBaggagePropagator } = require("@opentelemetry/core");
-    const prop = new W3CBaggagePropagator();
-
     const baggage = createStradaBaggage("anon-session-xyz");
     const ctxWithBaggage = propagation.setBaggage(ROOT_CONTEXT, baggage);
     const headers: Record<string, string> = {};
-    prop.inject(ctxWithBaggage, headers, {
+    propagation.inject(ctxWithBaggage, headers, {
       set(carrier: Record<string, string>, key: string, value: string) {
         carrier[key] = value;
       },
@@ -1385,7 +1455,7 @@ describe("baggage round-trip propagation", () => {
     expect(headers["baggage"]).toContain("strada.session.id=anon-session-xyz");
     expect(headers["baggage"]).not.toContain("user.id");
 
-    const serverCtx = prop.extract(ROOT_CONTEXT, headers, {
+    const serverCtx = propagation.extract(ROOT_CONTEXT, headers, {
       get(carrier: Record<string, string>, key: string) {
         return carrier[key];
       },
@@ -1403,26 +1473,11 @@ describe("baggage round-trip propagation", () => {
 // ---------------------------------------------------------------------------
 // startSpan (ergonomic span creation)
 // ---------------------------------------------------------------------------
-// These tests use NodeTracerProvider to get AsyncLocalStorage context
-// propagation, which is what makes startSpan nesting work.
+// useCapturePipeline() installs AsyncContextManager, which is what makes
+// startSpan nesting work across await.
 
 describe("startSpan", () => {
-  let provider: NodeTracerProvider;
-  let exporter: InMemorySpanExporter;
-
-  beforeEach(() => {
-    exporter = new InMemorySpanExporter();
-    provider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
-    });
-    provider.register();
-  });
-
-  afterEach(async () => {
-    await provider.shutdown();
-    trace.disable();
-    context.disable();
-  });
+  useCapturePipeline();
 
   it("sync callback: returns value and ends span", () => {
     const result = startSpan({ name: "sync-work" }, (span) => {
@@ -1431,7 +1486,7 @@ describe("startSpan", () => {
     });
 
     expect(result).toBe(42);
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("sync-work");
     expect(spans[0]!.attributes["key"]).toBe("value");
@@ -1444,7 +1499,7 @@ describe("startSpan", () => {
     });
 
     expect(result).toBe("done");
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("async-work");
   });
@@ -1456,7 +1511,7 @@ describe("startSpan", () => {
       });
     }).toThrow("boom");
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     const span = spans[0]!;
     expect(span.status.code).toBe(2); // SpanStatusCode.ERROR
@@ -1472,7 +1527,7 @@ describe("startSpan", () => {
       }),
     ).rejects.toThrow("async boom");
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     const span = spans[0]!;
     expect(span.status.code).toBe(2); // SpanStatusCode.ERROR
@@ -1486,7 +1541,7 @@ describe("startSpan", () => {
       () => {},
     );
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans[0]!.attributes["user.id"]).toBe("u123");
     expect(spans[0]!.kind).toBe(1); // SpanKind.CLIENT
   });
@@ -1496,12 +1551,12 @@ describe("startSpan", () => {
       startSpan({ name: "inner" }, () => {});
     });
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(2);
     const outer = spans.find((s) => s.name === "outer")!;
     const inner = spans.find((s) => s.name === "inner")!;
-    expect(inner.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
-    expect(inner.spanContext().traceId).toBe(outer.spanContext().traceId);
+    expect(inner.parentSpanId).toBe(outer.spanId);
+    expect(inner.traceId).toBe(outer.traceId);
   });
 
   it("async nesting preserves parenting across await", async () => {
@@ -1512,31 +1567,16 @@ describe("startSpan", () => {
       });
     });
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(2);
     const outer = spans.find((s) => s.name === "async-outer")!;
     const inner = spans.find((s) => s.name === "async-inner")!;
-    expect(inner.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
+    expect(inner.parentSpanId).toBe(outer.spanId);
   });
 });
 
 describe("startInactiveSpan", () => {
-  let provider: NodeTracerProvider;
-  let exporter: InMemorySpanExporter;
-
-  beforeEach(() => {
-    exporter = new InMemorySpanExporter();
-    provider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
-    });
-    provider.register();
-  });
-
-  afterEach(async () => {
-    await provider.shutdown();
-    trace.disable();
-    context.disable();
-  });
+  useCapturePipeline();
 
   it("creates a span that is not active in context", () => {
     const span = startInactiveSpan({ name: "bg-task" });
@@ -1546,7 +1586,7 @@ describe("startInactiveSpan", () => {
     expect(active).toBeUndefined();
 
     span.end();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("bg-task");
   });
@@ -1558,13 +1598,13 @@ describe("startInactiveSpan", () => {
     other.end();
     inactive.end();
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     const inactiveSpan = spans.find((s) => s.name === "inactive-root")!;
     const otherSpan = spans.find((s) => s.name === "other")!;
 
     // Neither should be parented to the other
-    expect(otherSpan.parentSpanContext).toBeUndefined();
-    expect(otherSpan.spanContext().traceId).not.toBe(inactiveSpan.spanContext().traceId);
+    expect(otherSpan.parentSpanId).toBeUndefined();
+    expect(otherSpan.traceId).not.toBe(inactiveSpan.traceId);
   });
 
   it("passes attributes and kind from options", () => {
@@ -1575,7 +1615,7 @@ describe("startInactiveSpan", () => {
     });
     span.end();
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans[0]!.attributes["queue"]).toBe("jobs");
     expect(spans[0]!.kind).toBe(3);
   });
@@ -1587,7 +1627,7 @@ describe("startInactiveSpan", () => {
     }
     // span.end() was called automatically by Symbol.dispose
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("disposable-span");
     expect(spans[0]!.attributes["step"]).toBe("work");
@@ -1600,7 +1640,7 @@ describe("startInactiveSpan", () => {
       throw new Error("boom");
     }).toThrow("boom");
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("error-disposable");
     expect(spans[0]!.attributes["before"]).toBe("throw");
@@ -1613,39 +1653,21 @@ describe("startInactiveSpan", () => {
     }
     // Symbol.dispose calls span.end() again — OTel ignores double end
 
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.name).toBe("double-end");
   });
 });
 
 // ---------------------------------------------------------------------------
-// startActiveSpan vs startSpan parenting behavior (raw OTel)
+// startActiveSpan vs startSpan parenting behavior (OTel-shaped tracer API)
 // ---------------------------------------------------------------------------
 // These tests verify our documentation claims about span parenting.
-// NodeTracerProvider is required because it registers the
-// AsyncLocalStorageContextManager, which is what makes startActiveSpan
-// propagate the active span through context. BasicTracerProvider alone
-// does NOT register a context manager, so startActiveSpan would be a
-// no-op for parenting.
+// AsyncContextManager (from useCapturePipeline) makes startActiveSpan
+// propagate the active span through context, including across await.
 
 describe("startActiveSpan parenting", () => {
-  let provider: NodeTracerProvider;
-  let exporter: InMemorySpanExporter;
-
-  beforeEach(() => {
-    exporter = new InMemorySpanExporter();
-    provider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
-    });
-    provider.register();
-  });
-
-  afterEach(async () => {
-    await provider.shutdown();
-    trace.disable();
-    context.disable();
-  });
+  useCapturePipeline();
 
   it("startActiveSpan creates parent-child spans when nested", async () => {
     const tracer = trace.getTracer("test");
@@ -1657,19 +1679,18 @@ describe("startActiveSpan parenting", () => {
       parentSpan.end();
     });
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(2);
 
     const child = spans.find((s) => s.name === "child")!;
     const parent = spans.find((s) => s.name === "parent")!;
 
     // Child's parent is the outer span
-    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
+    expect(child.parentSpanId).toBe(parent.spanId);
     // Both share the same trace
-    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+    expect(child.traceId).toBe(parent.traceId);
     // Parent has no parent (it's the root)
-    expect(parent.parentSpanContext).toBeUndefined();
+    expect(parent.parentSpanId).toBeUndefined();
   });
 
   it("startSpan inside startActiveSpan is also parented", async () => {
@@ -1682,13 +1703,12 @@ describe("startActiveSpan parenting", () => {
       parentSpan.end();
     });
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     const child = spans.find((s) => s.name === "child-via-startSpan")!;
     const parent = spans.find((s) => s.name === "parent")!;
 
-    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
-    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+    expect(child.parentSpanId).toBe(parent.spanId);
+    expect(child.traceId).toBe(parent.traceId);
   });
 
   it("sequential startSpan calls are NOT parented to each other", async () => {
@@ -1699,16 +1719,15 @@ describe("startActiveSpan parenting", () => {
     spanB.end();
     spanA.end();
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     const a = spans.find((s) => s.name === "standalone-a")!;
     const b = spans.find((s) => s.name === "standalone-b")!;
 
     // Neither is parented
-    expect(a.parentSpanContext).toBeUndefined();
-    expect(b.parentSpanContext).toBeUndefined();
+    expect(a.parentSpanId).toBeUndefined();
+    expect(b.parentSpanId).toBeUndefined();
     // They have different trace IDs (independent roots)
-    expect(a.spanContext().traceId).not.toBe(b.spanContext().traceId);
+    expect(a.traceId).not.toBe(b.traceId);
   });
 
   it("startSpan outside startActiveSpan is not parented", async () => {
@@ -1723,13 +1742,12 @@ describe("startActiveSpan parenting", () => {
     const detached = tracer.startSpan("detached");
     detached.end();
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     const parent = spans.find((s) => s.name === "active-parent")!;
     const detachedSpan = spans.find((s) => s.name === "detached")!;
 
-    expect(detachedSpan.parentSpanContext).toBeUndefined();
-    expect(detachedSpan.spanContext().traceId).not.toBe(parent.spanContext().traceId);
+    expect(detachedSpan.parentSpanId).toBeUndefined();
+    expect(detachedSpan.traceId).not.toBe(parent.traceId);
   });
 
   it("three-level nesting creates correct parent chain", async () => {
@@ -1745,8 +1763,7 @@ describe("startActiveSpan parenting", () => {
       gp.end();
     });
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     expect(spans).toHaveLength(3);
 
     const grandparent = spans.find((s) => s.name === "grandparent")!;
@@ -1754,14 +1771,14 @@ describe("startActiveSpan parenting", () => {
     const child = spans.find((s) => s.name === "child")!;
 
     // Verify the chain: child -> parent -> grandparent
-    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
-    expect(parent.parentSpanContext?.spanId).toBe(grandparent.spanContext().spanId);
-    expect(grandparent.parentSpanContext).toBeUndefined();
+    expect(child.parentSpanId).toBe(parent.spanId);
+    expect(parent.parentSpanId).toBe(grandparent.spanId);
+    expect(grandparent.parentSpanId).toBeUndefined();
 
     // All share the same trace ID
-    const traceId = grandparent.spanContext().traceId;
-    expect(parent.spanContext().traceId).toBe(traceId);
-    expect(child.spanContext().traceId).toBe(traceId);
+    const traceId = grandparent.traceId;
+    expect(parent.traceId).toBe(traceId);
+    expect(child.traceId).toBe(traceId);
   });
 
   it("async startActiveSpan preserves parenting across await", async () => {
@@ -1777,13 +1794,12 @@ describe("startActiveSpan parenting", () => {
       parentSpan.end();
     });
 
-    await provider.forceFlush();
-    const spans = exporter.getFinishedSpans();
+    const spans = takeFinishedSpans();
     const parent = spans.find((s) => s.name === "async-parent")!;
     const child = spans.find((s) => s.name === "async-child")!;
 
-    expect(child.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
-    expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+    expect(child.parentSpanId).toBe(parent.spanId);
+    expect(child.traceId).toBe(parent.traceId);
   });
 
   it("error in startActiveSpan callback does not prevent span from being accessible", () => {
@@ -1828,11 +1844,7 @@ describe("SPAN_CONTEXT_ATTR_KEYS", () => {
 
 describe("readSpanAttributes", () => {
   it("reads attributes from an SDK span", () => {
-    const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
-    });
-    const span = provider.getTracer("test").startSpan("test-span");
+    const span = trace.getTracer("test").startSpan("test-span");
     span.setAttribute("url.path", "/api/orders");
 
     const attrs = readSpanAttributes(span);
@@ -1907,22 +1919,7 @@ describe("deriveUrlPath", () => {
 // use to propagate request context through nested spans and into logs.
 
 describe("span context propagation mechanisms", () => {
-  let tracerProvider: NodeTracerProvider;
-  let spanExporter: InMemorySpanExporter;
-
-  beforeEach(() => {
-    spanExporter = new InMemorySpanExporter();
-    tracerProvider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(spanExporter)],
-    });
-    tracerProvider.register();
-  });
-
-  afterEach(async () => {
-    await tracerProvider.shutdown();
-    trace.disable();
-    context.disable();
-  });
+  useCapturePipeline();
 
   it("SDK span exposes .attributes at runtime for context injection", () => {
     const tracer = trace.getTracer("test");

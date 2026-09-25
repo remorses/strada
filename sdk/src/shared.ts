@@ -1,50 +1,36 @@
 /**
  * Shared types, error normalization, attribute building, and filtering logic
- * used by both Node and browser entries. This is the core of the SDK; the
- * runtime-specific files (node.ts, browser.ts) are thin wrappers that wire
- * OTel providers and install global error handlers.
- *
- * After initStrada(), the global OTel providers are registered. Users can
- * use standard OTel APIs (trace.getTracer(), logs.getLogger(), etc.) directly.
- * The convenience helpers here (captureException, track) are optional sugar.
+ * used by every runtime entry. Zero dependencies: the OTel-shaped API lives
+ * in api.ts and the OTLP JSON exporter in export.ts.
  */
 
-import { logs, SeverityNumber } from "@opentelemetry/api-logs";
-import type { Logger as OtelLogger } from "@opentelemetry/api-logs";
-import type { Context, Span as OtelSpan } from "@opentelemetry/api";
-import type { BatchLogRecordProcessorBrowserConfig } from "@opentelemetry/sdk-logs";
-import type { PeriodicExportingMetricReaderOptions } from "@opentelemetry/sdk-metrics";
-import type { BatchSpanProcessorBrowserConfig } from "@opentelemetry/sdk-trace-base";
 import { formatLogValue } from "#log-format";
 import {
   formatLogValue as formatStructuredLogValue,
   truncateLogString,
 } from "./log-format-json.ts";
-
-// ---------------------------------------------------------------------------
-// Re-export OTel API primitives so users don't need @opentelemetry/api
-// ---------------------------------------------------------------------------
-
 import {
   propagation as _propagation,
   trace as _trace,
   SpanStatusCode as _SpanStatusCode,
-} from "@opentelemetry/api";
-export { trace, context, metrics, propagation, diag, SpanStatusCode, SpanKind } from "@opentelemetry/api";
-export type { Tracer, Span, SpanContext, SpanOptions, SpanAttributes, Baggage } from "@opentelemetry/api";
-export { SeverityNumber } from "@opentelemetry/api-logs";
-export { logs } from "@opentelemetry/api-logs";
-export type { Logger } from "@opentelemetry/api-logs";
-export type { BatchLogRecordProcessorBrowserConfig } from "@opentelemetry/sdk-logs";
-export type { PeriodicExportingMetricReaderOptions } from "@opentelemetry/sdk-metrics";
-export type { BatchSpanProcessorBrowserConfig } from "@opentelemetry/sdk-trace-base";
+  SeverityNumber,
+  type Attributes,
+  type Baggage,
+  type Context,
+  type Logger as OtelLogger,
+  type Span as OtelSpan,
+  type SpanOptions as OtelSpanOptions,
+} from "./api.ts";
+import {
+  resetWarnings,
+  startPipeline,
+  toKeyValues,
+  warnOnce,
+  type BatchOptions,
+  type MetricExportOptions,
+} from "./export.ts";
 
-// ---------------------------------------------------------------------------
-// OTel attribute keys used by the Strada SDK
-// ---------------------------------------------------------------------------
-// Re-exported from attrs.ts (which has no DOM dependencies) so non-browser
-// runtimes like the otel-collector can import ATTR directly from that file.
-
+export { warnOnce };
 export { ATTR } from "./attrs.ts";
 import { ATTR } from "./attrs.ts";
 
@@ -52,18 +38,15 @@ import { ATTR } from "./attrs.ts";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type StradaMetricReaderOptions = Omit<
-  PeriodicExportingMetricReaderOptions,
-  "exporter" | "metricProducers"
->;
+export type StradaMetricReaderOptions = MetricExportOptions;
 
 export interface StradaTelemetryOptions {
-  /** Batch processor options for traces. Reuses OTel's browser batch config shape. */
-  traces?: BatchSpanProcessorBrowserConfig;
-  /** Batch processor options for logs. Reuses OTel's browser batch config shape. */
-  logs?: BatchLogRecordProcessorBrowserConfig;
-  /** Metric reader cadence options. Reuses OTel's PeriodicExportingMetricReader shape, minus exporter internals. */
-  metrics?: StradaMetricReaderOptions;
+  /** Batching for spans. */
+  traces?: BatchOptions;
+  /** Batching for logs, events, and errors. */
+  logs?: BatchOptions;
+  /** Metric collection cadence. */
+  metrics?: MetricExportOptions;
 }
 
 export interface StradaOptions {
@@ -108,9 +91,13 @@ export interface StradaOptions {
   denyUrls?: Array<string | RegExp>;
   /** Return null to drop an error before it is sent */
   beforeSend?: (error: Error) => Error | null;
-  /** Enable OTel diagnostic logging */
-  debug?: boolean;
-  /** Advanced OTel batching and export cadence options. */
+    /**
+   * Capture uncaught exceptions and unhandled rejections (Node process
+   * handlers, browser window listeners). Default true. Set false in CLIs and
+   * apps that own their crash handling.
+   */
+  captureUncaughtErrors?: boolean;
+  /** Batching and export cadence options. */
   telemetry?: StradaTelemetryOptions;
   /**
    * Dynamic user ID resolver (browser only).
@@ -188,7 +175,7 @@ export interface TrackPageviewOptions {
  */
 export function buildPageviewAttributes(
   opts: TrackPageviewOptions,
-  baggage: import("@opentelemetry/api").Baggage | undefined,
+  baggage: Baggage | undefined,
 ): Record<string, string> {
   // MVs require session.id != ''; fall back to ephemeral UUID for bots
   const sessionId =
@@ -352,33 +339,6 @@ let _tags: Record<string, string> = {};
  * capped: a long-lived server must not accumulate them forever. Clearing on
  * overflow is deliberate, the alternative (stop warning) hides real failures.
  */
-const _warnedMessages = new Set<string>();
-const MAX_WARNED_MESSAGES = 200;
-
-export function warnOnce(message: string): void {
-  if (_warnedMessages.has(message)) return;
-  if (_warnedMessages.size >= MAX_WARNED_MESSAGES) _warnedMessages.clear();
-  _warnedMessages.add(message);
-  warnSafely(message);
-}
-
-/**
- * `console` is not guaranteed: it can be stripped, replaced by app code, or
- * throw from a patched `warn`. Diagnostics must never be the thing that
- * crashes an app inside the no-throw boundary below.
- */
-function warnSafely(message: string): void {
-  try {
-    globalThis.console?.warn?.(message);
-  } catch {
-    // nothing left to do, the console itself is broken
-  }
-}
-
-/**
- * `error.message` is a getter that app code controls, so reading it inside a
- * catch handler can throw a second time.
- */
 function messageSafely(error: Error): string {
   try {
     const message = error.message;
@@ -473,7 +433,7 @@ export function getTags(): Record<string, string> {
 
 export function resetContext(): void {
   _tags = {};
-  _warnedMessages.clear();
+  resetWarnings();
   resetRuntimeUserId();
 }
 
@@ -652,38 +612,6 @@ export function errorToAttributes(
 }
 
 /**
- * Lightweight captureException that works via the global OTel logger API.
- * Unlike the runtime-specific versions in node.ts/browser.ts/cloudflare.ts,
- * this has no runtime options or runtime-initialized logger. It applies the
- * default error filters, then uses `logs.getLogger()` directly, which works
- * after `initStrada()` has registered OTel providers.
- *
- * Designed for use by plugins (e.g. better-auth plugin) that import from
- * shared.ts and can't import runtime-specific modules.
- */
-export function captureExceptionViaOtel(
-  error: unknown,
-  opts?: CaptureExceptionOptions & { loggerName?: string },
-): Error | undefined {
-  return tryTelemetry({
-    operation: "captureExceptionViaOtel()",
-    run: () => {
-      const prepared = prepareErrorForCapture(error);
-      if (prepared === null) return;
-      const attributes = errorToAttributes(prepared, opts);
-      const logger = logs.getLogger(opts?.loggerName ?? "strada");
-      logger.emit({
-        eventName: "exception",
-        severityNumber: ERROR_SEVERITY,
-        severityText: ERROR_SEVERITY_TEXT,
-        body: prepared.message,
-        attributes,
-      });
-    },
-  });
-}
-
-/**
  * Record an escaping exception on a span using standard OTel trace semantics.
  *
  * Strada still emits exception logs as the source of truth, but marking the
@@ -750,7 +678,7 @@ const DEV_METRIC_DEFAULTS = {
   exportIntervalMillis: 2_000,
 } as const;
 
-function isDevMode(): boolean {
+export function isDevMode(): boolean {
   try {
     return !!(import.meta as any).hot;
   } catch {
@@ -1238,7 +1166,6 @@ export function deriveUrlPath(
 // Auto-ends the span and auto-records errors. Handles both sync and async
 // callbacks by detecting thenables (same approach as OTel's SugaredTracer).
 
-import type { SpanOptions as OtelSpanOptions } from "@opentelemetry/api";
 
 export type StartSpanOptions = OtelSpanOptions & {
   /** Span name. Required. */
@@ -1358,7 +1285,7 @@ function _handleCallbackErrors<T>(
   if (result != null && (typeof result === "object" || typeof result === "function")) {
     let thenFn: unknown;
     try {
-      thenFn = (result as unknown as PromiseLike<unknown>).then;
+      thenFn = Reflect.get(result, "then");
     } catch (e) {
       onError(e);
       onFinally();
@@ -1393,7 +1320,7 @@ function _handleCallbackErrors<T>(
 export function createStradaBaggage(
   sessionId: string,
   userId?: string,
-): import("@opentelemetry/api").Baggage {
+): Baggage {
   const entries: Record<string, { value: string }> = {
     [BAGGAGE_SESSION_ID]: { value: sessionId },
   };
@@ -1402,3 +1329,66 @@ export function createStradaBaggage(
   }
   return _propagation.createBaggage(entries);
 }
+
+// ---------------------------------------------------------------------------
+// SDK state and export pipeline init
+// ---------------------------------------------------------------------------
+
+let _options: StradaOptions | undefined;
+
+export function getOptions(): StradaOptions | undefined {
+  return _options;
+}
+
+export function isInitialized(): boolean {
+  return _options !== undefined;
+}
+
+export function resetOptions(): void {
+  _options = undefined;
+}
+
+/**
+ * Start the export pipeline. Returns false when already initialized so the
+ * caller can skip installing runtime handlers twice.
+ */
+export function initCore({
+  options,
+  resource,
+  allowToken = true,
+}: {
+  options: StradaOptions;
+  resource: Attributes;
+  allowToken?: boolean;
+}): boolean {
+  if (_options) {
+    warnOnce("[@strada.sh/sdk] initStrada() was already called. Ignoring duplicate init.");
+    return false;
+  }
+  _options = options;
+  const exporting = shouldExportTelemetry(options);
+  const dev = isDevMode();
+  const batch = (user: BatchOptions | undefined) => ({
+    scheduledDelayMillis: user?.scheduledDelayMillis ?? (dev ? 500 : 5000),
+    maxExportBatchSize: user?.maxExportBatchSize ?? 512,
+    maxQueueSize: user?.maxQueueSize ?? 2048,
+    exportTimeoutMillis: user?.exportTimeoutMillis ?? 30_000,
+  });
+  startPipeline({
+    endpoint: exporting ? resolveEndpoint(options) : "",
+    headers: (allowToken ? resolveIngestHeaders(options) : undefined) ?? {},
+    resource: toKeyValues({
+      [ATTR["telemetry.sdk.name"]]: "strada",
+      [ATTR["telemetry.sdk.language"]]: "javascript",
+      ...resource,
+    }),
+    logs: batch(options.telemetry?.logs),
+    traces: batch(options.telemetry?.traces),
+    metrics: {
+      exportIntervalMillis: options.telemetry?.metrics?.exportIntervalMillis ?? (dev ? 2000 : 10_000),
+      exportTimeoutMillis: options.telemetry?.metrics?.exportTimeoutMillis ?? 30_000,
+    },
+  });
+  return true;
+}
+

@@ -571,7 +571,7 @@ See the [Tinybird pricing breakdown](./website/src/docs/tinybird-pricing.mdx) fo
 
 ## SDK
 
-The SDK works on **Node.js**, **browsers**, and **Cloudflare Workers**. One import path, resolved by export conditions:
+The SDK works on **Node.js**, **browsers**, and **Cloudflare Workers**. It has **zero dependencies** (about 30 kB minified). One import path, resolved by export conditions:
 
 ```ts
 import { initStrada, captureException, track, trace, logs, metrics } from "@strada.sh/sdk"
@@ -579,19 +579,41 @@ import { initStrada, captureException, track, trace, logs, metrics } from "@stra
 
 | Runtime | What it sets up |
 |---------|----------------|
-| **Node.js / Bun** | OTel providers, OTLP exporters, process error handlers, graceful shutdown |
-| **Browser** | WebTracerProvider, pageview spans, session management, error/rejection handlers |
-| **Cloudflare Workers** | BasicTracerProvider, auto-flush via `waitUntil`, zero overhead when unused |
+| **Node.js / Bun** | AsyncLocalStorage context, uncaught error capture, flush on `beforeExit`, Vercel `waitUntil` |
+| **Browser** | pageview spans, session and visitor ids, window error listeners |
+| **Cloudflare Workers** | auto-flush via `waitUntil`, native Cloudflare span bridge, zero requests when unused |
 
-After `initStrada()`, all standard OTel APIs work: `trace.getTracer()`, `logs.getLogger()`, `metrics.getMeter()`. The SDK re-exports these so you don't need `@opentelemetry/api` as a dependency.
+`trace`, `context`, `propagation`, `logs`, and `metrics` have the **same shape as the OpenTelemetry API**, implemented without the OTel packages. Code written for `@opentelemetry/api` works when it imports from `@strada.sh/sdk` instead. Everything is exported as OTLP JSON.
 
-**Convenience helpers** (optional, thin wrappers over OTel):
+**Helpers:**
 
 - `startSpan({ name }, callback)` creates a span, auto-ends it, and auto-records errors. No tracer instance needed
-- `captureException(error)` normalizes errors, computes fingerprints, emits structured OTel log records
-- `track(name, props)` emits custom events as OTel log records with `event.name` and `custom.*` attributes
+- `captureException(error)` normalizes errors, computes fingerprints, emits structured log records
+- `track(name, props)` emits custom events with `event.name` and `custom.*` attributes
+- `getLogger(name)` console-style logger (`info`, `warn`, `error`, ...) that sends to `otel_logs`
 - `setTags(tags)` sets tags merged into subsequent error attributes
 - `flush()` / `shutdown()` for manual lifecycle control
+
+### OpenTelemetry auto-instrumentation
+
+The SDK never patches modules by itself. To get automatic spans from **OTel instrumentations** (http, express, pg, fetch, ...) or from libraries that use `@opentelemetry/api` (Vercel AI SDK, Prisma), register Strada as the global OTel provider with `@strada.sh/sdk/otel`:
+
+```bash
+pnpm add @opentelemetry/api @opentelemetry/api-logs @opentelemetry/instrumentation @opentelemetry/auto-instrumentations-node
+```
+
+```ts
+import { initStrada } from "@strada.sh/sdk"
+import { registerOpenTelemetry } from "@strada.sh/sdk/otel"
+import { registerInstrumentations } from "@opentelemetry/instrumentation"
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+
+initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api" })
+registerOpenTelemetry()
+registerInstrumentations({ instrumentations: [getNodeAutoInstrumentations()] })
+```
+
+Instrumentation spans share context with `startSpan()`, carry `traceparent` and `baggage` between services, and export through the same Strada pipeline. In browsers use `@opentelemetry/auto-instrumentations-web` the same way. `registerOpenTelemetry()` returns an error if another OTel SDK (for example `@vercel/otel`) already owns the globals.
 
 ### Automatic context propagation
 
@@ -613,7 +635,7 @@ GET /api/orders (url.path="/api/orders", http.method="GET")
 
 The SDK also normalizes **old OTel semantic conventions** (`http.target`, `http.url`) into `url.path` so errors show a clean path regardless of which instrumentation version you use.
 
-**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity.
+**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity. The browser SDK does not patch `fetch`: add the headers with `propagation.inject(context.active(), headers)`, or register `@opentelemetry/instrumentation-fetch` as shown above. The server reads them with `propagation.extract()` or an OTel HTTP instrumentation.
 
 See the full [SDK documentation](./website/src/docs/sdk.mdx) for detailed API reference, auto-instrumentation setup, batching config, and browser/server context propagation.
 

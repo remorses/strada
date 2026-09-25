@@ -1,12 +1,13 @@
 {
   "name": "@strada.sh/sdk",
-  "version": "0.7.0",
-  "description": "OTel-first Strada SDK. Sentry-like error capture and auto-instrumentation for Node.js and browsers, powered by OpenTelemetry.",
+  "version": "0.8.0",
+  "description": "Zero-dependency Strada SDK: errors, product events, logs, spans, and metrics over OTLP JSON. OpenTelemetry-compatible API, optional bridge for OTel instrumentations.",
   "keywords": [
     "strada",
     "opentelemetry",
     "otel",
     "error-tracking",
+    "analytics",
     "observability",
     "tracing",
     "sdk"
@@ -43,10 +44,6 @@
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
     },
-    "./light": {
-      "types": "./dist/light.d.ts",
-      "default": "./dist/light.js"
-    },
     "./better-auth": {
       "types": "./dist/better-auth.d.ts",
       "default": "./dist/better-auth.js"
@@ -66,6 +63,10 @@
     "./src/*": {
       "types": "./src/*.ts",
       "default": "./src/*.ts"
+    },
+    "./otel": {
+      "types": "./dist/otel.d.ts",
+      "default": "./dist/otel.js"
     }
   },
   "imports": {
@@ -90,36 +91,48 @@
   },
   "files": [
     "src",
-    "dist"
+    "dist",
+    "!**/*.test.*"
   ],
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build",
-    "test": "vitest run",
+    "test": "vitest run src",
     "typecheck": "tsc",
     "bundle:browser": "esbuild src/browser.ts --bundle --format=esm --platform=browser --target=es2022 --conditions=browser --outfile=dist/bundle-browser.js --metafile=dist/bundle-browser-meta.json && node -e \"const m=JSON.parse(require('fs').readFileSync('dist/bundle-browser-meta.json','utf8')); const out=Object.values(m.outputs)[0]; console.log('Browser bundle:', (out.bytes/1024).toFixed(1)+'kB', '('+Object.keys(out.inputs).length+' modules)')\"",
     "bundle:node": "esbuild src/node.ts --bundle --format=esm --platform=node --target=node18 --main-fields=module,main --outfile=dist/bundle-node.js --metafile=dist/bundle-node-meta.json && node -e \"const m=JSON.parse(require('fs').readFileSync('dist/bundle-node-meta.json','utf8')); const out=Object.values(m.outputs)[0]; console.log('Node bundle:', (out.bytes/1024).toFixed(1)+'kB', '('+Object.keys(out.inputs).length+' modules)')\"",
     "bundle:check": "pnpm bundle:browser && pnpm bundle:node"
   },
-  "dependencies": {
+  "devDependencies": {
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.214.0",
-    "@opentelemetry/core": "^2.7.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
-    "@opentelemetry/resources": "^2.6.1",
-    "@opentelemetry/sdk-logs": "^0.214.0",
-    "@opentelemetry/sdk-metrics": "^2.6.1",
-    "@opentelemetry/sdk-trace-base": "^2.6.1",
-    "@opentelemetry/sdk-trace-node": "^2.7.0",
-    "@opentelemetry/sdk-trace-web": "^2.7.0",
-    "@strada.sh/light": "workspace:^",
-    "@strada.sh/otlp-json": "workspace:^"
-  },
-  "devDependencies": {
+    "@opentelemetry/instrumentation": "^0.214.0",
+    "@opentelemetry/instrumentation-http": "^0.214.0",
     "@types/node": "^25.5.0",
     "better-auth": "^1.7.5",
     "esbuild": "^0.28.0",
     "rimraf": "^6.0.1",
     "vite": "^8.0.13"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": ">=0.200.0",
+    "better-auth": "^1.3.0",
+    "vite": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "@opentelemetry/api-logs": {
+      "optional": true
+    },
+    "better-auth": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
   }
 }

@@ -3,6 +3,7 @@ import { openai, type OpenAILanguageModelResponsesOptions } from '@ai-sdk/openai
 import { generateText, stepCountIs, tool } from 'ai'
 import { z } from 'zod'
 import { captureException, flush, initStrada, logs, SeverityNumber, shutdown } from '@strada.sh/sdk'
+import { registerOpenTelemetry } from '@strada.sh/sdk/otel'
 
 const projectId = process.env.STRADA_PROJECT_ID
 if (!projectId) {
@@ -28,6 +29,8 @@ initStrada({
     },
   },
 })
+// AI SDK spans (experimental_telemetry) use the global @opentelemetry/api tracer.
+registerOpenTelemetry()
 
 const projectStatus = {
   project: 'strada',
