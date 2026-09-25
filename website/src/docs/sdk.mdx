@@ -877,6 +877,43 @@ ORDER BY n DESC
 LIMIT 50
 ```
 
+### Light package (explicit only, no OpenTelemetry)
+
+For **CLIs, daemons, libraries, and small apps**, install `@strada.sh/light` and change the import. It is a **drop-in subset**: same function names, same option names, same rows in `otel_logs` and `otel_traces`. It has **zero dependencies** (about 10 kB minified), so it does not pull the ~12 MB of OpenTelemetry packages into your users' installs.
+
+```ts
+import { initStrada, track, captureException, getLogger, startSpan, flush } from "@strada.sh/light"
+
+initStrada({
+  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  service: "my-cli",
+  version: "1.0.0",
+  enabled: process.env.DO_NOT_TRACK !== "1",
+})
+
+track("command_run", { command: "deploy" })
+await startSpan({ name: "deploy" }, async (span) => {
+  span.setAttribute("files", 12)
+  getLogger("deploy").info({ message: "uploaded", files: 12 })
+})
+await flush() // the timer is unref'd, flush before a short-lived process exits
+```
+
+The same code is also available as `@strada.sh/sdk/light` when the full SDK is already installed.
+
+**Explicit only.** Nothing is captured unless you call it: no uncaught error handlers, no fetch patching, no browser pageview span, no resource detectors (hostname and OS username are never sent).
+
+| Feature | Light |
+| --- | --- |
+| `track`, `identifyUser`, `trackPageview` | yes |
+| `captureException`, `setTags`, `ignoreErrors`, `denyUrls`, `beforeSend` | yes |
+| `getLogger()` with `trace` ... `fatal` | yes, no OTel `emit()` |
+| `startSpan`, `startInactiveSpan`, `SpanStatusCode` | yes, nesting across `await` needs Node 20.16+, Bun, or Workers |
+| `flush`, `shutdown` | yes |
+| automatic error handlers, browser pageviews, metrics, OTel re-exports, baggage | no, import fails to compile |
+
+Unsupported exports and options are **compile errors**, so a switch never silently drops data. Omit `token` in code shipped to users; anonymous ingest is rate limited per IP.
+
 ## What it sends
 
 ```diagram
