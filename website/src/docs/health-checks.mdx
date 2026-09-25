@@ -62,7 +62,7 @@ strada alerts create --name "Notifications" --channel email --to ops@example.com
 | `--status-max` | `299` | Maximum acceptable status code |
 | `--cooldown` | `60` | Minutes to wait before re-alerting the same check |
 | `--auto-disable-hours` | `24` | Auto-disable after N hours of continuous failure (0 to disable) |
-| `--project` | all | Scope the check to a specific project |
+| `--project` | first project | Project that stores the check results |
 
 ### Example: strict health check
 
@@ -83,8 +83,11 @@ This checks every 10 minutes (cron), allows up to 5 seconds for a response, aler
 ## Listing and managing checks
 
 ```bash
-# List all health checks
+# List all health checks with state, last run, status code, latency, and 24h uptime
 strada checks list
+
+# Recent runs of one check, plus the response body of the last failure
+strada checks view 01KPVGTT9CJW4ZNEF414VHGRFD
 
 # Delete a check (historical results remain in ClickHouse)
 strada checks delete 01KPVGTT9CJW4ZNEF414VHGRFD
@@ -95,6 +98,16 @@ strada checks disable 01KPVGTT9CJW4ZNEF414VHGRFD
 # Re-enable a disabled check
 strada checks enable 01KPVGTT9CJW4ZNEF414VHGRFD
 ```
+
+`checks list` shows one **state** per check:
+
+| State | Meaning |
+|-------|---------|
+| `pending` | No run yet. The check runs on the next matching cron tick |
+| `up` | Last run passed |
+| `down` | Last run failed, not enough consecutive failures to alert yet |
+| `alerting` | Consecutive failure threshold reached, alert sent |
+| `disabled` / `auto-disabled` | Not running. Re-enable with `strada checks enable <id>` |
 
 ---
 
@@ -198,8 +211,8 @@ strada checks create \
   --name "Production API"
 
 # Make sure you have alert destinations
-strada alerts add --channel email --to oncall@example.com
-strada alerts add --channel webhook --to https://hooks.slack.com/services/...
+strada alerts create --name "On-call email" --channel email --to oncall@example.com
+strada alerts create --name "Slack" --channel webhook --to https://hooks.slack.com/services/...
 ```
 
 ### Monitor multiple services

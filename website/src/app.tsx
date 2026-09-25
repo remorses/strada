@@ -804,7 +804,7 @@ export default {
   async scheduled(controller: ScheduledController, _env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(Promise.all([
       checkAlerts(),
-      dispatchHealthChecks(),
+      dispatchHealthChecks(controller.scheduledTime),
     ]))
   },
 } satisfies ExportedHandler<Env>

@@ -13,7 +13,7 @@ import { WorkflowEntrypoint } from 'cloudflare:workers'
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers'
 import * as orm from 'drizzle-orm'
 import * as schema from 'db/src/schema.ts'
-import { getLogger } from '@strada.sh/sdk'
+import { getLogger, flush } from '@strada.sh/sdk'
 import {
   insertBackendRow,
   executeBackendQuery,
@@ -153,6 +153,8 @@ export interface CheckRef {
 
 export interface HealthCheckWorkflowParams {
   checks: CheckRef[]
+  /** Cron tick time (epoch ms). Schedules match against this, so queued or retried steps do not skip checks. */
+  scheduledTime: number
 }
 
 interface CheckResult {
@@ -166,7 +168,7 @@ interface CheckResult {
 
 export class HealthCheckWorkflow extends WorkflowEntrypoint {
   override async run(event: WorkflowEvent<HealthCheckWorkflowParams>, step: WorkflowStep) {
-    const { checks } = event.payload
+    const { checks, scheduledTime } = event.payload
 
     const orgMap = new Map<string, CheckRef[]>()
     for (const check of checks) {
@@ -180,14 +182,22 @@ export class HealthCheckWorkflow extends WorkflowEntrypoint {
         step.do(
           `org-${orgId}`,
           { retries: { limit: 1, delay: '10 seconds' }, timeout: '5 minutes' },
-          async () => { await processOrgChecks(orgId, orgChecks) },
+          async () => {
+            // Workflow steps are separate invocations; flush or their logs never reach Strada
+            try {
+              await processOrgChecks({ orgId, checkRefs: orgChecks, tickTime: new Date(scheduledTime) })
+            } finally {
+              const flushed = await flush()
+              if (flushed instanceof Error) console.error('health check log flush failed', flushed)
+            }
+          },
         ),
       ),
     )
   }
 }
 
-async function processOrgChecks(orgId: string, checkRefs: CheckRef[]): Promise<void> {
+async function processOrgChecks({ orgId, checkRefs, tickTime }: { orgId: string; checkRefs: CheckRef[]; tickTime: Date }): Promise<void> {
   const db = getDb()
 
   // Resolve DB config
@@ -217,12 +227,11 @@ async function processOrgChecks(orgId: string, checkRefs: CheckRef[]): Promise<v
   for (const rule of rules) {
     if (!rule || !rule.checkUrl) continue
 
-    // Resolve project for ClickHouse scoping
-    let projectId = rule.projectId
+    // Results are written and read with the check's project scope
+    const projectId = rule.projectId
     if (!projectId) {
-      const firstProject = await db.query.project.findFirst({ where: { orgId } })
-      if (!firstProject) continue
-      projectId = firstProject.id
+      logger.warn({ message: 'health check has no project, skipping', checkId: rule.id })
+      continue
     }
 
     if (!projectCache.has(projectId)) {
@@ -241,7 +250,7 @@ async function processOrgChecks(orgId: string, checkRefs: CheckRef[]): Promise<v
 
     // Check if due based on cron schedule (stateless, no lastCheckedAt)
     const schedule = rule.checkSchedule ?? '*/5 * * * *'
-    if (!cronMatches(schedule, new Date())) {
+    if (!cronMatches(schedule, tickTime)) {
       continue
     }
 
@@ -274,7 +283,7 @@ async function processOrgChecks(orgId: string, checkRefs: CheckRef[]): Promise<v
     }
 
     // Write result to ClickHouse
-    const projectId = rule.projectId ?? project.id
+    const projectId = project.id
     try {
       await insertBackendRow({
         dbConfig, table: 'otel_health_checks',
@@ -294,7 +303,7 @@ async function processOrgChecks(orgId: string, checkRefs: CheckRef[]): Promise<v
     // Handle alerts and update D1 state
     const destinations = (rule.destinations ?? []).map((d) => ({ channel: d.channel, destination: d.destination }))
     try {
-      await handleCheckAlerts({ dbConfig, project, rule, destinations, currentResult: result, now })
+      await handleCheckAlerts({ dbConfig, project, rule, destinations, currentResult: result, runAtIso: nowIso, now })
     } catch (err) {
       logger.error({ message: 'alert handling failed', checkId: rule.id, error: String(err) })
     }
@@ -360,9 +369,10 @@ async function handleCheckAlerts(ctx: {
   rule: typeof schema.alertRule.$inferSelect & { org: { name: string } | null }
   destinations: Array<{ channel: string; destination: string }>
   currentResult: CheckResult
+  runAtIso: string
   now: number
 }): Promise<void> {
-  const { dbConfig, project, rule, destinations, currentResult, now } = ctx
+  const { dbConfig, project, rule, destinations, currentResult, runAtIso, now } = ctx
   const db = getDb()
   const orgName = rule.org?.name ?? 'Unknown'
   const checkName = rule.name
@@ -372,8 +382,12 @@ async function handleCheckAlerts(ctx: {
   const cooldownMinutes = rule.cooldownMinutes ?? 60
   const autoDisableAfterHours = rule.checkAutoDisableAfterHours ?? 24
 
-  // Query last N results from ClickHouse
-  const lastResults = await queryLastResults(dbConfig, project, rule.id, failureThreshold)
+  // Current run comes from memory: the row just written may not be readable yet (Tinybird replica lag).
+  // Only the previous N-1 runs are read from ClickHouse.
+  const previousResults = failureThreshold > 1
+    ? await queryPreviousResults({ dbConfig, project, checkId: rule.id, before: runAtIso, limit: failureThreshold - 1 })
+    : []
+  const lastResults = [{ success: currentResult.success }, ...previousResults]
   const allFailed = lastResults.length >= failureThreshold && lastResults.every((r) => !r.success)
   const wasAlerting = rule.checkLastAlertStatus === 'alerting'
 
@@ -477,13 +491,16 @@ async function handleCheckAlerts(ctx: {
 
 // ── ClickHouse query (only for check results) ────────────────────
 
-async function queryLastResults(
-  dbConfig: DbConfig, project: ProjectJwtInfo, checkId: string, limit: number,
-): Promise<Array<{ success: boolean }>> {
+async function queryPreviousResults(ctx: {
+  dbConfig: DbConfig; project: ProjectJwtInfo; checkId: string; before: string; limit: number
+}): Promise<Array<{ success: boolean }>> {
+  const { dbConfig, project, checkId, before, limit } = ctx
   const sql = [
     'SELECT Success',
     'FROM otel_health_checks',
     `WHERE CheckId = '${checkId}'`,
+    `AND Timestamp < parseDateTime64BestEffort('${before}', 3)`,
+    'AND Timestamp >= now() - INTERVAL 7 DAY',
     'ORDER BY Timestamp DESC',
     `LIMIT ${limit}`,
     'FORMAT JSON',
@@ -493,7 +510,7 @@ async function queryLastResults(
     const result = await executeBackendQuery({ dbConfig, project, sql })
     return (result.data ?? []).map((row) => ({ success: Number(row.Success) === 1 }))
   } catch (err) {
-    logger.error({ message: 'queryLastResults failed', checkId, error: String(err) })
+    logger.error({ message: 'queryPreviousResults failed', checkId, error: String(err) })
     return []
   }
 }

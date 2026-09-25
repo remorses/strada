@@ -161,6 +161,7 @@
             "pages": [
               "docs/cli/checks-create",
               "docs/cli/checks-list",
+              "docs/cli/checks-view",
               "docs/cli/checks-delete",
               "docs/cli/checks-enable",
               "docs/cli/checks-disable"

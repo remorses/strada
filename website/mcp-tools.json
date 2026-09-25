@@ -827,7 +827,7 @@
           "name": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "string",
-            "description": "Rule name (required)"
+            "description": "Rule name"
           },
           "project": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -947,12 +947,12 @@
           "url": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "string",
-            "description": "URL to check (required)"
+            "description": "URL to check"
           },
           "name": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "string",
-            "description": "Human-readable check name (required)"
+            "description": "Human-readable check name"
           },
           "method": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1005,7 +1005,7 @@
           "project": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "string",
-            "description": "Project slug to scope the check to"
+            "description": "Project slug that stores the results (default: first project in the org)"
           }
         },
         "required": [
@@ -1020,6 +1020,33 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "checks_view",
+      "description": "Show the status and recent results of one health check.\n\nPrints the check config, current state (up, down, alerting, disabled),\n24h uptime, and a table of the most recent runs with status code,\nlatency, and error message. For the latest failure it also prints the\nstored response body (truncated to 16KB by the worker), which usually\nexplains why the endpoint is down.\n\nGet the check ID from `strada checks list`. Results come from the\n`otel_health_checks` table; use `strada query` for custom SQL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Positional argument id"
+          },
+          "limit": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Number of recent runs to show (default: 20)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw JSON"
+          }
+        },
+        "required": [
+          "id"
+        ]
       }
     },
     {

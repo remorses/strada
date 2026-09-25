@@ -32,7 +32,7 @@ alertsCli
       All existing org destinations are auto-linked to the new rule.
     `,
   )
-  .option("--name <name>", z.string().describe("Rule name (required)"))
+  .option("--name <name>", z.string().describe("Rule name"))
   .required()
   .option("--project [slug]", z.string().describe("Scope to a project (omit for all projects)"))
   .option("--threshold [count]", z.coerce.number().describe("Min errors to trigger (default: 1)"))

@@ -11,7 +11,7 @@ import type { HealthCheckWorkflowParams, CheckRef } from './health-check-workflo
 
 const logger = getLogger('health-check-dispatch')
 
-export async function dispatchHealthChecks(): Promise<void> {
+export async function dispatchHealthChecks(scheduledTime: number): Promise<void> {
   const db = getDb()
 
   // Load just IDs and orgId for enabled health_check rules
@@ -33,7 +33,7 @@ export async function dispatchHealthChecks(): Promise<void> {
   try {
     await env.HEALTH_CHECK_WORKFLOW.create({
       id: `health-${Date.now()}`,
-      params: { checks } satisfies HealthCheckWorkflowParams,
+      params: { checks, scheduledTime } satisfies HealthCheckWorkflowParams,
     })
   } catch (err) {
     logger.error({ message: 'failed to create health check workflow instance', error: String(err) })

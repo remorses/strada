@@ -252,6 +252,84 @@ async function writeIssueState(ctx: { dbConfig: DbConfig; row: IssueStateRow }):
   }
 }
 
+// ── Health check result helpers (otel_health_checks) ─────────────────
+
+export interface CheckSummary {
+  lastCheckedAt: number
+  lastSuccess: boolean
+  lastStatusCode: number
+  lastLatencyMs: number
+  lastErrorMessage: string
+  /** Success ratio over the last 24h, 0-1. Null when no runs in 24h. */
+  uptime24h: number | null
+  runs24h: number
+}
+
+export interface CheckResultRow {
+  timestamp: number
+  statusCode: number
+  latencyMs: number
+  success: boolean
+  errorMessage: string
+  responseBody: string
+}
+
+type HealthCheckRuleWithProject = {
+  id: string
+  projectId: string | null
+  project: { id: string; tinybirdJwt: string | null; tinybirdJwtDatasources: string | null } | null
+}
+
+/** Latest result and 24h uptime per check. One query per project because reads are project-scoped. */
+async function queryCheckSummaries(ctx: { dbConfig: DbConfig; rules: HealthCheckRuleWithProject[] }): Promise<Map<string, CheckSummary>> {
+  const byProject = new Map<string, { project: NonNullable<HealthCheckRuleWithProject['project']>; ids: string[] }>()
+  for (const rule of ctx.rules) {
+    if (!rule.project) continue
+    const entry = byProject.get(rule.project.id) ?? { project: rule.project, ids: [] }
+    entry.ids.push(rule.id)
+    byProject.set(rule.project.id, entry)
+  }
+
+  const summaries = new Map<string, CheckSummary>()
+  await Promise.all([...byProject.values()].map(async ({ project, ids }) => {
+    const sql = dedent`
+      SELECT
+        CheckId,
+        toUnixTimestamp64Milli(max(Timestamp)) AS LastCheckedAt,
+        argMax(Success, Timestamp) AS LastSuccess,
+        argMax(StatusCode, Timestamp) AS LastStatusCode,
+        argMax(LatencyMs, Timestamp) AS LastLatencyMs,
+        argMax(ErrorMessage, Timestamp) AS LastErrorMessage,
+        countIf(Timestamp >= now() - INTERVAL 24 HOUR) AS Runs24h,
+        countIf(Timestamp >= now() - INTERVAL 24 HOUR AND Success = 1) AS Ok24h
+      FROM otel_health_checks
+      WHERE CheckId IN (${ids.map((id) => `'${id}'`).join(', ')})
+        AND Timestamp >= now() - INTERVAL 7 DAY
+      GROUP BY CheckId
+      LIMIT ${ids.length}
+      FORMAT JSON
+    `
+    try {
+      const result = await executeBackendQuery({ dbConfig: ctx.dbConfig, project, sql })
+      for (const row of result.data ?? []) {
+        const runs24h = Number(row.Runs24h)
+        summaries.set(String(row.CheckId), {
+          lastCheckedAt: Number(row.LastCheckedAt),
+          lastSuccess: Number(row.LastSuccess) === 1,
+          lastStatusCode: Number(row.LastStatusCode),
+          lastLatencyMs: Number(row.LastLatencyMs),
+          lastErrorMessage: String(row.LastErrorMessage ?? ''),
+          uptime24h: runs24h > 0 ? Number(row.Ok24h) / runs24h : null,
+          runs24h,
+        })
+      }
+    } catch (err) {
+      logger.error({ message: 'queryCheckSummaries failed', projectId: project.id, error: String(err) })
+    }
+  }))
+  return summaries
+}
+
 function toProjectRetention(project: {
   id: string
   tracesRetentionDays: number | null
@@ -368,6 +446,33 @@ const logger = getLogger('strada-website-api')
 
 export const api = new Spiceflow({ tracer })
   .get('/api/v0/health', () => ({ ok: true }))
+  // Public end-to-end probe for Strada health checks: D1 lookup, project JWT, Tinybird /v0/sql.
+  // Uses the website's own project (STRADA_PROJECT_ID) and returns no query data.
+  .get('/api/v0/health/tinybird', async () => {
+    const start = Date.now()
+    const headers = { 'cache-control': 'no-store' }
+    const db = getDb()
+    const project = await db.query.project.findFirst({ where: { id: env.STRADA_PROJECT_ID } })
+    if (!project) {
+      return json({ ok: false, error: 'project not found' }, { status: 503, headers })
+    }
+    const dbConfig = await db.query.database.findFirst({ where: { orgId: project.orgId } })
+    if (!dbConfig) {
+      return json({ ok: false, error: 'database config not found' }, { status: 503, headers })
+    }
+    try {
+      const result = await executeBackendQuery({
+        dbConfig,
+        project,
+        sql: 'SELECT count() AS c FROM otel_health_checks WHERE Timestamp >= now() - INTERVAL 1 HOUR LIMIT 1 FORMAT JSON',
+      })
+      if (!result.data?.length) throw new Error('query returned no rows')
+      return json({ ok: true, backend: dbConfig.backend, latencyMs: Date.now() - start }, { headers })
+    } catch (err) {
+      logger.error({ message: 'tinybird health check failed', error: String(err) })
+      return json({ ok: false, error: 'query failed', latencyMs: Date.now() - start }, { status: 503, headers })
+    }
+  })
   .route({
       method: 'POST',
       path: '/api/v0/orgs',
@@ -1448,12 +1553,19 @@ export const api = new Spiceflow({ tracer })
           where: { orgId: params.orgId, type: 'health_check' },
           with: { destinations: true, project: true },
         })
+        const dbConfig = await db.query.database.findFirst({ where: { orgId: params.orgId } })
+        const summaries = dbConfig ? await queryCheckSummaries({ dbConfig, rules }) : new Map<string, CheckSummary>()
 
         return {
           checks: rules.map((r) => ({
             id: r.id,
             name: r.name,
             enabled: r.enabled,
+            disabledReason: r.checkDisabledReason || null,
+            alertStatus: r.checkLastAlertStatus || null,
+            firstFailedAt: r.checkFirstFailedAt,
+            lastAlertedAt: r.lastAlertedAt,
+            summary: summaries.get(r.id) ?? null,
             url: r.checkUrl,
             method: r.checkMethod ?? 'GET',
             schedule: r.checkSchedule ?? '*/5 * * * *',
@@ -1472,6 +1584,56 @@ export const api = new Spiceflow({ tracer })
             })),
           })),
         }
+      },
+    })
+    .route({
+      method: 'GET',
+      path: '/api/v0/orgs/:orgId/checks/:checkId/results',
+      query: z.object({ limit: z.coerce.number().int().min(1).max(500).default(20) }),
+      async handler({ request, params, query }) {
+        const session = await requireSession(request)
+        await requireOrgMember(session.userId, params.orgId)
+
+        const db = getDb()
+        const rule = await db.query.alertRule.findFirst({
+          where: { id: params.checkId, orgId: params.orgId, type: 'health_check' },
+          with: { project: true },
+        })
+        if (!rule) {
+          throw json({ error: 'health check not found' }, { status: 404 })
+        }
+        if (!rule.project) {
+          throw json({ error: 'health check has no project' }, { status: 409 })
+        }
+        const dbConfig = await db.query.database.findFirst({ where: { orgId: params.orgId } })
+        if (!dbConfig) {
+          throw json({ error: 'database not configured' }, { status: 409 })
+        }
+
+        const sql = dedent`
+          SELECT
+            toUnixTimestamp64Milli(Timestamp) AS Ts,
+            StatusCode, LatencyMs, Success, ErrorMessage, ResponseBody
+          FROM otel_health_checks
+          WHERE CheckId = '${rule.id}'
+            AND Timestamp >= now() - INTERVAL 90 DAY
+          ORDER BY Timestamp DESC
+          LIMIT ${query.limit}
+          FORMAT JSON
+        `
+        const result = await executeBackendQuery({ dbConfig, project: rule.project, sql }).catch((err: unknown) => {
+          logger.error({ message: 'check results query failed', checkId: rule.id, error: String(err) })
+          throw json({ error: 'failed to query check results' }, { status: 502 })
+        })
+        const results: CheckResultRow[] = (result.data ?? []).map((row) => ({
+          timestamp: Number(row.Ts),
+          statusCode: Number(row.StatusCode),
+          latencyMs: Number(row.LatencyMs),
+          success: Number(row.Success) === 1,
+          errorMessage: String(row.ErrorMessage ?? ''),
+          responseBody: String(row.ResponseBody ?? ''),
+        }))
+        return { results }
       },
     })
     .route({
@@ -1516,7 +1678,8 @@ export const api = new Spiceflow({ tracer })
             orgId: params.orgId,
             type: 'health_check',
             name: body.name,
-            projectId: body.projectId ?? null,
+            // Always set: results are written and read with this project's scope.
+            projectId: projectRow.id,
             cooldownMinutes: body.cooldownMinutes,
             checkUrl: body.url,
             checkMethod: body.method,
