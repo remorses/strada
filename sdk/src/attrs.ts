@@ -69,8 +69,41 @@ export const ATTR = {
   "db.namespace": "db.namespace",
   /** Operation, e.g. "SELECT", "GET", "MULTI". */
   "db.operation.name": "db.operation.name",
-  /** Query with literals replaced by "?", e.g. "SELECT * FROM users WHERE id = ?". */
+  /** Query as the library publishes it, e.g. "SELECT * FROM users WHERE id = 42", "GET user:1". */
   "db.query.text": "db.query.text",
+  /** Collection or table, e.g. "users". */
+  "db.collection.name": "db.collection.name",
+  /** Number of commands or documents in a batch, only when greater than 1. */
+  "db.operation.batch.size": "db.operation.batch.size",
+
+  /** Matched route template, e.g. "/users/:id". */
+  "http.route": "http.route",
+
+  // -- GraphQL spans (OTel GraphQL semantic conventions), set by @strada.sh/sdk/instrument --
+
+  /** "query", "mutation", or "subscription". */
+  "graphql.operation.type": "graphql.operation.type",
+  /** Operation name from the document, e.g. "GetUser". */
+  "graphql.operation.name": "graphql.operation.name",
+  /** GraphQL document source. */
+  "graphql.document": "graphql.document",
+
+  // -- GenAI spans (OTel GenAI semantic conventions), set by @strada.sh/sdk/instrument --
+
+  /** "invoke_agent", "generate_content", "execute_tool", "embeddings", "rerank". */
+  "gen_ai.operation.name": "gen_ai.operation.name",
+  /** Model provider, e.g. "openai.chat". */
+  "gen_ai.provider.name": "gen_ai.provider.name",
+  /** Requested model id, e.g. "gpt-5". */
+  "gen_ai.request.model": "gen_ai.request.model",
+  /** Tool name for execute_tool spans. */
+  "gen_ai.tool.name": "gen_ai.tool.name",
+  /** Tool call id for execute_tool spans. */
+  "gen_ai.tool.call.id": "gen_ai.tool.call.id",
+  /** Prompt tokens. */
+  "gen_ai.usage.input_tokens": "gen_ai.usage.input_tokens",
+  /** Completion tokens. */
+  "gen_ai.usage.output_tokens": "gen_ai.usage.output_tokens",
 
   // -- Custom events (track API) --
 

@@ -145,7 +145,8 @@ export interface AsyncLocalStorageLike<T> {
 
 /** Context that survives `await`. Runtime entries pass the AsyncLocalStorage instance. */
 export class AsyncContextManager implements ContextManager {
-  constructor(private readonly storage: AsyncLocalStorageLike<Context>) {}
+  /** Public so diagnostics_channel integrations can `bindStore` spans into it. */
+  constructor(readonly storage: AsyncLocalStorageLike<Context>) {}
 
   active(): Context {
     return this.storage.getStore() ?? ROOT_CONTEXT;

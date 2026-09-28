@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
 import { Redis } from "ioredis";
+import mongoose from "mongoose";
 import mysql from "mysql2";
+import { createClient } from "redis";
 import { afterEach, expect, test } from "vitest";
 import {
   captureException,
@@ -15,7 +17,7 @@ import {
   startSpan,
   track,
 } from "./node.ts";
-import { fetchSpans, httpClientSpans, httpServerSpans, ioredisSpans, mysql2Spans } from "./instrument.ts";
+import { fetchSpans, httpClientSpans, httpServerSpans, mongooseSpans, mysql2Spans, redisSpans } from "./instrument.ts";
 import { flush as flushPipeline, startPipeline, stopPipeline } from "./export.ts";
 import { resetContext } from "./shared.ts";
 
@@ -477,7 +479,7 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-test("integrations: mysql2 and ioredis TracingChannel spans parent to the active span", async () => {
+test("integrations: mysql2, redis, ioredis, mongoose TracingChannel spans parent to the active span", async () => {
   const receiver = await startReceiver();
   const redisPort = await freePort();
   const redisServer = spawn("redis-server", ["--port", String(redisPort), "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"]);
@@ -494,12 +496,17 @@ test("integrations: mysql2 and ioredis TracingChannel spans parent to the active
       service: "api",
       enabled: true,
       captureUncaughtErrors: false,
-      integrations: [mysql2Spans(), ioredisSpans()],
+      integrations: [mysql2Spans(), redisSpans(), mongooseSpans()],
     }),
   ).toBeUndefined();
 
   const redis = new Redis({ host: "127.0.0.1", port: redisPort, lazyConnect: true });
   await redis.connect();
+  const nodeRedis = createClient({ socket: { host: "127.0.0.1", port: redisPort } });
+  await nodeRedis.connect();
+  // No MongoDB server: with bufferCommands off, operations fail right away but still publish.
+  const mongo = mongoose.createConnection();
+  const User = mongo.model("User", new mongoose.Schema({ email: String }, { bufferCommands: false }));
   // No MySQL server: the query is still published, then fails with ECONNREFUSED.
   const mysqlConnection = mysql.createConnection({ host: "127.0.0.1", port: await freePort(), database: "shop" });
   mysqlConnection.on("error", () => {});
@@ -507,12 +514,16 @@ test("integrations: mysql2 and ioredis TracingChannel spans parent to the active
     await redis.set("user:1", "secret-value");
     await redis.get("user:1");
     await redis.multi().incr("visits").expire("visits", 60).exec();
+    await nodeRedis.hSet("session:1", "token", "secret-value");
+    await nodeRedis.multi().incr("hits").get("hits").exec();
+    await User.find({ email: "a@b.co" }).exec().catch(() => undefined);
     const failed = await new Promise<unknown>((resolve) => {
       mysqlConnection.query("SELECT * FROM users WHERE email = ? AND id = 42", ["a@b.co"], (error) => resolve(error));
     });
     expect(failed).toBeInstanceOf(Error);
   });
   redis.disconnect();
+  await nodeRedis.quit();
   redisServer.kill();
   expect(await shutdown()).toBeUndefined();
   receiver.close();
@@ -605,9 +616,45 @@ test("integrations: mysql2 and ioredis TracingChannel spans parent to the active
       },
       {
         "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "HSET",
+          "db.query.text": "HSET session:1 token ?",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "HSET 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.batch.size": 2,
+          "db.operation.name": "MULTI",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "MULTI 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.collection.name": "users",
+          "db.operation.name": "find",
+          "db.query.text": "{"email":"a@b.co"}",
+          "db.system.name": "mongodb",
+          "error.type": "MongooseError",
+        },
+        "kind": 3,
+        "name": "find users",
+        "status": 2,
+      },
+      {
+        "attributes": {
           "db.namespace": "shop",
           "db.operation.name": "SELECT",
-          "db.query.text": "SELECT * FROM users WHERE email = ? AND id = ?",
+          "db.query.text": "SELECT * FROM users WHERE email = 'a@b.co' AND id = 42",
           "db.system.name": "mysql",
           "error.type": "Error",
           "server.address": "127.0.0.1",

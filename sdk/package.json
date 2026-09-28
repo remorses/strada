@@ -67,6 +67,10 @@
     "./otel": {
       "types": "./dist/otel.d.ts",
       "default": "./dist/otel.js"
+    },
+    "./instrument": {
+      "types": "./dist/instrument.d.ts",
+      "default": "./dist/instrument.js"
     }
   },
   "imports": {
@@ -111,6 +115,10 @@
     "@types/node": "^25.5.0",
     "better-auth": "^1.7.5",
     "esbuild": "^0.28.0",
+    "ioredis": "^6.0.0",
+    "mongoose": "^9.10.2",
+    "mysql2": "^3.24.4",
+    "redis": "^6.2.1",
     "rimraf": "^6.0.1",
     "vite": "^8.0.13"
   },
