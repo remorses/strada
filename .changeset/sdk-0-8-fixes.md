@@ -12,3 +12,5 @@ Fix bugs in the zero-dependency SDK:
 - **Node**: `shutdown()` removes the `uncaughtException`, `unhandledRejection`, and `beforeExit` handlers. A later `initStrada()` can enable or disable `captureUncaughtErrors` again.
 - `registerOpenTelemetry()` never throws. If a registration step throws, the SDK rolls back and returns the error.
 - New exports: `createTraceState()` and the `TraceState` type, the same as in `@opentelemetry/api`.
+- **Cloudflare Workers**: each invocation exports its own records. A flush no longer waits for another request's export, and the SDK starts no timers in Workers. Workers bind I/O to the request that created it, so a shared export chain could delay or lose telemetry.
+- **Cloudflare Workers**: metrics are exported with the invocation that recorded them, and only series that changed are sent. Before, a timer with no owner request sent them, and every log or span flush sent all metrics again.

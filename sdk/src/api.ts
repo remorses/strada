@@ -140,6 +140,7 @@ export class StackContextManager implements ContextManager {
 export interface AsyncLocalStorageLike<T> {
   getStore(): T | undefined;
   run<R, A extends unknown[]>(store: T, callback: (...args: A) => R, ...args: A): R;
+  enterWith(store: T): void;
 }
 
 /** Context that survives `await`. Runtime entries pass the AsyncLocalStorage instance. */
@@ -162,6 +163,11 @@ export class AsyncContextManager implements ContextManager {
 
   bind<T>(ctx: Context, target: T): T {
     return bindFunction(this, ctx, target);
+  }
+
+  /** Make `ctx` active for the rest of the current async resource. Used by the HTTP server integration. */
+  enterWith(ctx: Context): void {
+    this.storage.enterWith(ctx);
   }
 
   enable(): this {
@@ -1024,6 +1030,8 @@ interface Series {
   min: number;
   max: number;
   buckets: number[];
+  /** Recorded since the previous collect. */
+  changed: boolean;
 }
 
 interface Instrument {
@@ -1053,8 +1061,10 @@ function recordValue(instrument: Instrument, value: number, attributes: Attribut
     min: Infinity,
     max: -Infinity,
     buckets: new Array(instrument.bounds.length + 1).fill(0),
+    changed: true,
   };
   instrument.series.set(key, series);
+  series.changed = true;
   if (instrument.kind === "histogram") {
     series.count++;
     series.value += value;
@@ -1062,18 +1072,21 @@ function recordValue(instrument: Instrument, value: number, attributes: Attribut
     series.max = Math.max(series.max, value);
     const index = instrument.bounds.findIndex((bound) => value <= bound);
     series.buckets[index === -1 ? instrument.bounds.length : index]!++;
-    return;
+  } else {
+    // Observable counters report the current cumulative total, gauges the last value.
+    series.value = instrument.kind === "gauge" || instrument.observable ? value : series.value + value;
   }
-  // Observable counters report the current cumulative total, gauges the last value.
-  series.value = instrument.kind === "gauge" || instrument.observable ? value : series.value + value;
+  // Observable callbacks run inside a flush; they must not schedule another one.
+  if (!instrument.observable) runtimeHooks.afterRecord?.();
 }
 
 function numberPoint(value: number): { asInt: string } | { asDouble: number } {
   return Number.isInteger(value) ? { asInt: String(value) } : { asDouble: value };
 }
 
-function toOtlpMetric(instrument: Instrument, timeUnixNano: string): OtlpMetric | undefined {
-  const series = Array.from(instrument.series.values());
+function toOtlpMetric(instrument: Instrument, timeUnixNano: string, changedOnly: boolean): OtlpMetric | undefined {
+  const series = Array.from(instrument.series.values()).filter((point) => !changedOnly || point.changed);
+  for (const point of series) point.changed = false;
   if (series.length === 0) return undefined;
   const base = {
     name: instrument.name,
@@ -1146,7 +1159,7 @@ function createMeter(scope: string): Meter {
     return observable;
   };
 
-  const collect = async () => {
+  const collect = async ({ changedOnly }: { changedOnly: boolean }) => {
     await Promise.all(
       instruments.flatMap((instrument) =>
         Array.from(instrument.callbacks, (callback) =>
@@ -1174,7 +1187,7 @@ function createMeter(scope: string): Meter {
     );
     const time = nowUnixNano();
     const metrics = instruments.flatMap((instrument) => {
-      const metric = toOtlpMetric(instrument, time);
+      const metric = toOtlpMetric(instrument, time, changedOnly);
       return metric ? [metric] : [];
     });
     return metrics.length > 0 ? { scope, metrics } : undefined;

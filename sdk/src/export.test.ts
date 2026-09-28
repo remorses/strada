@@ -1,15 +1,22 @@
+import { spawn } from "node:child_process";
 import http from "node:http";
+import net from "node:net";
+import { Redis } from "ioredis";
+import mysql from "mysql2";
 import { afterEach, expect, test } from "vitest";
 import {
   captureException,
   flush,
   getLogger,
   initStrada,
+  logs,
   metrics,
   shutdown,
   startSpan,
   track,
 } from "./node.ts";
+import { fetchSpans, httpClientSpans, httpServerSpans, ioredisSpans, mysql2Spans } from "./instrument.ts";
+import { flush as flushPipeline, startPipeline, stopPipeline } from "./export.ts";
 import { resetContext } from "./shared.ts";
 
 /** Real OTLP/HTTP JSON receiver. Records every request body and the client socket. */
@@ -277,6 +284,75 @@ test("exports cumulative metrics as OTLP JSON", async () => {
   `);
 });
 
+test("invocation-scoped pipeline: flushes never wait on each other, metrics send only changed series", async () => {
+  const receiver = await startReceiver();
+  // A second server that holds its response until released, like a slow export from another request.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const slow = http.createServer((req, res) => {
+    req.resume();
+    void held.then(() => res.end("{}"));
+  });
+  await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  const batch = { scheduledDelayMillis: 60_000, maxExportBatchSize: 512, maxQueueSize: 2048, exportTimeoutMillis: 5000 };
+  const pipeline = (endpoint: string) => ({
+    endpoint,
+    headers: {},
+    resource: [],
+    logs: batch,
+    traces: batch,
+    metrics: { exportIntervalMillis: 60_000, exportTimeoutMillis: 5000 },
+    invocationScoped: true,
+  });
+
+  startPipeline(pipeline(`http://127.0.0.1:${(slow.address() as { port: number }).port}`));
+  logs.getLogger("a").emit({ body: "request A" });
+  const flushA = flushPipeline({ includeMetrics: false });
+  startPipeline(pipeline(receiver.endpoint));
+  logs.getLogger("b").emit({ body: "request B" });
+  const flushB = await flushPipeline({ includeMetrics: false });
+
+  const counter = metrics.getMeter("invocation").createCounter("invocation.count");
+  const metricPoints = async () => {
+    const before = receiver.requests.length;
+    expect(await flushPipeline()).toBeUndefined();
+    return receiver.requests
+      .slice(before)
+      .filter((request) => request.url === "/v1/metrics")
+      .flatMap((request) => (request.body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
+      .filter((scope) => scope.scope.name === "invocation")
+      .flatMap((scope) => (scope.metrics as Array<Record<string, any>>).flatMap((metric) => metric.sum.dataPoints.map((point: { asInt: string }) => point.asInt)));
+  };
+  counter.add(2);
+  const first = await metricPoints();
+  const unchanged = await metricPoints();
+  counter.add(3);
+  const cumulative = await metricPoints();
+
+  const bFinishedWhileAPending = receiver.requests.some((request) => request.url === "/v1/logs");
+  release();
+  const errorA = await flushA;
+  stopPipeline();
+  slow.close();
+  receiver.close();
+  expect({ flushB, bFinishedWhileAPending, errorA, first, unchanged, cumulative }).toMatchInlineSnapshot(`
+    {
+      "bFinishedWhileAPending": true,
+      "cumulative": [
+        "5",
+      ],
+      "errorA": undefined,
+      "first": [
+        "2",
+      ],
+      "flushB": undefined,
+      "unchanged": [],
+    }
+  `);
+});
+
 test("shutdown removes process handlers so a later init can choose again", async () => {
   const receiver = await startReceiver();
   const count = () => process.listenerCount("uncaughtException");
@@ -321,7 +397,7 @@ test("reuses keep-alive connections across flushes", async () => {
   `);
 });
 
-test("instrument: fetch, http-client, http-server spans link through traceparent without patching", async () => {
+test("integrations: fetch, http-client, http-server spans link through traceparent without patching", async () => {
   const receiver = await startReceiver();
   expect(
     initStrada({
@@ -330,7 +406,7 @@ test("instrument: fetch, http-client, http-server spans link through traceparent
       service: "api",
       enabled: true,
       captureUncaughtErrors: false,
-      instrument: ["fetch", "http-client", "http-server"],
+      integrations: [fetchSpans(), httpClientSpans(), httpServerSpans()],
     }),
   ).toBeUndefined();
   const app = http.createServer((req, res) => {
@@ -389,5 +465,157 @@ test("instrument: fetch, http-client, http-server spans link through traceparent
         "server GET /via-fetch 200 status=0 <- client GET http://app/via-fetch?x=1 200 status=0",
       ],
     }
+  `);
+});
+
+/** Free TCP port: listen on 0, read it, close. */
+async function freePort(): Promise<number> {
+  const server = net.createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+test("integrations: mysql2 and ioredis TracingChannel spans parent to the active span", async () => {
+  const receiver = await startReceiver();
+  const redisPort = await freePort();
+  const redisServer = spawn("redis-server", ["--port", String(redisPort), "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"]);
+  await new Promise<void>((resolve, reject) => {
+    redisServer.on("error", reject);
+    redisServer.stdout.on("data", (chunk: Buffer) => {
+      if (chunk.toString().includes("Ready to accept connections")) resolve();
+    });
+  });
+  expect(
+    initStrada({
+      projectId: "",
+      endpoint: receiver.endpoint,
+      service: "api",
+      enabled: true,
+      captureUncaughtErrors: false,
+      integrations: [mysql2Spans(), ioredisSpans()],
+    }),
+  ).toBeUndefined();
+
+  const redis = new Redis({ host: "127.0.0.1", port: redisPort, lazyConnect: true });
+  await redis.connect();
+  // No MySQL server: the query is still published, then fails with ECONNREFUSED.
+  const mysqlConnection = mysql.createConnection({ host: "127.0.0.1", port: await freePort(), database: "shop" });
+  mysqlConnection.on("error", () => {});
+  await startSpan({ name: "job" }, async () => {
+    await redis.set("user:1", "secret-value");
+    await redis.get("user:1");
+    await redis.multi().incr("visits").expire("visits", 60).exec();
+    const failed = await new Promise<unknown>((resolve) => {
+      mysqlConnection.query("SELECT * FROM users WHERE email = ? AND id = 42", ["a@b.co"], (error) => resolve(error));
+    });
+    expect(failed).toBeInstanceOf(Error);
+  });
+  redis.disconnect();
+  redisServer.kill();
+  expect(await shutdown()).toBeUndefined();
+  receiver.close();
+
+  type Span = { name: string; kind: number; spanId: string; parentSpanId?: string; attributes: KeyValue[]; status: { code: number } };
+  const spans = receiver.requests
+    .filter((request) => request.url === "/v1/traces")
+    .flatMap((request) => (request.body.resourceSpans as Array<{ scopeSpans: Array<{ spans: Span[] }> }>)[0]!.scopeSpans.flatMap((scope) => scope.spans));
+  const byId = new Map(spans.map((span) => [span.spanId, span]));
+  // Commands ioredis sends on its own while connecting (INFO) have no parent.
+  const traced = spans.filter((span) => byId.get(span.parentSpanId ?? "")?.name === "job");
+  expect(
+    traced.map((span) => {
+      const { "server.port": _port, ...attributes } = decodeAttributes(span.attributes);
+      return { name: span.name, kind: span.kind, status: span.status.code, attributes };
+    }),
+  ).toMatchInlineSnapshot(`
+    [
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "SET",
+          "db.query.text": "SET user:1 ?",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "SET 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "GET",
+          "db.query.text": "GET user:1",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "GET 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "MULTI",
+          "db.query.text": "MULTI",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "MULTI 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "INCR",
+          "db.query.text": "INCR visits",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "INCR 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "EXPIRE",
+          "db.query.text": "EXPIRE visits 60",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "EXPIRE 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "0",
+          "db.operation.name": "EXEC",
+          "db.query.text": "EXEC",
+          "db.system.name": "redis",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "EXEC 0",
+        "status": 0,
+      },
+      {
+        "attributes": {
+          "db.namespace": "shop",
+          "db.operation.name": "SELECT",
+          "db.query.text": "SELECT * FROM users WHERE email = ? AND id = ?",
+          "db.system.name": "mysql",
+          "error.type": "Error",
+          "server.address": "127.0.0.1",
+        },
+        "kind": 3,
+        "name": "SELECT shop",
+        "status": 2,
+      },
+    ]
   `);
 });

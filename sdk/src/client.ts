@@ -20,6 +20,7 @@ import {
   prepareErrorForCapture,
   recordExceptionOnSpan,
   resetOptions,
+  teardownIntegrations,
   tryTelemetry,
   tryTelemetryAsync,
   type CaptureExceptionOptions,
@@ -93,8 +94,9 @@ export function flush(): Promise<Error | undefined> {
   });
 }
 
-/** Flush, then stop exporting. `initStrada()` can be called again afterwards. */
+/** Remove integrations, flush, then stop exporting. `initStrada()` can be called again afterwards. */
 export async function shutdown(): Promise<Error | undefined> {
+  teardownIntegrations();
   const error = await flush();
   stopPipeline();
   resetOptions();
@@ -158,6 +160,7 @@ export {
   type CaptureExceptionOptions,
   type DisposableSpan,
   type StartSpanOptions,
+  type StradaIntegration,
   type StradaLogger,
   type StradaOptions,
   type StradaTelemetryOptions,

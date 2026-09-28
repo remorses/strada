@@ -14,8 +14,11 @@
  * spans. Disable with `cloudflareTracing: false`.
  *
  * Every record registers a flush with `waitUntil` from `cloudflare:workers`,
- * so the request stays alive until telemetry is delivered. Users never need
- * to call flush() or pass ctx around.
+ * so the invocation stays alive until telemetry is delivered. Users never
+ * need to call flush() or pass ctx around. The flush runs one microtask later,
+ * so records emitted in the same synchronous run share one request. There are
+ * no timers and no flush waits for another invocation (see export.ts), because
+ * Workers bind I/O and promises to the request that created them.
  *
  * Env type comes from wrangler types (worker-configuration.d.ts), never define
  * custom Env interfaces. See the cloudflare-workers skill for conventions.
@@ -27,7 +30,7 @@ import { AsyncContextManager, runtimeHooks, setContextManager, type Context } fr
 import { ATTR } from "./attrs.ts";
 import { flush } from "./client.ts";
 import { serverHooks } from "./server.ts";
-import { initCore, resolveReleaseAttributes, tryTelemetry, type StradaOptions } from "./shared.ts";
+import { initCore, resolveReleaseAttributes, setupIntegrations, tryTelemetry, type StradaOptions } from "./shared.ts";
 
 export * from "./client.ts";
 export { identifyUser, trackPageview } from "./server.ts";
@@ -64,6 +67,7 @@ export function initStrada(options: StradaOptions): Error | undefined {
           [ATTR["faas.name"]]: options.service,
           [ATTR["cloudflare.script_name"]]: options.service,
         },
+        invocationScoped: true,
       });
       if (!started) return;
       setContextManager(new AsyncContextManager(new AsyncLocalStorage<Context>()));
@@ -74,6 +78,7 @@ export function initStrada(options: StradaOptions): Error | undefined {
         const enterSpan = cfTracing.enterSpan;
         runtimeHooks.wrapActiveSpan = (name, run) => enterSpan(name, (cfSpan) => run(cfSpan));
       }
+      setupIntegrations(options.integrations);
     },
   });
 }

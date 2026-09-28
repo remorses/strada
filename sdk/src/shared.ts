@@ -98,13 +98,12 @@ export interface StradaOptions {
    */
   captureUncaughtErrors?: boolean;
   /**
-   * Node.js 22.12+ only. Opt-in HTTP spans through `node:diagnostics_channel`,
-   * no module patching and no preload. Default: none.
-   * - `fetch`: outgoing `fetch()` (undici), adds traceparent + baggage
-   * - `http-client`: outgoing `http.request` / `https.request`, adds headers
-   * - `http-server`: incoming `http.createServer` requests, reads headers
+   * Automatic spans from libraries, off by default. Import them from
+   * `@strada.sh/sdk/instrument` (`fetchSpans()`, `httpServerSpans()`,
+   * `mysql2Spans()`, ...) or write your own `StradaIntegration`.
+   * `shutdown()` removes them.
    */
-  instrument?: Array<"fetch" | "http-client" | "http-server">;
+  integrations?: StradaIntegration[];
   /** Batching and export cadence options. */
   telemetry?: StradaTelemetryOptions;
   /**
@@ -137,6 +136,17 @@ export interface StradaOptions {
    * Set to `false` to disable bridging and only export via OTLP.
    */
   cloudflareTracing?: boolean;
+}
+
+/**
+ * Something that creates telemetry automatically, usually by subscribing to
+ * `node:diagnostics_channel`. `setup()` runs once at the end of
+ * `initStrada()`; the function it returns runs on `shutdown()`.
+ */
+export interface StradaIntegration {
+  /** Shown in SDK warnings when setup or teardown throws. */
+  name: string;
+  setup(): (() => void) | void;
 }
 
 export interface StradaUserIdentity {
@@ -1356,6 +1366,29 @@ export function resetOptions(): void {
   _options = undefined;
 }
 
+let integrationTeardowns: Array<{ name: string; teardown: () => void }> = [];
+
+/** Runtime entries call this last in initStrada(), after the context manager is set. */
+export function setupIntegrations(integrations: StradaIntegration[] | undefined): void {
+  for (const integration of integrations ?? []) {
+    // One failing integration must not stop the others.
+    void tryTelemetry({
+      operation: `integration ${integration.name} setup()`,
+      run: () => {
+        const teardown = integration.setup();
+        if (teardown) integrationTeardowns.push({ name: integration.name, teardown });
+      },
+    });
+  }
+}
+
+export function teardownIntegrations(): void {
+  for (const { name, teardown } of integrationTeardowns) {
+    void tryTelemetry({ operation: `integration ${name} teardown`, run: teardown });
+  }
+  integrationTeardowns = [];
+}
+
 /**
  * Start the export pipeline. Returns false when already initialized so the
  * caller can skip installing runtime handlers twice.
@@ -1364,10 +1397,13 @@ export function initCore({
   options,
   resource,
   allowToken = true,
+  invocationScoped = false,
 }: {
   options: StradaOptions;
   resource: Attributes;
   allowToken?: boolean;
+  /** Cloudflare Workers: no export timers, the runtime flushes per invocation. */
+  invocationScoped?: boolean;
 }): boolean {
   if (_options) {
     warnOnce("[@strada.sh/sdk] initStrada() was already called. Ignoring duplicate init.");
@@ -1396,6 +1432,7 @@ export function initCore({
       exportIntervalMillis: options.telemetry?.metrics?.exportIntervalMillis ?? (dev ? 2000 : 10_000),
       exportTimeoutMillis: options.telemetry?.metrics?.exportTimeoutMillis ?? 30_000,
     },
+    invocationScoped,
   });
   return true;
 }

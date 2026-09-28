@@ -11,8 +11,8 @@
  * - Buffered telemetry is flushed on `beforeExit`. The SDK installs no
  *   SIGINT/SIGTERM handlers, so Ctrl+C keeps its default behavior; call
  *   `flush()` in your own shutdown handler.
- * - `instrument: ["fetch", "http-client", "http-server"]` adds HTTP spans
- *   through diagnostics_channel (instrument-http.ts). Off by default.
+ * - `integrations: [fetchSpans(), httpServerSpans()]` from
+ *   `@strada.sh/sdk/instrument` adds spans through diagnostics_channel.
  * - On Vercel, every record registers a `waitUntil` flush through the native
  *   request context (`Symbol.for('@vercel/request-context')`), because Vercel
  *   freezes the process between requests and batch timers never fire.
@@ -22,9 +22,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { AsyncContextManager, runtimeHooks, setContextManager, type Context } from "./api.ts";
 import { ATTR } from "./attrs.ts";
 import { captureException, flush, shutdown as shutdownClient } from "./client.ts";
-import { instrumentHttp } from "./instrument-http.ts";
 import { serverHooks } from "./server.ts";
-import { initCore, normalizeError, resolveReleaseAttributes, tryTelemetry, type StradaOptions } from "./shared.ts";
+import { initCore, normalizeError, resolveReleaseAttributes, setupIntegrations, tryTelemetry, type StradaOptions } from "./shared.ts";
 
 export * from "./client.ts";
 export { identifyUser, trackPageview } from "./server.ts";
@@ -101,24 +100,20 @@ export function initStrada(options: StradaOptions): Error | undefined {
         },
       });
       if (!started) return;
-      const storage = new AsyncLocalStorage<Context>();
-      setContextManager(new AsyncContextManager(storage));
+      setContextManager(new AsyncContextManager(new AsyncLocalStorage<Context>()));
       runtimeHooks.onSpanStart = serverHooks.onSpanStart;
       runtimeHooks.onLogEmit = serverHooks.onLogEmit;
       runtimeHooks.afterRecord = scheduleVercelFlush;
       removeProcessHandlers = installProcessHandlers(options);
-      uninstrumentHttp = options.instrument?.length ? instrumentHttp({ instrument: options.instrument, storage }) : undefined;
+      setupIntegrations(options.integrations);
     },
   });
 }
 
-let uninstrumentHttp: (() => void) | undefined;
 let removeProcessHandlers: (() => void) | undefined;
 
-/** Flush, stop exporting, remove process handlers, and unsubscribe HTTP instrumentation. */
+/** Remove integrations and process handlers, flush, and stop exporting. */
 export async function shutdown(): Promise<Error | undefined> {
-  uninstrumentHttp?.();
-  uninstrumentHttp = undefined;
   removeProcessHandlers?.();
   removeProcessHandlers = undefined;
   return shutdownClient();

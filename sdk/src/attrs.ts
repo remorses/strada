@@ -48,7 +48,7 @@ export const ATTR = {
   /** Referrer URL. From document.referrer. Useful for entry page attribution. */
   "http.request.header.referer": "http.request.header.referer",
 
-  // -- HTTP spans (OTel HTTP semantic conventions), set by the `instrument` option --
+  // -- HTTP spans (OTel HTTP semantic conventions), set by @strada.sh/sdk/instrument --
 
   /** HTTP method, e.g. "GET". */
   "http.request.method": "http.request.method",
@@ -60,6 +60,17 @@ export const ATTR = {
   "server.port": "server.port",
   /** Error class for a failed request, e.g. "ECONNREFUSED" or "500". */
   "error.type": "error.type",
+
+  // -- Database spans (OTel DB semantic conventions), set by @strada.sh/sdk/instrument --
+
+  /** Database product, e.g. "mysql", "redis". */
+  "db.system.name": "db.system.name",
+  /** Database name, e.g. "shop", or Redis db index "0". */
+  "db.namespace": "db.namespace",
+  /** Operation, e.g. "SELECT", "GET", "MULTI". */
+  "db.operation.name": "db.operation.name",
+  /** Query with literals replaced by "?", e.g. "SELECT * FROM users WHERE id = ?". */
+  "db.query.text": "db.query.text",
 
   // -- Custom events (track API) --
 

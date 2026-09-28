@@ -42,6 +42,7 @@ import {
   createStradaLogger,
   getOptions,
   initCore,
+  setupIntegrations,
   DEFAULT_USER_ID_COOKIE,
   DEFAULT_USER_ID_COOKIE_MAX_AGE,
   DEFAULT_VISITOR_COOKIE,
@@ -281,6 +282,7 @@ export function initStrada(options: StradaOptions): Error | undefined {
 
       startPageSpan();
       _removeListeners = installListeners(options);
+      setupIntegrations(options.integrations);
     },
   });
 }

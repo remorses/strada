@@ -1026,11 +1026,13 @@ export default {
 } satisfies ExportedHandler<Env>
 ```
 
-No `flush()`, no `ctx.waitUntil()`, no special imports. The SDK auto-flushes via `waitUntil` from `cloudflare:workers` whenever telemetry is emitted. If nothing is emitted, zero HTTP requests.
+No `flush()`, no `ctx.waitUntil()`, no special imports. Each record registers a flush with `waitUntil` from `cloudflare:workers`, so the invocation stays alive until its telemetry is delivered. Records emitted in the same synchronous run share one export request. If nothing is emitted, zero HTTP requests.
+
+Each invocation exports its own records. There are no background timers, and one request never waits for another request's export, because Workers bind I/O to the request that created it. Metrics export only the series that changed during the invocation.
 
 ### Flushing in scheduled handlers and Durable Objects
 
-The auto-flush works well for HTTP request handlers. For **scheduled (cron) handlers**, **queue consumers**, and **Durable Object alarms**, logs emitted near the end of execution may not flush before the isolate terminates. Call `flush()` explicitly before returning:
+The same auto-flush runs in **scheduled (cron) handlers**, **queue consumers**, and **Durable Object alarms**. Call `await flush()` at the end when you want the handler to return only after the export finished, for example to see export errors:
 
 ```ts
 import { env } from "cloudflare:workers"
@@ -1051,13 +1053,12 @@ export default {
     await doWork()
     logger.info({ message: "cron finished" })
 
-    // Flush before returning so all buffered logs are exported
-    await flush()
+    // Wait for the export; returns an Error instead of throwing
+    const error = await flush()
+    if (error) console.error(error)
   },
 } satisfies ExportedHandler<Env>
 ```
-
-Without the explicit `flush()`, the `BatchLogRecordProcessor` may still be buffering the last few log records when the handler returns and the isolate shuts down.
 
 ### Cloudflare built-in tracing (automatic instrumentation)
 
@@ -1074,9 +1075,11 @@ For automatic instrumentation, use Cloudflare's built-in tracing. It instruments
 
 This works alongside the Strada SDK. Use built-in tracing for automatic spans, and the SDK for error capture, custom events, and manual spans.
 
+When the runtime exports `tracing.enterSpan` from `cloudflare:workers` (workerd 2026-06-16 and later), every `startActiveSpan()` also opens a native Cloudflare span, so your custom spans show in the Cloudflare trace view next to KV, D1, and fetch spans. It needs built-in tracing enabled. Native spans and Strada spans have separate trace IDs. Disable the bridge with `initStrada({ cloudflareTracing: false })`.
+
 ### Workers requirements
 
-The Workers entry requires the `nodejs_compat` compatibility flag for `AsyncLocalStorage` context propagation:
+The Workers entry imports `node:async_hooks` for `AsyncLocalStorage` context propagation. It needs the `nodejs_compat` compatibility flag, or a `compatibility_date` of 2026-08-04 or later, where Node compatibility is on by default. Without it, the Worker fails to load:
 
 ```jsonc
 // wrangler.jsonc
@@ -1280,7 +1283,7 @@ ORDER BY Timestamp ASC
 
 - The browser SDK registers a `CompositePropagator` with `W3CTraceContextPropagator` + `W3CBaggagePropagator`
 - The `PageviewContextManager` injects current baggage (session.id + user.id) into the OTel context on every outgoing request
-- The server reads incoming baggage with `propagation.extract()` or `instrument: ["http-server"]`
+- The server reads incoming baggage with `propagation.extract()` or `httpServerSpans()`
 - Spans and log records started in that context get `session.id` / `user.id` as attributes
 
 Baggage updates live. When `identifyUser()` or cookie `strada_uid` changes, the next outgoing request carries the updated `user.id`. Cookie `strada_vid` is the visitor and is not in baggage.
@@ -1325,42 +1328,37 @@ The SDK has **zero dependencies**, never patches modules, and needs **no preload
 
 | Need | Use |
 | --- | --- |
-| HTTP server, `http` client, and `fetch` spans on Node | `initStrada({ instrument: [...] })` |
+| `fetch`, `http`, mysql2, ioredis spans | `initStrada({ integrations: [...] })` from `@strada.sh/sdk/instrument` |
 | Spans from libraries that use `@opentelemetry/api` (Vercel AI SDK, Prisma) | `registerOpenTelemetry()` from `@strada.sh/sdk/otel` |
 | Framework request spans | the framework tracer, for example `new Spiceflow({ tracer: trace.getTracer("api") })` |
 | KV, D1, Durable Object spans on Workers | Cloudflare built-in tracing |
 
-### HTTP spans on Node
+### Integrations
 
-Node's `http` module and `fetch` (undici) publish events on `node:diagnostics_channel` for every request. The SDK subscribes to them, so there is nothing to patch and nothing to install:
+Node, undici, and libraries like mysql2 and ioredis publish events on `node:diagnostics_channel`. Integrations subscribe to them, so there is nothing to patch and nothing to preload:
 
 ```ts
 import { initStrada } from "@strada.sh/sdk"
+import { fetchSpans, httpClientSpans, httpServerSpans } from "@strada.sh/sdk/instrument"
 
 initStrada({
   projectId: "01JTHG5M7XPQR8KNCZ0W4D",
   service: "api",
-  instrument: ["fetch", "http-client", "http-server"],
+  integrations: [fetchSpans(), httpClientSpans(), httpServerSpans()],
 })
 ```
 
-| Name | Spans | Headers |
+| Integration | Spans | Headers |
 | --- | --- | --- |
-| `fetch` | outgoing `fetch()` | adds `traceparent` and `baggage` |
-| `http-client` | outgoing `http.request` / `https.request` | adds `traceparent` and `baggage` |
-| `http-server` | incoming `http.createServer` requests, active for the whole handler | reads `traceparent` and `baggage` |
+| `fetchSpans()` | outgoing `fetch()` | adds `traceparent` and `baggage` |
+| `httpClientSpans()` | outgoing `http.request` / `https.request` (Node 22.12+) | adds `traceparent` and `baggage` |
+| `httpServerSpans()` | incoming `http.createServer` requests, active for the whole handler | reads `traceparent` and `baggage` |
+| `mysql2Spans()` | mysql2 3.20+ `query()` / `execute()` | |
+| `ioredisSpans()` | ioredis 5.11+ commands | |
 
-Nothing is enabled by default. CLIs and bots usually want none: every API call would become a span. Server apps usually want `fetch` and `http-client`. Skip `http-server` when the framework already creates request spans (Spiceflow `tracer`, Next.js), or each request gets two spans.
+Nothing is enabled by default. CLIs and bots usually want none: every API call would become a span. Skip `httpServerSpans()` when the framework already creates request spans (Spiceflow `tracer`, Next.js), or each request gets two spans.
 
-Because channels are process-global, this works no matter when modules are imported and inside bundled apps (Vite, Next), since `http` and `fetch` are Node built-ins. The SDK skips its own export requests. Requires Node 22.12+.
-
-Databases and frameworks publish no diagnostics channels today (pg, express, hono). Wrap those calls in `startSpan()`:
-
-```ts
-const rows = await startSpan({ name: "db.users.find", attributes: { "db.system": "postgresql" } }, () => {
-  return db.query("SELECT * FROM users WHERE id = $1", [id])
-})
-```
+Libraries without channels (pg, express, hono) need `startSpan()`. To trace your own library, publish a `TracingChannel` and write an integration. See [Instrumentation](/docs/instrumentation).
 
 ### Libraries that use the OTel API
 

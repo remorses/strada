@@ -11,6 +11,11 @@
  *   to its keep-alive pool, and the three endpoints are sent one after the
  *   other so they reuse the same connection instead of opening parallel ones.
  * - Telemetry never throws: failures are warned once and returned as values.
+ * - `invocationScoped` (Cloudflare Workers): no timers, and each flush sends
+ *   on its own instead of waiting for earlier flushes. Workers bind promises
+ *   and I/O to the request that created them, so a flush in request B must
+ *   never wait on a fetch started by request A. Metrics send only series that
+ *   changed since the last export.
  */
 
 const warnedMessages = new Set<string>();
@@ -104,10 +109,13 @@ export interface PipelineConfig {
   logs: Required<BatchOptions>;
   traces: Required<BatchOptions>;
   metrics: Required<MetricExportOptions>;
+  /** Cloudflare Workers: the runtime flushes per invocation. See file comment. */
+  invocationScoped?: boolean;
 }
 
 interface MetricsCollector {
-  collect(): Promise<{ scope: string; metrics: OtlpMetric[] } | undefined>;
+  /** `changedOnly`: return only series recorded since the previous collect. */
+  collect(options: { changedOnly: boolean }): Promise<{ scope: string; metrics: OtlpMetric[] } | undefined>;
   /** Drop accumulated series when the pipeline stops. */
   reset(): void;
 }
@@ -212,7 +220,7 @@ export function isExporting(): boolean {
 }
 
 function startMetricsTimer(): void {
-  if (metricsTimer || !config?.endpoint) return;
+  if (metricsTimer || !config?.endpoint || config.invocationScoped) return;
   metricsTimer = setInterval(() => {
     void flush({ includeMetrics: true });
   }, config.metrics.exportIntervalMillis);
@@ -225,7 +233,8 @@ export function registerMetricsCollector(collector: MetricsCollector): void {
 }
 
 function scheduleBatch(): void {
-  if (!config) return;
+  // Invocation-scoped runtimes flush from runtimeHooks.afterRecord.
+  if (!config || config.invocationScoped) return;
   const logsFull = logQueue.length >= config.logs.maxExportBatchSize;
   const spansFull = spanQueue.length >= config.traces.maxExportBatchSize;
   if (logsFull || spansFull) {
@@ -336,7 +345,8 @@ async function send({
       : undefined;
   const metricsError = await (async () => {
     if (!includeMetrics || metricsCollectors.length === 0) return undefined;
-    const scopeMetrics = (await Promise.all(metricsCollectors.map((collector) => collector.collect().catch(() => undefined))))
+    const changedOnly = Boolean(current.invocationScoped);
+    const scopeMetrics = (await Promise.all(metricsCollectors.map((collector) => collector.collect({ changedOnly }).catch(() => undefined))))
       .flatMap((collected) => (collected ? [{ scope: { name: collected.scope }, metrics: collected.metrics }] : []));
     if (scopeMetrics.length === 0) return undefined;
     return post(current, "/v1/metrics", { resourceMetrics: [{ resource, scopeMetrics }] }, current.metrics.exportTimeoutMillis);
@@ -357,6 +367,12 @@ export function flush({ includeMetrics = true }: { includeMetrics?: boolean } = 
   const spans = spanQueue;
   logQueue = [];
   spanQueue = [];
+  if (current.invocationScoped) {
+    if (logs.length === 0 && spans.length === 0 && (!includeMetrics || metricsCollectors.length === 0)) {
+      return Promise.resolve(undefined);
+    }
+    return send({ current, logs, spans, includeMetrics });
+  }
   if (logs.length === 0 && spans.length === 0 && (!includeMetrics || metricsCollectors.length === 0)) {
     return inflight;
   }
