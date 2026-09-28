@@ -1,0 +1,218 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: Automatic spans and custom integrations
+sidebarTitle: Instrumentation
+description: Get automatic spans for fetch, HTTP servers, databases, GraphQL, the AI SDK, h3, and pino without patching modules, and write your own integration for any library that publishes a diagnostics_channel TracingChannel.
+icon: lucide:radio-tower
+prompt: |
+  Write the instrumentation guide from @/sdk/src/instrument.ts, @/sdk/src/shared.ts
+  (StradaIntegration, setupIntegrations), and the integration tests in @/sdk/src/export.test.ts.
+---
+
+# Instrumentation
+
+Pass **integrations** to `initStrada()` to get spans for HTTP and database calls. The SDK never patches modules and needs no preload:
+
+```ts
+import { initStrada } from "@strada.sh/sdk"
+import { fetchSpans, httpServerSpans, mysql2Spans } from "@strada.sh/sdk/instrument"
+
+initStrada({
+  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  service: "api",
+  integrations: [fetchSpans(), httpServerSpans(), mysql2Spans()],
+})
+```
+
+Each integration subscribes to **`node:diagnostics_channel`**. Node, undici, and a growing list of libraries publish an event for every operation. Channels are process-global, so this works with any import order and inside bundled apps (Vite, Next).
+
+```
+your code: fetch() / pool.query() / redis.get()
+      │
+      ▼  library publishes an event (zero cost when nobody listens)
+node:diagnostics_channel ──────────► integration.setup() subscriber
+                                          │ start span, end span, record errors
+                                          ▼
+                                      OTLP export to Strada
+```
+
+## Built-in integrations
+
+| Integration | Spans | Needs |
+| --- | --- | --- |
+| `fetchSpans()` | outgoing `fetch()`, adds `traceparent` and `baggage` headers | Node |
+| `httpClientSpans()` | outgoing `http.request` / `https.request`, adds headers | Node 22.12+ |
+| `httpServerSpans()` | incoming `http.createServer` requests, active for the whole handler | Node |
+| `mysql2Spans()` | `query()` and `execute()` | mysql2 3.20+ |
+| `redisSpans()` | every command, plus MULTI / PIPELINE on node-redis | redis 5.12+ or ioredis 5.11+ |
+| `mongooseSpans()` | queries, aggregations, `save()`, `insertMany()`, `bulkWrite()`, cursors | mongoose 9.7+ |
+| `graphqlSpans()` | `parse`, `validate`, `execute`, `subscribe` (no resolver spans) | graphql 17+ |
+| `aiSpans()` | `generateText` / `streamText`, model calls, tool calls, embeddings, with token usage | ai 7+ |
+| `h3Spans()` | routes and middleware, with `http.route` | h3 2.0.1-rc.14+, with `tracingPlugin()` |
+| `pinoLogs()` | every pino log line as a log record (not spans) | pino 9.10+ |
+
+Nothing is enabled by default. **CLIs** usually want none, because every API call would become a span. Skip `httpServerSpans()` when your framework already creates request spans (Spiceflow `tracer`, Next.js), or each request gets two spans.
+
+Older library versions publish no events. They produce **no spans and no error**, so check the version column.
+
+The SDK sends its own telemetry with `fetch`. `fetchSpans()` skips requests to the ingest endpoint, otherwise every export would trace itself.
+
+## Spans from a library without channels
+
+pg, express, and hono publish no channels yet. Wrap the call in `startSpan()`:
+
+```ts
+import { startSpan } from "@strada.sh/sdk"
+
+const rows = await startSpan(
+  { name: "SELECT users", attributes: { "db.system.name": "postgresql" } },
+  () => pool.query("SELECT * FROM users WHERE id = $1", [id]),
+)
+```
+
+Libraries that call `@opentelemetry/api` themselves (Vercel AI SDK, Prisma) need `registerOpenTelemetry()` from `@strada.sh/sdk/otel` instead. See [the SDK docs](/docs/sdk#libraries-that-use-the-otel-api).
+
+## Write your own integration
+
+An integration is a plain object. `setup()` runs once at the end of `initStrada()`. The function it returns runs on `shutdown()`:
+
+```ts
+import type { StradaIntegration } from "@strada.sh/sdk"
+
+const integration: StradaIntegration = {
+  name: "myIntegration",
+  setup() {
+    // subscribe here
+    return () => {
+      // unsubscribe here
+    }
+  },
+}
+```
+
+Use this when **you publish a library** and want its operations traced in every app that uses it, without the library depending on Strada or on OpenTelemetry.
+
+### 1. Publish a TracingChannel in the library
+
+The library creates a `TracingChannel` and wraps each operation. The name convention is `{npm-package}:{operation}`:
+
+```ts
+// @acme/queue
+import dc from "node:diagnostics_channel"
+
+type JobMessage = { queue: string; job: string; error?: unknown }
+
+const jobChannel = dc.tracingChannel<unknown, JobMessage>("acme-queue:job")
+
+export async function runJob(queue: string, job: string, handler: () => Promise<void>) {
+  // Skip the message object when nobody listens: zero cost in production without APM.
+  if (!jobChannel.hasSubscribers) return handler()
+  return jobChannel.tracePromise(handler, { queue, job })
+}
+```
+
+`tracePromise` publishes five events on the same message object:
+
+| Event | When |
+| --- | --- |
+| `start` | synchronously, in the caller's context, before `handler` runs |
+| `end` | synchronously, after `handler` returned its promise |
+| `error` | the promise rejected, or `handler` threw synchronously |
+| `asyncStart`, `asyncEnd` | the promise settled |
+
+Use `traceCallback` for callback APIs and `traceSync` for synchronous work.
+
+### 2. Subscribe in the app
+
+Create the span on `start` and end it on `asyncEnd`. A **synchronous throw** publishes `error` then `end` with no `asyncEnd`, so `end` closes the span only when `error` is already set.
+
+`diagnostics_channel` turns a throwing subscriber into an **uncaught exception**, so every handler goes through `guard()`:
+
+```ts
+import dc from "node:diagnostics_channel"
+import { SpanKind, SpanStatusCode, trace, type Span, type StradaIntegration } from "@strada.sh/sdk"
+
+type JobMessage = { queue: string; job: string; error?: unknown }
+
+/** A throwing subscriber would crash the app: log and drop instead. */
+function guard<T>(handler: (message: T) => void) {
+  return (message: T) => {
+    try {
+      handler(message)
+    } catch (error) {
+      console.error("[acmeQueueSpans]", error)
+    }
+  }
+}
+
+export function acmeQueueSpans(): StradaIntegration {
+  return {
+    name: "acmeQueueSpans",
+    setup() {
+      const tracer = trace.getTracer("acme-queue")
+      const channel = dc.tracingChannel<unknown, JobMessage>("acme-queue:job")
+      const spans = new WeakMap<JobMessage, Span>()
+      const end = (message: JobMessage) => {
+        spans.get(message)?.end()
+        spans.delete(message)
+      }
+      const handlers = {
+        start: guard<JobMessage>((message) => {
+          const span = tracer.startSpan(`process ${message.queue}`, {
+            kind: SpanKind.CONSUMER,
+            attributes: { "messaging.destination.name": message.queue, "acme.job": message.job },
+          })
+          spans.set(message, span)
+        }),
+        end: guard<JobMessage>((message) => {
+          if ("error" in message) end(message)
+        }),
+        asyncStart() {},
+        asyncEnd: guard(end),
+        error: guard<JobMessage>((message) => {
+          const span = spans.get(message)
+          if (!span) return
+          span.recordException(message.error instanceof Error ? message.error : String(message.error))
+          span.setStatus({ code: SpanStatusCode.ERROR })
+        }),
+      }
+      channel.subscribe(handlers)
+      return () => channel.unsubscribe(handlers)
+    },
+  }
+}
+```
+
+Then pass it like a built-in one:
+
+```ts
+initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "worker", integrations: [acmeQueueSpans()] })
+```
+
+The span **parents to whatever span is active** where `runJob()` was called, because `start` runs synchronously in the caller's context.
+
+### Rules for subscribers
+
+- **Never let a handler throw.** Wrap every handler, as `guard()` does above.
+- **Key spans by the message object** in a `WeakMap`. It is the same object for all five events of one call.
+- **Keep the channel name in one place.** The library should export it, or document it, so the subscriber never drifts.
+
+### Limit: the span is not active inside the operation
+
+This subscriber does not make its span the active context inside `handler` (the built-in integrations do, with `bindStore` on the SDK's internal AsyncLocalStorage). Spans, logs, and errors created **inside** the job attach to the caller's span, not to the `process emails` span.
+
+If you own the code and need that nesting, call `startSpan()` inside the job instead:
+
+```ts
+await runJob("emails", "welcome", () => startSpan({ name: "send welcome" }, () => sendWelcomeEmail()))
+```
+
+## Runtimes
+
+| Runtime | Built-in HTTP integrations | Custom and library integrations |
+| --- | --- | --- |
+| Node | yes | yes |
+| Cloudflare Workers | no (workerd publishes no HTTP channels) | yes, with `nodejs_compat` |
+| Browser | no | `setup()` runs, but there is no `diagnostics_channel` |
+
+On Workers, use Cloudflare's built-in tracing for KV, D1, Durable Object, and fetch spans. See [Cloudflare Workers](/docs/sdk#cloudflare-workers).

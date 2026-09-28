@@ -1328,14 +1328,14 @@ The SDK has **zero dependencies**, never patches modules, and needs **no preload
 
 | Need | Use |
 | --- | --- |
-| `fetch`, `http`, mysql2, ioredis spans | `initStrada({ integrations: [...] })` from `@strada.sh/sdk/instrument` |
+| `fetch`, `http`, mysql2, Redis, mongoose spans | `initStrada({ integrations: [...] })` from `@strada.sh/sdk/instrument` |
 | Spans from libraries that use `@opentelemetry/api` (Vercel AI SDK, Prisma) | `registerOpenTelemetry()` from `@strada.sh/sdk/otel` |
 | Framework request spans | the framework tracer, for example `new Spiceflow({ tracer: trace.getTracer("api") })` |
 | KV, D1, Durable Object spans on Workers | Cloudflare built-in tracing |
 
 ### Integrations
 
-Node, undici, and libraries like mysql2 and ioredis publish events on `node:diagnostics_channel`. Integrations subscribe to them, so there is nothing to patch and nothing to preload:
+Node, undici, and libraries like mysql2, redis, ioredis, and mongoose publish events on `node:diagnostics_channel`. Integrations subscribe to them, so there is nothing to patch and nothing to preload:
 
 ```ts
 import { initStrada } from "@strada.sh/sdk"
@@ -1354,7 +1354,12 @@ initStrada({
 | `httpClientSpans()` | outgoing `http.request` / `https.request` (Node 22.12+) | adds `traceparent` and `baggage` |
 | `httpServerSpans()` | incoming `http.createServer` requests, active for the whole handler | reads `traceparent` and `baggage` |
 | `mysql2Spans()` | mysql2 3.20+ `query()` / `execute()` | |
-| `ioredisSpans()` | ioredis 5.11+ commands | |
+| `redisSpans()` | redis 5.12+ and ioredis 5.11+ commands | |
+| `mongooseSpans()` | mongoose 9.7+ queries, saves, aggregations | |
+| `graphqlSpans()` | graphql 17+ parse, validate, execute | |
+| `aiSpans()` | ai 7+ agent, model, and tool calls | |
+| `h3Spans()` | h3 v2 routes (needs `tracingPlugin()`) | |
+| `pinoLogs()` | pino 9.10+ log lines as log records | |
 
 Nothing is enabled by default. CLIs and bots usually want none: every API call would become a span. Skip `httpServerSpans()` when the framework already creates request spans (Spiceflow `tracer`, Next.js), or each request gets two spans.
 

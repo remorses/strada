@@ -596,13 +596,20 @@ import { initStrada, captureException, track, trace, logs, metrics } from "@stra
 
 ### HTTP spans and OpenTelemetry libraries
 
-The SDK never patches modules and needs no preload. For HTTP spans on Node, opt in with `instrument`. It subscribes to `node:diagnostics_channel`, so it works with bundled apps and any import order:
+The SDK never patches modules and needs no preload. For HTTP and database spans, opt in with `integrations`. They subscribe to `node:diagnostics_channel`, so they work with bundled apps and any import order:
 
 ```ts
-initStrada({ projectId: "01JTHG5M7XPQR8KNCZ0W4D", service: "api", instrument: ["fetch", "http-client", "http-server"] })
+import { initStrada } from "@strada.sh/sdk"
+import { fetchSpans, httpClientSpans, httpServerSpans } from "@strada.sh/sdk/instrument"
+
+initStrada({
+  projectId: "01JTHG5M7XPQR8KNCZ0W4D",
+  service: "api",
+  integrations: [fetchSpans(), httpClientSpans(), httpServerSpans()],
+})
 ```
 
-Outgoing `fetch` and `http` requests get client spans and `traceparent` / `baggage` headers; incoming requests get a server span that is active for the whole handler. Nothing is enabled by default.
+Outgoing `fetch` and `http` requests get client spans and `traceparent` / `baggage` headers; incoming requests get a server span that is active for the whole handler. `mysql2Spans()`, `redisSpans()`, `mongooseSpans()`, `graphqlSpans()`, `aiSpans()`, `h3Spans()`, and `pinoLogs()` cover databases, GraphQL, the AI SDK, h3, and pino. Nothing is enabled by default. See [Instrumentation](./website/src/docs/instrumentation.mdx) to write your own integration.
 
 For libraries that emit spans through `@opentelemetry/api` (Vercel AI SDK, Prisma), register Strada as the global OTel provider:
 
@@ -633,7 +640,7 @@ GET /api/orders (url.path="/api/orders", http.method="GET")
 
 The SDK also normalizes **old OTel semantic conventions** (`http.target`, `http.url`) into `url.path` so errors show a clean path regardless of which instrumentation version you use.
 
-**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity. The browser SDK does not patch `fetch`: add the headers with `propagation.inject(context.active(), headers)`. On a Node server, `instrument: ["http-server"]` reads them, or call `propagation.extract()` yourself.
+**Browser-to-server:** `session.id` and `user.id` propagate from browser to backend via [W3C Baggage](https://www.w3.org/TR/baggage/) headers. Backend errors within a browser-initiated request carry the same session and user identity. The browser SDK does not patch `fetch`: add the headers with `propagation.inject(context.active(), headers)`. On a Node server, `httpServerSpans()` reads them, or call `propagation.extract()` yourself.
 
 See the full [SDK documentation](./website/src/docs/sdk.mdx) for detailed API reference, auto-instrumentation setup, batching config, and browser/server context propagation.
 
