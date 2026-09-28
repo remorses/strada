@@ -117,6 +117,7 @@ export {
   TraceFlags,
   ROOT_CONTEXT,
   createContextKey,
+  createTraceState,
   isSpanContextValid,
   defaultTextMapGetter,
   defaultTextMapSetter,
@@ -144,6 +145,7 @@ export {
   type TextMapGetter,
   type TextMapSetter,
   type TimeInput,
+  type TraceState,
   type Tracer,
   type UpDownCounter,
 } from "./api.ts";

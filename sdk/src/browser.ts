@@ -208,10 +208,19 @@ function installListeners(options: StradaOptions): () => void {
 
   // Page hidden: end the pageview (its duration is the time on page) and
   // flush with keepalive so the data survives tab close.
+  // Page visible again: start a `pageview.resume` span so later events and
+  // errors still join a page trace. A different name, because analytics
+  // count every `pageview` span as a hit and a tab switch is not one.
   listen(document, "visibilitychange", () => {
-    if (document.visibilityState !== "hidden") return;
-    endCurrentPageSpan();
-    void flush();
+    if (document.visibilityState === "hidden") {
+      endCurrentPageSpan();
+      void flush();
+      return;
+    }
+    if (_currentPageviewSpan) return;
+    _currentPageviewSpan = trace.getTracer("strada-web").startSpan("pageview.resume", {
+      attributes: { [ATTR["pageview.source"]]: "browser" },
+    });
   });
 
   // Same-document navigations through the Navigation API cover pushState,

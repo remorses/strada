@@ -54,11 +54,9 @@ function scheduleVercelFlush(): void {
   );
 }
 
-let processHandlersInstalled = false;
-
-function installProcessHandlers(options: StradaOptions): void {
-  if (processHandlersInstalled || typeof process === "undefined" || typeof process.on !== "function") return;
-  processHandlersInstalled = true;
+/** Returns a remover so shutdown() leaves the process as it found it. */
+function installProcessHandlers(options: StradaOptions): (() => void) | undefined {
+  if (typeof process === "undefined" || typeof process.on !== "function") return undefined;
 
   // beforeExit fires when the event loop drains (not on process.exit() or
   // signals) and can run async work. One shot, so a flush cannot loop.
@@ -66,18 +64,28 @@ function installProcessHandlers(options: StradaOptions): void {
     process.removeListener("beforeExit", beforeExitHandler);
     void flush();
   };
-  process.on("beforeExit", beforeExitHandler);
-
-  if (options.captureUncaughtErrors === false) return;
   // The SDK's own handlers drop the Error that captureException and flush
   // return: there is nobody left to report it to, and it was already warned.
-  process.on("uncaughtException", (error) => {
+  const uncaughtExceptionHandler = (error: Error) => {
     void captureException(error, { handled: false, mechanism: "uncaughtException" });
     void flush().finally(() => process.exit(1));
-  });
-  process.on("unhandledRejection", (reason) => {
+  };
+  const unhandledRejectionHandler = (reason: unknown) => {
     void captureException(normalizeError(reason), { handled: false, mechanism: "unhandledRejection" });
-  });
+  };
+
+  process.on("beforeExit", beforeExitHandler);
+  const captureErrors = options.captureUncaughtErrors !== false;
+  if (captureErrors) {
+    process.on("uncaughtException", uncaughtExceptionHandler);
+    process.on("unhandledRejection", unhandledRejectionHandler);
+  }
+  return () => {
+    process.removeListener("beforeExit", beforeExitHandler);
+    if (!captureErrors) return;
+    process.removeListener("uncaughtException", uncaughtExceptionHandler);
+    process.removeListener("unhandledRejection", unhandledRejectionHandler);
+  };
 }
 
 export function initStrada(options: StradaOptions): Error | undefined {
@@ -98,17 +106,20 @@ export function initStrada(options: StradaOptions): Error | undefined {
       runtimeHooks.onSpanStart = serverHooks.onSpanStart;
       runtimeHooks.onLogEmit = serverHooks.onLogEmit;
       runtimeHooks.afterRecord = scheduleVercelFlush;
-      installProcessHandlers(options);
+      removeProcessHandlers = installProcessHandlers(options);
       uninstrumentHttp = options.instrument?.length ? instrumentHttp({ instrument: options.instrument, storage }) : undefined;
     },
   });
 }
 
 let uninstrumentHttp: (() => void) | undefined;
+let removeProcessHandlers: (() => void) | undefined;
 
-/** Flush, stop exporting, and unsubscribe HTTP instrumentation. */
+/** Flush, stop exporting, remove process handlers, and unsubscribe HTTP instrumentation. */
 export async function shutdown(): Promise<Error | undefined> {
   uninstrumentHttp?.();
   uninstrumentHttp = undefined;
+  removeProcessHandlers?.();
+  removeProcessHandlers = undefined;
   return shutdownClient();
 }

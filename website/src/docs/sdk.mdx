@@ -773,6 +773,7 @@ initStrada({
 - Manual spans, custom events, and optional auto-instrumentation are parented to the active pageview when no other span is active
 - On SPA navigation (detected via the Navigation API), the old span ends and a new one starts
 - On tab close (`visibilitychange: hidden`), the current span ends and flushes
+- When the tab is visible again, a `pageview.resume` span becomes the parent for later work. It is not counted as a pageview
 
 **The pageview span shape:**
 

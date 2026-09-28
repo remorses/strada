@@ -63,14 +63,16 @@ export interface OtlpLogRecord {
 export interface OtlpSpan {
   traceId: string;
   spanId: string;
+  traceState?: string;
   parentSpanId?: string;
+  flags: number;
   name: string;
   kind: number;
   startTimeUnixNano: string;
   endTimeUnixNano: string;
   attributes: OtlpKeyValue[];
   events: Array<{ name: string; timeUnixNano: string; attributes: OtlpKeyValue[] }>;
-  links: Array<{ traceId: string; spanId: string; attributes: OtlpKeyValue[] }>;
+  links: Array<{ traceId: string; spanId: string; traceState?: string; attributes: OtlpKeyValue[] }>;
   status: { code: number; message?: string };
 }
 
@@ -104,7 +106,11 @@ export interface PipelineConfig {
   metrics: Required<MetricExportOptions>;
 }
 
-type MetricsCollector = () => Promise<{ scope: string; metrics: OtlpMetric[] } | undefined>;
+interface MetricsCollector {
+  collect(): Promise<{ scope: string; metrics: OtlpMetric[] } | undefined>;
+  /** Drop accumulated series when the pipeline stops. */
+  reset(): void;
+}
 
 interface Queued<T> {
   scope: string;
@@ -188,6 +194,7 @@ export function stopPipeline(): void {
   config = undefined;
   logQueue = [];
   spanQueue = [];
+  for (const collector of metricsCollectors) collector.reset();
 }
 
 /** Ingest origin, so HTTP instrumentation can skip the SDK's own export requests. */
@@ -272,8 +279,8 @@ async function post(current: PipelineConfig, path: string, body: object, timeout
       headers: { "content-type": "application/json", ...current.headers },
       body: payload,
       // Lets a browser flush on page hide survive the unload. Browsers reject
-      // keepalive bodies above 64 KiB, so large batches go without it.
-      keepalive: typeof document !== "undefined" && payload.length < 60_000,
+      // keepalive bodies above 64 KiB (bytes, not characters), so large batches go without it.
+      keepalive: typeof document !== "undefined" && new TextEncoder().encode(payload).byteLength < 60_000,
       signal: AbortSignal.timeout(timeoutMillis),
     });
     // Read the body so fetch returns the socket to its keep-alive pool.
@@ -329,7 +336,7 @@ async function send({
       : undefined;
   const metricsError = await (async () => {
     if (!includeMetrics || metricsCollectors.length === 0) return undefined;
-    const scopeMetrics = (await Promise.all(metricsCollectors.map((collect) => collect().catch(() => undefined))))
+    const scopeMetrics = (await Promise.all(metricsCollectors.map((collector) => collector.collect().catch(() => undefined))))
       .flatMap((collected) => (collected ? [{ scope: { name: collected.scope }, metrics: collected.metrics }] : []));
     if (scopeMetrics.length === 0) return undefined;
     return post(current, "/v1/metrics", { resourceMetrics: [{ resource, scopeMetrics }] }, current.metrics.exportTimeoutMillis);

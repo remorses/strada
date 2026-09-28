@@ -356,7 +356,7 @@ The browser entry (`sdk/src/browser.ts`) adds analytics capabilities on top of e
 
 **Default error filters.** `DEFAULT_IGNORE_ERRORS` and `DEFAULT_DENY_URLS` in `shared.ts` drop known browser noise in `captureException()`: Script error, ResizeObserver loop, chrome/moz/safari-extension URLs.
 
-**Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. A Navigation API `navigate` listener cycles pageviews only for `destination.sameDocument`.
+**Pageview span lifecycle.** `startPageSpan(path?)` / `endCurrentPageSpan()` create spans with `SpanName = 'pageview'`. First pageview starts on `initStrada()`, ends on `visibilitychange: hidden`. When the tab is visible again, a `pageview.resume` span becomes the parent for later work; it is not named `pageview`, so analytics MVs do not count a tab switch as a hit. A Navigation API `navigate` listener cycles pageviews only for `destination.sameDocument`.
 
 **track() API.** Custom events as OTel log records with `event.name` attribute and `custom.*` prefixed properties. Correlated to the active pageview span via OTel context propagation (TraceId/SpanId set automatically).
 

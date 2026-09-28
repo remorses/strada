@@ -21,6 +21,7 @@ import {
 } from "@opentelemetry/api";
 import { logs as otelLogs, type LoggerProvider as OtelLoggerProvider } from "@opentelemetry/api-logs";
 import { getContextManager, loggerProvider, meterProvider, tracerProvider, w3cPropagator, type Context } from "./api.ts";
+import { tryTelemetry } from "./shared.ts";
 
 /**
  * Forwards to the SDK's current context manager, so runtime entries that
@@ -49,25 +50,38 @@ const contextManagerBridge = {
  */
 export function registerOpenTelemetry(): Error | undefined {
   const rollbacks: Array<() => void> = [];
-  const rollback = (name: string) => {
-    for (const undo of rollbacks) undo();
-    return new Error(`another OpenTelemetry SDK already registered the global ${name}. Use only one OTel SDK.`);
-  };
+  let conflict: string | undefined;
 
-  // setGlobalLoggerProvider returns the active provider instead of a boolean.
-  otelLogs.setGlobalLoggerProvider(loggerProvider as OtelLoggerProvider);
-  if (otelLogs.getLoggerProvider() !== loggerProvider) return rollback("logger provider");
-  rollbacks.push(() => otelLogs.disable());
+  const failure = tryTelemetry({
+    operation: "registerOpenTelemetry()",
+    run: () => {
+      // setGlobalLoggerProvider returns the active provider instead of a boolean.
+      otelLogs.setGlobalLoggerProvider(loggerProvider as OtelLoggerProvider);
+      if (otelLogs.getLoggerProvider() !== loggerProvider) {
+        conflict = "logger provider";
+        return;
+      }
+      rollbacks.push(() => otelLogs.disable());
 
-  const steps: Array<[string, () => boolean, () => void]> = [
-    ["tracer provider", () => otelTrace.setGlobalTracerProvider(tracerProvider as OtelTracerProvider), () => otelTrace.disable()],
-    ["context manager", () => otelContext.setGlobalContextManager(contextManagerBridge as OtelContextManager), () => otelContext.disable()],
-    ["propagator", () => otelPropagation.setGlobalPropagator(w3cPropagator as OtelTextMapPropagator), () => otelPropagation.disable()],
-    ["meter provider", () => otelMetrics.setGlobalMeterProvider(meterProvider as OtelMeterProvider), () => otelMetrics.disable()],
-  ];
-  for (const [name, set, undo] of steps) {
-    if (!set()) return rollback(name);
-    rollbacks.push(undo);
-  }
-  return undefined;
+      const steps: Array<[string, () => boolean, () => void]> = [
+        ["tracer provider", () => otelTrace.setGlobalTracerProvider(tracerProvider as OtelTracerProvider), () => otelTrace.disable()],
+        ["context manager", () => otelContext.setGlobalContextManager(contextManagerBridge as OtelContextManager), () => otelContext.disable()],
+        ["propagator", () => otelPropagation.setGlobalPropagator(w3cPropagator as OtelTextMapPropagator), () => otelPropagation.disable()],
+        ["meter provider", () => otelMetrics.setGlobalMeterProvider(meterProvider as OtelMeterProvider), () => otelMetrics.disable()],
+      ];
+      for (const [name, set, undo] of steps) {
+        if (!set()) {
+          conflict = name;
+          return;
+        }
+        rollbacks.push(undo);
+      }
+    },
+  });
+  if (!failure && !conflict) return undefined;
+
+  // Each undo runs on its own, so one throwing undo cannot skip the others.
+  // tryTelemetry already warned about a failed undo; the original failure is what the caller needs.
+  for (const undo of rollbacks) void tryTelemetry({ operation: "registerOpenTelemetry() rollback", run: undo });
+  return failure ?? new Error(`another OpenTelemetry SDK already registered the global ${conflict}. Use only one OTel SDK.`);
 }

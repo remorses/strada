@@ -186,7 +186,25 @@ test("exports cumulative metrics as OTLP JSON", async () => {
   histogram.record(500);
   expect(await flush()).toBeUndefined();
   expect(await shutdown()).toBeUndefined();
+  const firstSessionRequests = receiver.requests.length;
+
+  // A second session must not re-export the first session's cumulative series.
+  expect(initStrada({ projectId: "", endpoint: receiver.endpoint, service: "cli", enabled: true, captureUncaughtErrors: false })).toBeUndefined();
+  counter.add(1, { status: "ok" });
+  expect(await shutdown()).toBeUndefined();
   receiver.close();
+  const secondSession = receiver.requests
+    .slice(firstSessionRequests)
+    .filter((request) => request.url === "/v1/metrics")
+    .flatMap((request) => (request.body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
+    .filter((scope) => scope.scope.name === "jobs")
+    .flatMap((scope) => (scope.metrics as Array<Record<string, any>>).map((metric) => `${metric.name}=${JSON.stringify(metric.sum?.dataPoints.map((point: { asInt: string }) => point.asInt))}`));
+  expect(secondSession).toMatchInlineSnapshot(`
+    [
+      "jobs.done=["1"]",
+      "jobs.queue=undefined",
+    ]
+  `);
 
   const body = receiver.requests.find((request) => request.url === "/v1/metrics")!.body;
   const exported = ((body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
@@ -255,6 +273,28 @@ test("exports cumulative metrics as OTLP JSON", async () => {
         ],
         "type": "gauge",
       },
+    ]
+  `);
+});
+
+test("shutdown removes process handlers so a later init can choose again", async () => {
+  const receiver = await startReceiver();
+  const count = () => process.listenerCount("uncaughtException");
+  const before = count();
+  const counts: number[] = [];
+  for (const captureUncaughtErrors of [false, true, false]) {
+    expect(initStrada({ projectId: "", endpoint: receiver.endpoint, service: "cli", enabled: true, captureUncaughtErrors })).toBeUndefined();
+    counts.push(count() - before);
+    expect(await shutdown()).toBeUndefined();
+  }
+  counts.push(count() - before);
+  receiver.close();
+  expect(counts).toMatchInlineSnapshot(`
+    [
+      0,
+      1,
+      0,
+      0,
     ]
   `);
 });

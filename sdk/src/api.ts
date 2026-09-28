@@ -21,6 +21,7 @@
 import {
   enqueueLog,
   enqueueSpan,
+  isExporting,
   registerMetricsCollector,
   type OtlpKeyValue,
   type OtlpMetric,
@@ -236,12 +237,73 @@ export type SpanStatusCode = (typeof SpanStatusCode)[keyof typeof SpanStatusCode
 
 export const TraceFlags = { NONE: 0, SAMPLED: 1 } as const;
 
+/** Same shape as OTel `TraceState`: immutable W3C `tracestate` vendor entries. */
+export interface TraceState {
+  get(key: string): string | undefined;
+  set(key: string, value: string): TraceState;
+  unset(key: string): TraceState;
+  serialize(): string;
+}
+
+// W3C Trace Context limits: https://www.w3.org/TR/trace-context/#tracestate-header
+const TRACESTATE_KEY_RE = /^(?:[a-z][_0-9a-z\-*/]{0,255}|[a-z0-9][_0-9a-z\-*/]{0,240}@[a-z][_0-9a-z\-*/]{0,13})$/;
+const TRACESTATE_VALUE_RE = /^[\x20-\x2b\x2d-\x3c\x3e-\x7e]{0,255}[\x21-\x2b\x2d-\x3c\x3e-\x7e]$/;
+const MAX_TRACESTATE_MEMBERS = 32;
+const MAX_TRACESTATE_LENGTH = 512;
+
+class TraceStateImpl implements TraceState {
+  readonly #entries: Map<string, string>;
+
+  constructor(entries?: Map<string, string>) {
+    this.#entries = entries ? new Map(entries) : new Map();
+  }
+
+  get(key: string): string | undefined {
+    return this.#entries.get(key);
+  }
+
+  /** Updated keys move to the front, as the spec requires. */
+  set(key: string, value: string): TraceState {
+    if (!TRACESTATE_KEY_RE.test(key) || !TRACESTATE_VALUE_RE.test(value)) return this;
+    const next = new Map([[key, value]]);
+    for (const [k, v] of this.#entries) if (k !== key) next.set(k, v);
+    return new TraceStateImpl(new Map(Array.from(next).slice(0, MAX_TRACESTATE_MEMBERS)));
+  }
+
+  unset(key: string): TraceState {
+    const next = new TraceStateImpl(this.#entries);
+    next.#entries.delete(key);
+    return next;
+  }
+
+  serialize(): string {
+    return Array.from(this.#entries, ([key, value]) => `${key}=${value}`).join(",");
+  }
+}
+
+/** Parse a `tracestate` header. Invalid members are dropped; an oversized header is dropped whole. */
+export function createTraceState(header = ""): TraceState {
+  if (header.length > MAX_TRACESTATE_LENGTH) return new TraceStateImpl();
+  const entries = new Map<string, string>();
+  for (const member of header.split(",")) {
+    const trimmed = member.trim();
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator);
+    const value = trimmed.slice(separator + 1);
+    if (!TRACESTATE_KEY_RE.test(key) || !TRACESTATE_VALUE_RE.test(value) || entries.has(key)) continue;
+    entries.set(key, value);
+    if (entries.size === MAX_TRACESTATE_MEMBERS) break;
+  }
+  return new TraceStateImpl(entries);
+}
+
 export interface SpanContext {
   traceId: string;
   spanId: string;
   traceFlags: number;
   isRemote?: boolean;
-  traceState?: unknown;
+  traceState?: TraceState;
 }
 
 export interface SpanStatus {
@@ -378,6 +440,9 @@ export interface SpanMirror {
 
 export const runtimeHooks: RuntimeHooks = {};
 
+const SPAN_FLAGS_HAS_IS_REMOTE = 0x100;
+const SPAN_FLAGS_IS_REMOTE = 0x200;
+
 export class RecordingSpan implements Span {
   readonly attributes: Attributes = {};
   readonly events: SpanEvent[] = [];
@@ -401,6 +466,7 @@ export class RecordingSpan implements Span {
       traceId: parent?.traceId ?? randomHex(16),
       spanId: randomHex(8),
       traceFlags: TraceFlags.SAMPLED,
+      ...(parent?.traceState ? { traceState: parent.traceState } : {}),
     };
     this.startTimeUnixNano = options.startTime === undefined ? nowUnixNano() : timeToUnixNano(options.startTime);
     this.setAttributes(options.attributes ?? {});
@@ -473,10 +539,17 @@ export class RecordingSpan implements Span {
     if (this.ended) return;
     this.ended = true;
     const endTimeUnixNano = endTime === undefined ? nowUnixNano() : timeToUnixNano(endTime);
+    const traceState = this.#context.traceState?.serialize();
     enqueueSpan(this.scope, {
       traceId: this.#context.traceId,
       spanId: this.#context.spanId,
+      ...(traceState ? { traceState } : {}),
       ...(this.parentSpanContext ? { parentSpanId: this.parentSpanContext.spanId } : {}),
+      // OTLP SpanFlags: bits 0-7 are W3C trace flags, bit 8 says bit 9 (parent is remote) is known.
+      flags:
+        (this.#context.traceFlags & 0xff) |
+        SPAN_FLAGS_HAS_IS_REMOTE |
+        (this.parentSpanContext?.isRemote ? SPAN_FLAGS_IS_REMOTE : 0),
       name: this.name,
       // OTLP enum is the API SpanKind + 1 (0 means unspecified).
       kind: this.kind + 1,
@@ -488,11 +561,15 @@ export class RecordingSpan implements Span {
         timeUnixNano: event.timeUnixNano,
         attributes: toKeyValues(event.attributes),
       })),
-      links: this.links.map((link) => ({
-        traceId: link.context.traceId,
-        spanId: link.context.spanId,
-        attributes: toKeyValues(link.attributes ?? {}),
-      })),
+      links: this.links.map((link) => {
+        const linkTraceState = link.context.traceState?.serialize();
+        return {
+          traceId: link.context.traceId,
+          spanId: link.context.spanId,
+          ...(linkTraceState ? { traceState: linkTraceState } : {}),
+          attributes: toKeyValues(link.attributes ?? {}),
+        };
+      }),
       status: this.status,
     });
     runtimeHooks.afterRecord?.();
@@ -694,8 +771,10 @@ export const defaultTextMapSetter: TextMapSetter<unknown> = {
 };
 
 const TRACEPARENT = "traceparent";
+const TRACESTATE = "tracestate";
 const BAGGAGE = "baggage";
-const TRACEPARENT_RE = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(?:-.*)?$/;
+// Group 5 is the suffix future versions may add. Version 00 must not have one.
+const TRACEPARENT_RE = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(-.*)?$/;
 const MAX_BAGGAGE_LENGTH = 8192;
 
 function firstHeader(value: undefined | string | string[]): string | undefined {
@@ -709,6 +788,8 @@ export const w3cPropagator: TextMapPropagator<unknown> = {
     if (spanContext && isSpanContextValid(spanContext)) {
       const flags = (spanContext.traceFlags & 0xff).toString(16).padStart(2, "0");
       setter.set(carrier, TRACEPARENT, `00-${spanContext.traceId}-${spanContext.spanId}-${flags}`);
+      const traceState = spanContext.traceState?.serialize();
+      if (traceState) setter.set(carrier, TRACESTATE, traceState);
     }
     const baggage = ctx.getValue(BAGGAGE_KEY) as Baggage | undefined;
     const pairs = (baggage?.getAllEntries() ?? []).map(([key, entry]) => {
@@ -720,12 +801,14 @@ export const w3cPropagator: TextMapPropagator<unknown> = {
   extract(ctx, carrier, getter) {
     const withSpan = (() => {
       const match = TRACEPARENT_RE.exec(firstHeader(getter.get(carrier, TRACEPARENT))?.trim() ?? "");
-      if (!match || match[1] === "ff") return ctx;
+      if (!match || match[1] === "ff" || (match[1] === "00" && match[5] !== undefined)) return ctx;
+      const traceState = firstHeader(getter.get(carrier, TRACESTATE));
       const spanContext: SpanContext = {
         traceId: match[2]!,
         spanId: match[3]!,
         traceFlags: parseInt(match[4]!, 16),
         isRemote: true,
+        ...(traceState ? { traceState: createTraceState(traceState) } : {}),
       };
       return isSpanContextValid(spanContext) ? setSpan(ctx, new NonRecordingSpan(spanContext)) : ctx;
     })();
@@ -745,7 +828,7 @@ export const w3cPropagator: TextMapPropagator<unknown> = {
     return withSpan.setValue(BAGGAGE_KEY, new BaggageImpl(new Map(entries)));
   },
   fields() {
-    return [TRACEPARENT, BAGGAGE];
+    return [TRACEPARENT, TRACESTATE, BAGGAGE];
   },
 };
 
@@ -958,7 +1041,8 @@ function seriesKey(attributes: Attributes): string {
 }
 
 function recordValue(instrument: Instrument, value: number, attributes: Attributes = {}): void {
-  if (!Number.isFinite(value)) return;
+  // Same as logs and spans: nothing accumulates while the SDK is not exporting.
+  if (!isExporting() || !Number.isFinite(value)) return;
   if (instrument.kind === "counter" && value < 0 && !instrument.observable) return;
   const key = seriesKey(attributes);
   const series = instrument.series.get(key) ?? {
@@ -1062,7 +1146,7 @@ function createMeter(scope: string): Meter {
     return observable;
   };
 
-  registerMetricsCollector(async () => {
+  const collect = async () => {
     await Promise.all(
       instruments.flatMap((instrument) =>
         Array.from(instrument.callbacks, (callback) =>
@@ -1094,7 +1178,13 @@ function createMeter(scope: string): Meter {
       return metric ? [metric] : [];
     });
     return metrics.length > 0 ? { scope, metrics } : undefined;
-  });
+  };
+  // Cumulative series belong to one pipeline session. A later initStrada()
+  // starts every series from zero with a new start time.
+  const reset = () => {
+    for (const instrument of instruments) instrument.series.clear();
+  };
+  registerMetricsCollector({ collect, reset });
 
   return {
     createCounter(name, options) {

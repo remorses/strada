@@ -4,6 +4,7 @@ import {
   AsyncContextManager,
   ROOT_CONTEXT,
   StackContextManager,
+  context,
   propagation,
   runtimeHooks,
   setContextManager,
@@ -136,13 +137,6 @@ function useCapturePipeline(): void {
     setContextManager(new StackContextManager());
   });
 }
-
-describe("ATTR visitor keys", () => {
-  it("has visitor.id so pageview spans can set the attribute", () => {
-    expect(ATTR["visitor.id"]).toBe("visitor.id");
-    expect(ATTR["visitor.first_visit"]).toBe("visitor.first_visit");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // normalizeError
@@ -1467,6 +1461,55 @@ describe("baggage round-trip propagation", () => {
     const serverBaggage = propagation.getBaggage(serverCtx);
     expect(serverBaggage!.getEntry(BAGGAGE_SESSION_ID)?.value).toBe("anon-session-xyz");
     expect(serverBaggage!.getEntry(BAGGAGE_USER_ID)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W3C trace context: traceparent validation, tracestate, OTLP span flags
+// ---------------------------------------------------------------------------
+
+describe("W3C trace context", () => {
+  useCapturePipeline();
+
+  const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+  const parentId = "00f067aa0ba902b7";
+
+  it("rejects malformed traceparent and continues a valid one with tracestate", () => {
+    const extractedParent = (headers: Record<string, string>) => trace.getSpanContext(propagation.extract(ROOT_CONTEXT, headers))?.spanId;
+    expect({
+      valid: extractedParent({ traceparent: `00-${traceId}-${parentId}-01` }),
+      version00WithSuffix: extractedParent({ traceparent: `00-${traceId}-${parentId}-01-extra` }),
+      futureVersionWithSuffix: extractedParent({ traceparent: `cc-${traceId}-${parentId}-01-extra` }),
+      versionFF: extractedParent({ traceparent: `ff-${traceId}-${parentId}-01` }),
+    }).toMatchInlineSnapshot(`
+      {
+        "futureVersionWithSuffix": "00f067aa0ba902b7",
+        "valid": "00f067aa0ba902b7",
+        "version00WithSuffix": undefined,
+        "versionFF": undefined,
+      }
+    `);
+
+    const remote = propagation.extract(ROOT_CONTEXT, {
+      traceparent: `00-${traceId}-${parentId}-01`,
+      tracestate: "congo=t61rcWkgMzE, bad key=x,rojo=00f067aa0ba902b7",
+    });
+    const outgoing: Record<string, string> = {};
+    trace.getTracer("test").startActiveSpan("child", {}, remote, (span) => {
+      propagation.inject(context.active(), outgoing);
+      span.end();
+    });
+    const { spans } = takeQueuedRecords();
+    const { traceId: exportedTraceId, parentSpanId, traceState, flags } = spans[0]!.record;
+    expect({ outgoingTracestate: outgoing.tracestate, exportedTraceId, parentSpanId, traceState, flags }).toMatchInlineSnapshot(`
+      {
+        "exportedTraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "flags": 769,
+        "outgoingTracestate": "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7",
+        "parentSpanId": "00f067aa0ba902b7",
+        "traceState": "congo=t61rcWkgMzE,rojo=00f067aa0ba902b7",
+      }
+    `);
   });
 });
 
