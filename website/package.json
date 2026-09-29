@@ -70,7 +70,7 @@
     "tailwindcss": "^4.2.2",
     "ulid": "latest",
     "vaul": "^1.1.2",
-    "workers-ai-provider": "^3.1.14",
+    "workers-ai-provider": "^3.3.1",
     "zod": "latest"
   },
   "devDependencies": {
