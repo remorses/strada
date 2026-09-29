@@ -75,8 +75,9 @@ export function initStrada(options: StradaOptions): Error | undefined {
       runtimeHooks.onLogEmit = serverHooks.onLogEmit;
       runtimeHooks.afterRecord = scheduleFlush;
       if (options.cloudflareTracing !== false && typeof cfTracing?.enterSpan === "function") {
-        const enterSpan = cfTracing.enterSpan;
-        runtimeHooks.wrapActiveSpan = (name, run) => enterSpan(name, (cfSpan) => run(cfSpan));
+        // Call as a method: workerd throws "Illegal invocation" on a detached enterSpan.
+        const tracing = cfTracing;
+        runtimeHooks.wrapActiveSpan = (name, run) => tracing.enterSpan(name, (cfSpan) => run(cfSpan));
       }
       setupIntegrations(options.integrations);
     },

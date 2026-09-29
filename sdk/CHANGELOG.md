@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+1. **Fixed Cloudflare Workers crash on every request** — in 0.8.0 and 0.9.0, a Worker whose runtime exports `tracing.enterSpan` threw `TypeError: Illegal invocation` from `startActiveSpan()` / `startSpan()`, so every traced request failed with error 1101. The native Cloudflare span bridge now works.
+
 ## 0.9.0
 
 1. **Automatic spans with `node:diagnostics_channel`** — opt-in integrations from `@strada.sh/sdk/instrument`. No module patching, no preload, no extra packages. Works with any import order and in bundled apps (Vite, Next):

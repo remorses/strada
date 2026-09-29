@@ -1,6 +1,6 @@
 {
   "name": "@strada.sh/sdk",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Zero-dependency Strada SDK: errors, product events, logs, spans, and metrics over OTLP JSON. OpenTelemetry-compatible API, optional bridge for OTel instrumentations.",
   "keywords": [
     "strada",
