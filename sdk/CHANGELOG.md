@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.9.0
+
+1. **Automatic spans with `node:diagnostics_channel`** — opt-in integrations from `@strada.sh/sdk/instrument`. No module patching, no preload, no extra packages. Works with any import order and in bundled apps (Vite, Next):
+
+   ```ts
+   import { initStrada } from '@strada.sh/sdk'
+   import { fetchSpans, httpClientSpans, httpServerSpans, mysql2Spans, redisSpans } from '@strada.sh/sdk/instrument'
+
+   initStrada({
+     projectId: '01JTHG5M7XPQR8KNCZ0W4D',
+     service: 'api',
+     integrations: [fetchSpans(), httpClientSpans(), httpServerSpans(), mysql2Spans(), redisSpans()],
+   })
+   ```
+
+   | Integration | What it records |
+   | --- | --- |
+   | `fetchSpans()`, `httpClientSpans()` | client spans for outgoing requests, with `traceparent` and `baggage` headers added. `httpClientSpans()` needs Node 22.12+ |
+   | `httpServerSpans()` | a server span per incoming request, active for the whole handler, parented to the incoming `traceparent` |
+   | `mysql2Spans()`, `redisSpans()`, `mongooseSpans()` | database client spans with `db.*` attributes (mysql2 3.20+, redis 5.12+, ioredis 5.11+, mongoose 9.7+) |
+   | `graphqlSpans()`, `aiSpans()`, `h3Spans()` | graphql 17+, AI SDK 7+ GenAI spans with token usage, h3 v2 with `tracingPlugin()` |
+   | `pinoLogs()` | every pino 9.10+ log line becomes an OTel log record, correlated to the active span |
+
+   Spans from these integrations are active inside the traced call, so nested spans, logs, and errors attach to them. Nothing is enabled by default. Write your own integration for any library that publishes a `TracingChannel`: an integration is `{ name, setup() }`, where `setup()` returns the teardown that `shutdown()` runs. See https://strada.sh/docs/instrumentation.
+
+2. **W3C `tracestate` support** — the header is read, sent to downstream requests, and stored on spans. New exports `createTraceState()` and the `TraceState` type, the same as in `@opentelemetry/api`. Spans also export their trace `flags`, so `TraceFlags` in `otel_traces` is no longer always `0`.
+
+3. **Cloudflare Workers export per invocation** — each invocation exports its own records, and the SDK starts no timers in Workers. A flush no longer waits for another request's export. Metrics export with the invocation that recorded them, and only series that changed are sent. Before, a shared export chain could delay or lose telemetry, and every flush sent all metrics again.
+
+4. **`registerOpenTelemetry()` is all or nothing and never throws** — if another OTel SDK already owns one global, or a registration step throws, it rolls back every global it set and returns the error.
+
+5. **Browser: tab switches rejoin a page trace** — when a hidden tab is visible again, the SDK starts a `pageview.resume` span. Events and errors after a tab switch get a parent trace again. It is not a `pageview`, so page analytics do not count a tab switch as a hit.
+
+6. **Fixed lost batches on page close** — the 64 KiB `keepalive` limit is now checked in bytes, not characters. Batches with many non-ASCII characters are no longer dropped.
+
+7. **Fixed re-init after `shutdown()`** — metrics no longer export old cumulative values again, and instruments stop collecting while the SDK is not exporting. On Node, `shutdown()` removes the `uncaughtException`, `unhandledRejection`, and `beforeExit` handlers, so a later `initStrada()` can change `captureUncaughtErrors`.
+
+8. **Stricter `traceparent` parsing** — a version `00` header with extra fields after the flags is rejected, as the W3C spec requires.
+
+## 0.8.0
+
+1. **Zero dependencies** — the SDK implements the OpenTelemetry API itself and exports OTLP JSON with `fetch`. The install drops about 25 MB of OpenTelemetry and protobuf packages. The API stays OpenTelemetry-shaped: `trace`, `context`, `propagation`, `logs`, `metrics`, `SpanStatusCode`, `SpanKind`, and `SeverityNumber` work like `@opentelemetry/api`. Metrics now also work on Cloudflare Workers.
+
+2. **`@strada.sh/sdk/otel` bridge** — register Strada as the global provider for OTel instrumentations and libraries that import `@opentelemetry/api`:
+
+   ```ts
+   import { initStrada } from '@strada.sh/sdk'
+   import { registerOpenTelemetry } from '@strada.sh/sdk/otel'
+
+   initStrada({ projectId: '01JTHG5M7XPQR8KNCZ0W4D', service: 'api' })
+   registerOpenTelemetry()
+   ```
+
+3. **New `captureUncaughtErrors: false` option** — skips the uncaught error handlers, for CLIs that own their crash handling.
+
+4. **No `SIGINT` / `SIGTERM` handlers** — Ctrl+C exits normally. Call `await flush()` in your own shutdown handler. `beforeExit` still flushes.
+
+5. **Errors from a `KnownError` class are ignored** — they are not captured as issues.
+
+6. **Privacy and transport** — no `host.*` / `process.*` resource detection, so hostname and OS username are never sent. Keep-alive connections are reused between flushes.
+
+7. **Removed** — `diag`, the `debug` option, and OTel SDK config types. `telemetry.*` now takes `scheduledDelayMillis`, `maxExportBatchSize`, `maxQueueSize`, `exportTimeoutMillis`, and `exportIntervalMillis`. `@strada.sh/light` is deprecated; use `@strada.sh/sdk`.
+
 ## 0.7.0
 
 1. **Unique visitors** — the browser SDK writes cookie `strada_vid` (`visitor.id`) on first pageview. `strada_uid` stays the signed-in account (`user.id`). Login and logout do not touch `strada_vid`. No localStorage.
