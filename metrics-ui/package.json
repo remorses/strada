@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Reusable Modal-style metrics dashboards for Strada, built with TanStack Charts.",
+  "description": "Design mockup of the Strada dashboard (issues, traces, logs, health checks, analytics) with fake data.",
   "exports": {
     "./package.json": "./package.json",
     "./src/*": "./src/*"
@@ -17,6 +17,7 @@
     "@base-ui/react": "^1.4.1",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/charts": "^0.18.0",
+    "@tanstack/react-table": "^9.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3-scale": "^4.0.2",

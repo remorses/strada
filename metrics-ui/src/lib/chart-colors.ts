@@ -2,20 +2,15 @@ import { createChartCursor, cursorHost, type ChartCursorState } from '@tanstack/
 import { create } from 'zustand'
 
 export const COLORS = {
+  primary: 'var(--chart-primary)',
+  secondary: 'var(--chart-secondary)',
   success: 'var(--chart-success)',
-  live: 'var(--chart-live)',
-  request: 'var(--chart-request)',
-  usedCpu: 'var(--chart-used-cpu)',
-  usedMemory: 'var(--chart-used-memory)',
-  egress: 'var(--chart-egress)',
-  ingress: 'var(--chart-ingress)',
-  slots: 'var(--chart-slots)',
-  pending: 'var(--chart-pending)',
-  running: 'var(--chart-running)',
+  warning: 'var(--chart-warning)',
+  error: 'var(--chart-error)',
+  muted: 'var(--chart-muted)',
   p50: 'var(--chart-p50)',
-  p90: 'var(--chart-p90)',
-  usageCpu: 'var(--chart-usage-cpu)',
-  usageMemory: 'var(--chart-usage-memory)',
+  p95: 'var(--chart-p95)',
+  p99: 'var(--chart-p99)',
 }
 
 export const useChartHover = create<{

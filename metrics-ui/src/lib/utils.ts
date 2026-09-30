@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { NOW } from './mock-data.ts'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -7,100 +8,70 @@ export function cn(...inputs: ClassValue[]) {
 
 export const TIMEZONE = 'America/New_York'
 
+function dateParts(date: Date, options: Intl.DateTimeFormatOptions) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: TIMEZONE, ...options }).formatToParts(date)
+  return (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+}
+
 export function formatClock(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIMEZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).formatToParts(date)
-  const hour = parts.find((part) => part.type === 'hour')?.value ?? ''
-  const minute = parts.find((part) => part.type === 'minute')?.value ?? ''
-  const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value ?? ''
-  return `${hour.padStart(2, '0')}:${minute} ${dayPeriod}`
+  const part = dateParts(date, { hour: '2-digit', minute: '2-digit', hour12: true })
+  return `${part('hour').padStart(2, '0')}:${part('minute')} ${part('dayPeriod')}`
 }
 
-export function formatTickTime(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIMEZONE,
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).formatToParts(date)
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
-  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
-  const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value ?? ''
-  if (minute === '00') return `${String(hour).padStart(2, '0')} ${dayPeriod}`
-  return `${String(hour).padStart(2, '0')}:${minute}`
+export function formatDay(date: Date) {
+  const part = dateParts(date, { month: 'short', day: 'numeric' })
+  return `${part('month')} ${part('day')}`
 }
 
-export function formatTooltipTime(date: Date) {
-  const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIMEZONE,
-    weekday: 'short',
-  }).format(date)
-  const month = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIMEZONE,
-    month: 'short',
-  }).format(date)
-  const day = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIMEZONE,
-    day: 'numeric',
-  }).format(date)
-  return `${weekday} ${month} ${day}, ${formatClock(date)} EDT`
+// Daily ranges get "Sep 3" ticks, intraday ranges get "10 AM" / "10:30".
+export function formatTickTime(date: Date, daily: boolean) {
+  if (daily) return formatDay(date)
+  const part = dateParts(date, { hour: 'numeric', minute: '2-digit', hour12: true })
+  const hour = part('hour').padStart(2, '0')
+  if (part('minute') === '00') return `${hour} ${part('dayPeriod')}`
+  return `${hour}:${part('minute')}`
 }
 
-export function formatDuration(seconds: number) {
-  if (seconds < 60) return `${seconds.toFixed(2).replace(/\.?0+$/, '')}s`
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    const rest = Math.round(seconds % 60)
-    return rest ? `${minutes}m ${rest}s` : `${minutes}m`
-  }
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.round((seconds % 3600) / 60)
-  return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+export function formatTooltipTime(date: Date, daily: boolean) {
+  const part = dateParts(date, { weekday: 'short', month: 'short', day: 'numeric' })
+  const day = `${part('weekday')} ${part('month')} ${part('day')}`
+  return daily ? day : `${day}, ${formatClock(date)}`
 }
 
-export function formatCompactDuration(seconds: number) {
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 2 : 0)}s`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.round((seconds % 3600) / 60)
-  return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+export function formatLogTime(iso: string) {
+  const part = dateParts(new Date(iso), { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const ms = String(new Date(iso).getUTCMilliseconds()).padStart(3, '0')
+  return `${part('month')} ${part('day')} ${part('hour')}:${part('minute')}:${part('second')}.${ms}`
 }
 
-export function formatBytes(bytes: number) {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** index
-  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 2)} ${units[index]}`
+export function timeAgo(iso: string) {
+  const seconds = Math.max(0, Math.round((NOW.getTime() - new Date(iso).getTime()) / 1000))
+  if (seconds < 60) return `${seconds}s ago`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
+  if (seconds < 86_400) return `${Math.round(seconds / 3600)}h ago`
+  return `${Math.round(seconds / 86_400)}d ago`
 }
 
-export function formatRate(bytesPerSecond: number) {
-  return `${formatBytes(bytesPerSecond)}/s`
+// Short relative age without "ago", for dense table cells.
+export function shortAge(iso: string) {
+  return timeAgo(iso).replace(' ago', '')
 }
 
-export function formatGiB(gib: number) {
-  return `${gib.toFixed(2)} GiB`
+export function formatMs(ms: number) {
+  if (ms < 1) return `${ms.toFixed(2)}ms`
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)}s`
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
 }
 
-export function formatCores(cores: number) {
-  return `${cores.toFixed(cores >= 10 ? 2 : 3).replace(/0+$/, '').replace(/\.$/, '')} cores`
+export function formatCompact(value: number) {
+  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: value < 10_000 ? 1 : 0 }).format(value)
+}
+
+export function formatPercent(ratio: number, digits = 1) {
+  return `${(ratio * 100).toFixed(digits).replace(/\.0+$/, '')}%`
 }
 
 export function formatMoney(value: number) {
-  return value.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  })
-}
-
-export function formatCount(value: number, digits = 2) {
-  return value.toLocaleString('en-US', {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : digits,
-    maximumFractionDigits: digits,
-  })
+  return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })
 }

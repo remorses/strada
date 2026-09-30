@@ -25,22 +25,22 @@ export function PlanCards({ plans }: { plans: PlanColumn[] }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       {plans.map((plan) => (
-        <article key={plan.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-1">
-          <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-1.5">
+        <article key={plan.id} className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium">{plan.name}</span>
             <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               Yearly
               <Switch size="sm" defaultChecked={plan.yearly} aria-label={`${plan.name} yearly billing`} />
             </label>
           </div>
-          <div className="flex flex-col gap-0.5 px-2.5">
+          <div className="flex flex-col gap-0.5">
             <div className="flex items-baseline gap-1">
               <span className="text-[26px] leading-none font-semibold tracking-tight">{plan.price}</span>
               <span className="text-[13px] text-foreground/75">{plan.period}</span>
             </div>
             <div className="text-[12px] text-muted-foreground">{plan.billed}</div>
           </div>
-          <Button variant="outline" className="mx-1.5 mb-1.5 h-8 rounded-lg text-[13px] font-normal">
+          <Button variant="outline" className="h-8 rounded-lg text-[13px] font-normal">
             {plan.action}
           </Button>
         </article>

@@ -1,114 +1,128 @@
 'use client'
 
-import { CopyIcon, InfoIcon, Maximize2Icon } from 'lucide-react'
+import { ArrowDownRightIcon, ArrowUpRightIcon, CornerDownLeftIcon, InfoIcon, Maximize2Icon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Link } from 'spiceflow/react'
-import { cn } from '../lib/utils.ts'
+import { cn, formatPercent } from '../lib/utils.ts'
 import { Button } from './ui/button.tsx'
-import { NativeSelect, NativeSelectOption } from './ui/native-select.tsx'
-import { Tabs, TabsList, TabsTab } from './ui/tabs.tsx'
 
-export function PageShell({ children }: { children: ReactNode }) {
-  return <div className="min-h-screen bg-background text-foreground">{children}</div>
-}
-
-export function PageBody({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-[var(--page-max-width)] flex-col gap-5 px-8 py-6">{children}</div>
-}
-
-export function Breadcrumbs({ items }: { items: { href?: string; label: string }[] }) {
+export function PageHeader({ title, meta, actions }: { title: string; meta?: ReactNode; actions?: ReactNode }) {
   return (
-    <nav className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-      {items.map((item, index) => (
-        <span key={item.label} className="flex items-center gap-1.5">
-          {index > 0 && <span>/</span>}
-          {item.href ? (
-            <Link href={item.href} className="hover:text-foreground">
-              {item.label}
-            </Link>
-          ) : (
-            <span>{item.label}</span>
-          )}
-        </span>
-      ))}
-    </nav>
-  )
-}
-
-export function PageTitle({ children, copied }: { children: ReactNode; copied?: boolean }) {
-  return (
-    <div className="flex items-center gap-2">
-      <h1 className="text-[28px] font-semibold tracking-tight">{children}</h1>
-      {copied !== undefined && (
-        <Button size="icon-sm" variant="ghost" aria-label="Copy">
-          <CopyIcon />
-        </Button>
-      )}
+    <div className="flex items-center gap-3">
+      <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
+      {meta ? <div className="text-[13px] text-muted-foreground">{meta}</div> : null}
+      {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
     </div>
   )
 }
 
-export const TIME_RANGES = [
-  { value: '15m', label: 'Last 15 minutes' },
-  { value: '1h', label: 'Last hour' },
-  { value: '6h', label: 'Last 6 hours' },
-  { value: '24h', label: 'Last 24 hours' },
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-]
+// The only filter UI: natural language that the backend turns into SQL.
+// In this mockup, submitting just reveals the fake generated WHERE clause.
+export function QueryBar({ placeholder, examples, sql }: { placeholder: string; examples: string[]; sql: string }) {
+  const [text, setText] = useState('')
+  const [submitted, setSubmitted] = useState('')
 
-export function TimeRangeBar() {
-  const [range, setRange] = useState('1h')
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <NativeSelect
-        size="sm"
-        value={range}
-        onChange={(event) => setRange(event.target.value)}
-        aria-label="Time range"
+    <div className="flex flex-col gap-2">
+      <form
+        className="group flex h-10 items-center gap-2.5 rounded-xl border border-input bg-card px-3 transition-colors focus-within:border-ring/40 focus-within:ring-3 focus-within:ring-ring/10"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setSubmitted(text)
+        }}
       >
-        {TIME_RANGES.map((item) => (
-          <NativeSelectOption key={item.value} value={item.value}>
-            {item.label}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        <input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder={placeholder}
+          aria-label="Filter with natural language"
+          className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+        <kbd className="flex h-5 items-center rounded border border-border px-1 text-muted-foreground">
+          <CornerDownLeftIcon className="size-3" />
+        </kbd>
+      </form>
+      <div className="flex min-h-5 flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        {submitted ? (
+          <>
+            <span className="rounded bg-muted px-1.5 py-0.5 font-medium">SQL</span>
+            <code className="truncate font-mono text-[11px] text-foreground/80">WHERE {sql}</code>
+          </>
+        ) : (
+          <>
+            <span>Try</span>
+            {examples.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => {
+                  setText(example)
+                  setSubmitted(example)
+                }}
+                className="rounded-full border border-border px-2 py-0.5 hover:bg-muted hover:text-foreground"
+              >
+                {example}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
-export type MetricTabItem = {
+export function KpiCard({
+  label,
+  value,
+  delta,
+  lowerIsBetter,
+  hint,
+  live,
+  tone,
+}: {
   label: string
-  badge?: string
-  badgeTone?: 'destructive' | 'info'
-  badgeOnly?: boolean
+  value: string
+  delta?: number
+  lowerIsBetter?: boolean
+  hint?: string
+  live?: boolean
+  tone?: 'destructive' | 'success'
+}) {
+  const good = delta === undefined ? true : lowerIsBetter ? delta <= 0 : delta >= 0
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+        {label}
+        {live && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs">
+            <span className="size-1.5 animate-pulse rounded-full bg-success" />
+            Live
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span
+          className={cn(
+            'text-[26px] leading-none font-semibold tracking-tight tabular-nums',
+            tone === 'destructive' && 'text-destructive',
+            tone === 'success' && 'text-success',
+          )}
+        >
+          {value}
+        </span>
+        {delta !== undefined ? (
+          <span className={cn('flex items-center text-xs font-medium tabular-nums', good ? 'text-success' : 'text-destructive')}>
+            {delta >= 0 ? <ArrowUpRightIcon className="size-3.5" /> : <ArrowDownRightIcon className="size-3.5" />}
+            {formatPercent(Math.abs(delta))}
+          </span>
+        ) : null}
+      </div>
+      {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
+    </div>
+  )
 }
 
-export function MetricTabs({ items, active }: { items: MetricTabItem[]; active: string }) {
-  const [value, setValue] = useState(active)
-  return (
-    <Tabs value={value} onValueChange={(next) => setValue(String(next))}>
-      <TabsList variant="line">
-        {items.map((item) => (
-          <TabsTab key={item.label} value={item.label}>
-            {!item.badgeOnly && item.label}
-            {item.badge && (
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-                  item.badgeTone === 'destructive' && 'bg-destructive/10 text-destructive',
-                  item.badgeTone === 'info' && 'bg-info/10 text-info',
-                )}
-              >
-                {item.badge}
-              </span>
-            )}
-          </TabsTab>
-        ))}
-      </TabsList>
-    </Tabs>
-  )
+export function KpiRow({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>
 }
 
 export function ChartCard({
@@ -117,72 +131,63 @@ export function ChartCard({
   expand,
   info,
   legend,
+  actions,
   children,
+  className,
 }: {
   title: string
   badge?: string
   expand?: boolean
   info?: boolean
   legend?: { color: string; label: string; hollow?: boolean }[]
+  actions?: ReactNode
   children: ReactNode
+  className?: string
 }) {
   return (
-    <section className="relative flex flex-col gap-2 bg-background px-4 pt-3 pb-3">
-      <div className="flex min-h-5 items-center justify-center gap-1.5">
-        <h2 className="text-[15px] font-medium">{title}</h2>
+    <section className={cn('relative flex flex-col gap-2', className)}>
+      <div className="flex min-h-6 items-center gap-1.5">
+        <h2 className="text-[13px] font-medium">{title}</h2>
         {badge && (
-          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">
-            {badge}
-          </span>
+          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">{badge}</span>
         )}
-        {info && <InfoIcon className="size-3.5 text-foreground" />}
-      </div>
-      {expand && (
-        <Button className="absolute top-2 right-2" size="icon-sm" variant="ghost" aria-label="Expand">
-          <Maximize2Icon />
-        </Button>
-      )}
-      {children}
-      {legend && (
-        <div className="flex min-h-4 flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
-          {legend.map((item) => (
-            <span key={item.label} className="flex items-center gap-1.5">
-              <span
-                className={cn('size-2.5 rounded-[2px]', item.hollow && 'border bg-transparent')}
-                style={{ background: item.hollow ? undefined : item.color, borderColor: item.color }}
-              />
-              {item.label}
-            </span>
-          ))}
+        {info && <InfoIcon className="size-3.5 text-muted-foreground" />}
+        <div className="ml-auto flex items-center gap-3">
+          {legend && <Legend items={legend} />}
+          {actions}
+          {expand && (
+            <Button size="icon-xs" variant="ghost" aria-label="Expand">
+              <Maximize2Icon />
+            </Button>
+          )}
         </div>
-      )}
+      </div>
+      {children}
     </section>
   )
 }
 
-export function KpiCard({
-  label,
-  value,
-  live,
-}: {
-  label: string
-  value: string
-  live?: boolean
-}) {
+export function Legend({ items }: { items: { color: string; label: string; hollow?: boolean }[] }) {
   return (
-    <div className="flex flex-col gap-2 bg-background px-5 py-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {label}
-        {live && (
-          <span className="ml-auto flex items-center gap-1.5 text-xs">
-            <span className="size-1.5 rounded-full bg-success" />
-            Live
-          </span>
-        )}
-      </div>
-      <div className="text-[32px] font-semibold tracking-tight">{value}</div>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {items.map((item) => (
+        <span key={item.label} className="flex items-center gap-1.5">
+          <span
+            className={cn('size-2 rounded-[2px]', item.hollow && 'border bg-transparent')}
+            style={{ background: item.hollow ? undefined : item.color, borderColor: item.color }}
+          />
+          {item.label}
+        </span>
+      ))}
     </div>
   )
 }
 
-
+export function SectionTitle({ children, meta }: { children: ReactNode; meta?: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2 px-1">
+      <h2 className="text-[15px] font-medium">{children}</h2>
+      {meta ? <span className="text-xs text-muted-foreground">{meta}</span> : null}
+    </div>
+  )
+}

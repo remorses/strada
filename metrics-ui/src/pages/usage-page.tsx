@@ -2,51 +2,39 @@
 
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
-import { ChartCard } from '../components/chrome.tsx'
-import { SettingsPage, SettingsShell } from '../components/settings-shell.tsx'
-import { SETTINGS_NAV } from '../lib/settings-nav.tsx'
-import { CategoryBarChart, TimeSeriesChart } from '../components/charts.tsx'
-import { COLORS } from '../lib/chart-colors.ts'
+import { AppShell, SettingsPage } from '../components/app-shell.tsx'
+import { TimeSeriesChart } from '../components/charts.tsx'
+import { Legend } from '../components/chrome.tsx'
 import { Button } from '../components/ui/button.tsx'
-import { Tabs, TabsList, TabsTab } from '../components/ui/tabs.tsx'
-import {
-  cycleUsage,
-  functionCosts,
-  lastHourUsage,
-} from '../lib/metrics-data.ts'
-import { formatMoney } from '../lib/utils.ts'
+import { COLORS } from '../lib/chart-colors.ts'
+import { ingestDaily } from '../lib/mock-data.ts'
+import { formatCompact, formatMoney } from '../lib/utils.ts'
 
-const BILLING_CYCLES = [
-  'Jul 1 – Aug 1, 2026',
-  'Aug 1 – Sep 1, 2026',
-  'Sep 1 – Oct 1, 2026',
-]
+const BILLING_CYCLES = ['Jul 23 – Aug 23, 2026', 'Aug 23 – Sep 23, 2026', 'Sep 23 – Oct 23, 2026']
+
+const SIGNALS = [
+  { key: 'spans', label: 'Spans', color: COLORS.primary, pricePerMillion: 0.3 },
+  { key: 'logs', label: 'Logs', color: COLORS.secondary, pricePerMillion: 0.2 },
+  { key: 'errors', label: 'Errors', color: COLORS.error, pricePerMillion: 1 },
+] as const
 
 export function UsagePage() {
-  const [cycleIndex, setCycleIndex] = useState(BILLING_CYCLES.length - 1)
-  const [usageWindow, setUsageWindow] = useState('1h')
-  const stackedHour = lastHourUsage.reduce<
-    { time: Date; cpu: number; memory: number }[]
-  >((rows, item) => {
-    const existing = rows.find((row) => row.time.getTime() === item.time.getTime())
-    if (existing) {
-      if (item.series === 'CPU') existing.cpu = item.value
-      else existing.memory = item.value
-      return rows
-    }
-    rows.push({
-      time: item.time,
-      cpu: item.series === 'CPU' ? item.value : 0,
-      memory: item.series === 'Memory' ? item.value : 0,
-    })
-    return rows
-  }, [])
+  const [cycleIndex, setCycleIndex] = useState(1)
+  const totals = SIGNALS.map((signal) => {
+    const events = ingestDaily.reduce((sum, point) => sum + Number(point[signal.key]), 0)
+    return { ...signal, events, cost: (events / 1_000_000) * signal.pricePerMillion }
+  })
+  const totalCost = totals.reduce((sum, item) => sum + item.cost, 0)
 
   return (
-    <SettingsShell items={SETTINGS_NAV}>
+    <AppShell>
       <SettingsPage>
-        <div className="flex items-start justify-end gap-4">
-          <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <div className="text-sm text-muted-foreground">Ingest this cycle</div>
+            <div className="text-[40px] leading-none font-semibold tracking-tight">{formatMoney(totalCost)}</div>
+          </div>
+          <div className="flex h-9 items-center gap-2 text-sm">
             <Button
               size="icon-sm"
               variant="ghost"
@@ -56,7 +44,7 @@ export function UsagePage() {
             >
               <ChevronLeftIcon />
             </Button>
-            <span className="tabular-nums">Billing Cycle: {BILLING_CYCLES[cycleIndex]}</span>
+            <span className="tabular-nums">{BILLING_CYCLES[cycleIndex]}</span>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -69,91 +57,39 @@ export function UsagePage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <div className="text-sm text-muted-foreground">Total Usage</div>
-          <div className="text-[40px] font-semibold tracking-tight">{formatMoney(6715.12)}</div>
-        </div>
-
-        <section className="flex flex-col gap-4 overflow-hidden bg-background p-5">
+        <section className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-medium">
-              {usageWindow === '1h' ? 'Last Hour Usage: $28.90' : 'Last 24h Usage: $694.80'}
-            </h2>
-            <Tabs value={usageWindow} onValueChange={(next) => setUsageWindow(String(next))}>
-              <TabsList>
-                <TabsTab value="1h">Last hour</TabsTab>
-                <TabsTab value="24h">Last 24h</TabsTab>
-              </TabsList>
-            </Tabs>
+            <h2 className="text-[15px] font-medium">Events ingested per day</h2>
+            <Legend items={SIGNALS.map((signal) => ({ color: signal.color, label: signal.label }))} />
           </div>
-          <div className="relative">
-            <TimeSeriesChart
-              data={stackedHour}
-              series={[
-                { key: 'cpu', label: 'CPU', color: COLORS.usageCpu, kind: 'bar' },
-                { key: 'memory', label: 'Memory', color: COLORS.usageMemory, kind: 'bar' },
-              ]}
-              stacked
-              ariaLabel="Last hour usage"
-              valueFormat={formatMoney}
-              height={220}
-              yTicks={[0, 0.1, 0.2, 0.3, 0.4, 0.5]}
-              yFormat={(value) => formatMoney(value)}
-            />
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-4 overflow-hidden bg-background p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="relative z-10 text-[15px] font-medium">Cycle Resource Breakdown</h2>
-            <button type="button" className="relative z-10 text-sm text-muted-foreground hover:text-foreground">
-              View all rates →
-            </button>
-          </div>
-          <div className="relative overflow-hidden">
-            <CategoryBarChart
-              rows={cycleUsage.map((row) => ({ x: row.day, series: row.series, value: row.value }))}
-              ariaLabel="Cycle resource breakdown"
-              height={240}
-              yTicks={[0, 200, 400, 600]}
-              domainMax={780}
-              yFormat={formatMoney}
-            />
-          </div>
+          <TimeSeriesChart
+            data={ingestDaily}
+            series={SIGNALS.map((signal) => ({ key: signal.key, label: signal.label, color: signal.color, kind: 'bar' as const }))}
+            stacked
+            ariaLabel="Events ingested per day"
+            yFormat={formatCompact}
+            valueFormat={(value) => value.toLocaleString()}
+            height={220}
+          />
           <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <span className="size-2.5 rounded-[2px]" style={{ background: COLORS.usageCpu }} />
-                CPU
-              </span>
-              <span className="tabular-nums">{formatMoney(5743.72)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <span className="size-2.5 rounded-[2px]" style={{ background: COLORS.usageMemory }} />
-                Memory
-              </span>
-              <span className="tabular-nums">{formatMoney(971.43)}</span>
-            </div>
-            <div className="flex items-center justify-between border-t border-border pt-2 font-medium">
-              <span>Total</span>
-              <span className="tabular-nums">{formatMoney(6715.14)}</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-3 bg-background p-5">
-          <h2 className="text-[15px] font-medium">Functions</h2>
-          <div className="flex flex-col gap-3 text-sm">
-            {functionCosts.map((item) => (
-              <div key={item.name} className="flex items-center justify-between">
-                <span className="font-mono text-[13px]">{item.name}</span>
-                <span className="tabular-nums">{formatMoney(item.amount)}</span>
+            {totals.map((item) => (
+              <div key={item.key} className="grid grid-cols-[1fr_120px_100px] items-center">
+                <span className="flex items-center gap-2">
+                  <span className="size-2.5 rounded-[2px]" style={{ background: item.color }} />
+                  {item.label}
+                  <span className="text-xs text-muted-foreground">{formatMoney(item.pricePerMillion)} / M</span>
+                </span>
+                <span className="text-right text-muted-foreground tabular-nums">{formatCompact(item.events)}</span>
+                <span className="text-right tabular-nums">{formatMoney(item.cost)}</span>
               </div>
             ))}
+            <div className="grid grid-cols-[1fr_100px] border-t border-border pt-2 font-medium">
+              <span>Total</span>
+              <span className="text-right tabular-nums">{formatMoney(totalCost)}</span>
+            </div>
           </div>
         </section>
       </SettingsPage>
-    </SettingsShell>
+    </AppShell>
   )
 }

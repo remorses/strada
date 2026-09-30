@@ -1,10 +1,13 @@
 import './globals.css'
-import { Spiceflow } from 'spiceflow'
+import { redirect, Spiceflow } from 'spiceflow'
 import { Head, ProgressBar } from 'spiceflow/react'
-import { FunctionPage } from './pages/function-page.tsx'
+import { AnalyticsPage } from './pages/analytics-page.tsx'
+import { HealthChecksPage } from './pages/health-checks-page.tsx'
+import { IssueDetailPage } from './pages/issue-detail-page.tsx'
+import { IssuesPage } from './pages/issues-page.tsx'
+import { LogsPage } from './pages/logs-page.tsx'
 import { PlansPage } from './pages/plans-page.tsx'
-import { SandboxesPage } from './pages/sandboxes-page.tsx'
-import { SettingsSectionPage } from './pages/settings-page.tsx'
+import { TracesPage } from './pages/traces-page.tsx'
 import { UsagePage } from './pages/usage-page.tsx'
 
 export const app = new Spiceflow()
@@ -29,22 +32,65 @@ export const app = new Spiceflow()
     )
   })
   .page('/', async () => {
+    throw redirect('/issues')
+  })
+  .page('/issues', async () => {
     return (
       <>
         <Head>
-          <Head.Title>run_one · Metrics</Head.Title>
+          <Head.Title>Issues · Strada</Head.Title>
         </Head>
-        <FunctionPage />
+        <IssuesPage />
       </>
     )
   })
-  .page('/sandboxes', async () => {
+  .page('/issues/:fingerprint', async ({ params }) => {
     return (
       <>
         <Head>
-          <Head.Title>Sandboxes · Metrics</Head.Title>
+          <Head.Title>Issue · Strada</Head.Title>
         </Head>
-        <SandboxesPage />
+        <IssueDetailPage fingerprint={params.fingerprint} />
+      </>
+    )
+  })
+  .page('/traces', async () => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Traces · Strada</Head.Title>
+        </Head>
+        <TracesPage />
+      </>
+    )
+  })
+  .page('/logs', async () => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Logs · Strada</Head.Title>
+        </Head>
+        <LogsPage />
+      </>
+    )
+  })
+  .page('/health-checks', async () => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Health checks · Strada</Head.Title>
+        </Head>
+        <HealthChecksPage />
+      </>
+    )
+  })
+  .page('/analytics', async () => {
+    return (
+      <>
+        <Head>
+          <Head.Title>Analytics · Strada</Head.Title>
+        </Head>
+        <AnalyticsPage />
       </>
     )
   })
@@ -52,19 +98,9 @@ export const app = new Spiceflow()
     return (
       <>
         <Head>
-          <Head.Title>Usage · Metrics</Head.Title>
+          <Head.Title>Usage · Strada</Head.Title>
         </Head>
         <UsagePage />
-      </>
-    )
-  })
-  .page('/settings/:section', async ({ params }) => {
-    return (
-      <>
-        <Head>
-          <Head.Title>Settings</Head.Title>
-        </Head>
-        <SettingsSectionPage section={params.section} />
       </>
     )
   })
@@ -72,8 +108,7 @@ export const app = new Spiceflow()
     return (
       <>
         <Head>
-          <Head.Title>Plans · Settings</Head.Title>
-          <Head.Meta name="description" content="Choose the plan that best fits your store's needs." />
+          <Head.Title>Plans · Strada</Head.Title>
         </Head>
         <PlansPage />
       </>
