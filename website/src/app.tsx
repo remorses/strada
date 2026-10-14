@@ -733,24 +733,24 @@ export const app = new Spiceflow({ tracer })
         'use server'
         const actionRequest = getActionRequest()
         await requireSession(actionRequest)
-        const result = await submitOAuthConsent({
+        const url = await submitOAuthConsent({
           request: actionRequest,
           accept: true,
           oauthQuery,
         })
-        if (result.redirect_uri) throw redirect(result.redirect_uri)
+        throw redirect(url)
       }
 
       async function denyConsent() {
         'use server'
         const actionRequest = getActionRequest()
         await requireSession(actionRequest)
-        const result = await submitOAuthConsent({
+        const url = await submitOAuthConsent({
           request: actionRequest,
           accept: false,
           oauthQuery,
         })
-        if (result.redirect_uri) throw redirect(result.redirect_uri)
+        throw redirect(url)
       }
 
       return (

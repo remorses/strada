@@ -100,14 +100,19 @@ export async function submitOAuthConsent(opts: {
   oauthQuery?: string
 }) {
   const auth = getAuth()
-  const result = await auth.api.oauth2Consent({
+  const { url } = await auth.api.oauth2Consent({
     body: {
       accept: opts.accept,
       oauth_query: opts.oauthQuery || undefined,
     },
     headers: opts.request.headers,
+    // Accept resumes /oauth2/authorize, which throws 401 "request not found" without it.
+    request: opts.request,
+    // With `request`, better-call returns a Response unless this is false.
+    asResponse: false,
   })
-  return { redirect_uri: result.url }
+  if (!url) throw new Error('OAuth consent returned no redirect URL')
+  return url
 }
 
 export function getAuth() {
