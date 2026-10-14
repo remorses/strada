@@ -668,7 +668,7 @@ Minifiers shorten variable names to save bytes. But gzip already compresses repe
 Install the [skill](https://skills.sh) to teach AI agents the Strada workflows:
 
 ```bash
-npx -y skills add remorses/strada
+npx -y skills add remorses/strada -g -y
 ```
 
 This works with Claude Code, Cursor, Windsurf, and other AI coding agents. The skill teaches them how to use the CLI, query data, debug errors, and work with the OTel schema.
