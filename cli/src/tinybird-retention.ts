@@ -90,7 +90,7 @@ function normalizeProjectRetention(project: ProjectRetention): ProjectRetention 
   }
 }
 
-function escapeClickHouseString(value: string): string {
+export function escapeClickHouseString(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")
 }
 

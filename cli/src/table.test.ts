@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatTable } from "./table.ts";
+import { formatTable, parseTimestamp } from "./table.ts";
 import { bold, cyan, dim, red } from "./colors.ts";
 
 test("basic table without colors", () => {
@@ -158,5 +158,19 @@ test("separator width matches header width per column", () => {
     "  SHORT  VERY LONG HEADER
       ─────  ────────────────
       a      b               "
+  `);
+});
+
+test("parseTimestamp reads zone-less ClickHouse times as UTC", () => {
+  expect([
+    parseTimestamp("2026-10-24 12:30:00.123456789").toISOString(),
+    parseTimestamp("2026-10-24 12:30:00").toISOString(),
+    parseTimestamp("2026-10-24T12:30:00+02:00").toISOString(),
+  ]).toMatchInlineSnapshot(`
+    [
+      "2026-10-24T12:30:00.123Z",
+      "2026-10-24T12:30:00.000Z",
+      "2026-10-24T10:30:00.000Z",
+    ]
   `);
 });

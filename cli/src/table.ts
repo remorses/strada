@@ -115,10 +115,21 @@ export function formatCount(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/**
+ * Parses a timestamp. ClickHouse returns DateTime64 as "2026-10-24 12:30:00.123456789"
+ * in UTC without a zone; `new Date()` would read that as local time.
+ */
+export function parseTimestamp(timestamp: string): Date {
+  const match = timestamp.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?$/);
+  if (!match) return new Date(timestamp);
+  const fraction = match[3] ? match[3].slice(0, 4) : "";
+  return new Date(`${match[1]}T${match[2]}${fraction}Z`);
+}
+
 /** Format a timestamp string as relative time: "2m ago", "3h ago", "5d ago" */
 export function timeAgo(timestamp: string): string {
   const now = Date.now();
-  const then = new Date(timestamp).getTime();
+  const then = parseTimestamp(timestamp).getTime();
   const diffMs = now - then;
   if (Number.isNaN(diffMs) || diffMs < 0) return timestamp;
 

@@ -7,7 +7,8 @@ import { z } from "zod";
 import { bold, cyan, dim, gray, green, red, yellow } from "./colors.ts";
 import { resolveProject, resolveProjects } from "./projects.ts";
 import { queryProject } from "./issues.ts";
-import { printTable, formatCount, timeAgo } from "./table.ts";
+import { printTable, formatCount, parseTimestamp, timeAgo } from "./table.ts";
+import { escapeClickHouseString } from "./tinybird-retention.ts";
 import { parseTimeBoundary } from "./parse-duration.ts";
 
 export const tracesCli = goke();
@@ -224,17 +225,17 @@ export function buildSpanTree(rows: OtelTraceRow[]): TraceViewData {
 
   function setDepth(node: SpanNode, depth: number) {
     node.depth = depth;
-    node.children.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    node.children.sort((a, b) => parseTimestamp(a.startTime).getTime() - parseTimestamp(b.startTime).getTime());
     for (const child of node.children) setDepth(child, depth + 1);
   }
   for (const root of rootSpans) setDepth(root, 0);
-  rootSpans.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  rootSpans.sort((a, b) => parseTimestamp(a.startTime).getTime() - parseTimestamp(b.startTime).getTime());
 
   let traceStartMs = Infinity;
   let traceEndMs = -Infinity;
   const services = new Set<string>();
   for (const row of rows) {
-    const startMs = new Date(row.Timestamp).getTime();
+    const startMs = parseTimestamp(row.Timestamp).getTime();
     const endMs = startMs + row.Duration / 1_000_000;
     if (startMs < traceStartMs) traceStartMs = startMs;
     if (endMs > traceEndMs) traceEndMs = endMs;
@@ -380,9 +381,9 @@ function renderEvents(output: { log: (message: string) => void }, span: SpanNode
   if (span.events.length === 0) return;
 
   output.log(`${dim(prefix)}${bold("Events")}`);
-  const spanStart = new Date(span.startTime).getTime();
+  const spanStart = parseTimestamp(span.startTime).getTime();
   for (const event of span.events) {
-    const eventTime = new Date(event.timestamp).getTime();
+    const eventTime = parseTimestamp(event.timestamp).getTime();
     const offset = Number.isFinite(spanStart) && Number.isFinite(eventTime)
       ? ` +${formatDurationMs(eventTime - spanStart)}`
       : "";
@@ -436,6 +437,18 @@ function collectSpans(spans: SpanNode[]): SpanNode[] {
   return all;
 }
 
+/** Attributes with the same value on every span, e.g. user.id set by middleware. Shown once in the header. */
+function commonAttributes(spans: SpanNode[]): Record<string, string> {
+  const all = collectSpans(spans);
+  if (all.length < 2) return {};
+  const common: Record<string, string> = {};
+  for (const [key, value] of Object.entries(all[0]!.spanAttributes)) {
+    if (value === "" || isNoisyAttribute(key)) continue;
+    if (all.every((span) => span.spanAttributes[key] === value)) common[key] = value;
+  }
+  return common;
+}
+
 function resolveExpandedSpans(spans: SpanNode[], requested: string[]): { spans: Set<string>; missing: string[]; ambiguous: string[] } {
   const all = collectSpans(spans);
   const expanded = new Set<string>();
@@ -455,7 +468,7 @@ function resolveExpandedSpans(spans: SpanNode[], requested: string[]): { spans: 
 function renderSpanTree(
   output: { log: (message: string) => void },
   spans: SpanNode[],
-  options: { attrs: number; expandSpan: string[] },
+  options: { attrs: number; expandSpan: string[]; common: Record<string, string> },
 ) {
   const expanded = resolveExpandedSpans(spans, options.expandSpan);
 
@@ -470,7 +483,8 @@ function renderSpanTree(
     const childPrefix = prefix + (isLastStack.length === 0 ? "" : isLastStack[isLastStack.length - 1] ? "   " : "│  ");
     output.log(`${dim(prefix + branch)}${errorBadge}${name} ${dim(`[${service} ${spanId}]`)} ${dim(formatDurationMs(span.durationMs))} ${statusColor(span.statusCode)}${errorMessage}`);
 
-    const attrPreview = formatAttributePreview(span.spanAttributes, options.attrs);
+    const ownAttrs = Object.fromEntries(Object.entries(span.spanAttributes).filter(([key]) => !(key in options.common)));
+    const attrPreview = formatAttributePreview(ownAttrs, options.attrs);
     if (attrPreview) output.log(`${dim(childPrefix)}   ${dim("attrs")} ${attrPreview}`);
 
     const eventPreview = formatEventPreview(span.events);
@@ -494,6 +508,18 @@ function buildTimeConditions(options: { since?: string; until?: string }) {
   const conditions = [`Timestamp >= ${parseTimeBoundary(options.since || "1h")}`];
   if (options.until) conditions.push(`Timestamp <= ${parseTimeBoundary(options.until)}`);
   return conditions;
+}
+
+/** Keeps spans of traces whose root span is `name`, started in the same time range. */
+function rootTraceCondition(name: string, options: { since?: string; until?: string }): string {
+  return dedent`
+    TraceId IN (
+      SELECT TraceId FROM otel_traces
+      WHERE ${buildTimeConditions(options).join(" AND ")}
+        AND ParentSpanId = ''
+        AND SpanName = '${escapeClickHouseString(name)}'
+    )
+  `.trim();
 }
 
 const TRACE_SPAN_COLUMNS = [
@@ -530,12 +556,18 @@ tracesCli
       Use this to find trace IDs before running \`strada traces view\`.
       Scans otel_traces in the selected time range, summarizes span counts,
       services, error spans, duration, and the first root span when one exists.
+      Pass \`--root\` to keep only traces of one operation (root span name).
       Project isolation is enforced by the project-scoped query API.
+
+      To see where time goes across many traces, use \`strada traces stats\`
+      instead of viewing traces one by one.
     `,
   )
+  .example("strada traces list -s api --root 'GET /users' --since 3h")
   .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
   .option("-s, --service [name]", "Filter by ServiceName")
+  .option("--root [name]", "Only traces whose root span has this SpanName")
   .option("--since [time]", "Start time: duration (1h, 7d) or ISO date (default: 1h)")
   .option("--until [time]", "End time: duration (1h) or ISO date")
   .option("--errors", "Only show traces with error spans")
@@ -545,7 +577,8 @@ tracesCli
     const { slugs, projects } = await resolveProjects({ project: options.project, org: options.org || undefined });
     const limit = Number(options.limit) || 50;
     const conditions = buildTimeConditions(options);
-    if (options.service) conditions.push(`ServiceName = '${options.service}'`);
+    if (options.service) conditions.push(`ServiceName = '${escapeClickHouseString(options.service)}'`);
+    if (options.root) conditions.push(rootTraceCondition(options.root, options));
     const having = options.errors ? "HAVING ErrorSpanCount > 0" : "";
 
     const sql = dedent`
@@ -583,12 +616,13 @@ tracesCli
     output.log("");
     output.log(bold(`Traces in ${cyan(slugs.join(", "))}`) + dim(` (last ${options.since || "1h"})`));
     if (options.service) output.log(dim(`  service: ${options.service}`));
+    if (options.root) output.log(dim(`  root span: ${options.root}`));
     if (options.errors) output.log(dim("  errors only"));
     output.log("");
 
     printTable(output, {
       columns: [
-        { key: "trace", label: "TRACE", color: cyan, maxWidth: 16 },
+        { key: "trace", label: "TRACE", color: cyan },
         { key: "root", label: "ROOT SPAN", maxWidth: 36 },
         { key: "service", label: "SERVICE", color: cyan, maxWidth: 24 },
         { key: "spans", label: "SPANS", align: "right", color: bold },
@@ -604,6 +638,97 @@ tracesCli
         errors: formatCount(num(row, "ErrorSpanCount")),
         duration: formatDurationNs(num(row, "DurationNs")),
         start: timeAgo(str(row, "StartTime")),
+      })),
+    });
+
+    output.log("");
+  });
+
+tracesCli
+  .command(
+    "traces stats",
+    dedent`
+      Show where time goes: duration stats per span name over many traces.
+
+      Groups every span in the time range by SpanName and ServiceName and
+      prints count, p50, p95, max, and total duration, sorted by total time.
+      Pass \`--root\` to only count spans inside traces of one operation, e.g.
+      the steps of every \`POST /checkout\` request. Use this instead of
+      running \`strada traces view\` on many traces to compute medians.
+    `,
+  )
+  .example("strada traces stats -s api --root 'POST /checkout' --since 3h")
+  .option("-p, --project [slug]", z.array(z.string()).describe("Project slug override (repeatable, defaults to folder setup)"))
+  .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
+  .option("-s, --service [name]", "Filter by ServiceName")
+  .option("--root [name]", "Only spans in traces whose root span has this SpanName")
+  .option("--since [time]", "Start time: duration (1h, 7d) or ISO date (default: 1h)")
+  .option("--until [time]", "End time: duration (1h) or ISO date")
+  .option("-n, --limit [count]", "Max span names (default: 50)")
+  .option("--json", "Print raw JSON response")
+  .action(async (options, { console: output }) => {
+    const { slugs, projects } = await resolveProjects({ project: options.project, org: options.org || undefined });
+    const limit = Number(options.limit) || 50;
+    const conditions = buildTimeConditions(options);
+    if (options.service) conditions.push(`ServiceName = '${escapeClickHouseString(options.service)}'`);
+    if (options.root) conditions.push(rootTraceCondition(options.root, options));
+
+    const sql = dedent`
+      SELECT
+          SpanName,
+          ServiceName,
+          count() AS Count,
+          countIf(StatusCode = 'Error') AS ErrorCount,
+          quantile(0.5)(Duration) AS P50Ns,
+          quantile(0.95)(Duration) AS P95Ns,
+          max(Duration) AS MaxNs,
+          sum(Duration) AS TotalNs
+      FROM otel_traces
+      WHERE ${conditions.join("\n  AND ")}
+      GROUP BY SpanName, ServiceName
+      ORDER BY TotalNs DESC
+      LIMIT ${limit}
+    `.trim();
+
+    const results = await Promise.all(projects.map((project) => queryProject(project.id, sql)));
+    const rows = results.flatMap((result) => result.data ?? []) as QueryRow[];
+
+    if (options.json) {
+      output.log(JSON.stringify({ data: rows, rows: rows.length }, null, 2));
+      return;
+    }
+
+    if (rows.length === 0) {
+      output.log(dim(`No spans found in ${cyan(slugs.join(", "))} (last ${options.since || "1h"})`));
+      return;
+    }
+
+    output.log("");
+    output.log(bold(`Span durations in ${cyan(slugs.join(", "))}`) + dim(` (last ${options.since || "1h"})`));
+    if (options.service) output.log(dim(`  service: ${options.service}`));
+    if (options.root) output.log(dim(`  root span: ${options.root}`));
+    output.log("");
+
+    printTable(output, {
+      columns: [
+        { key: "span", label: "SPAN", maxWidth: 40 },
+        { key: "service", label: "SERVICE", color: cyan, maxWidth: 24 },
+        { key: "count", label: "COUNT", align: "right", color: bold },
+        { key: "errors", label: "ERR", align: "right", color: red },
+        { key: "p50", label: "P50", align: "right", color: yellow },
+        { key: "p95", label: "P95", align: "right" },
+        { key: "max", label: "MAX", align: "right", color: dim },
+        { key: "total", label: "TOTAL", align: "right" },
+      ],
+      rows: rows.map((row) => ({
+        span: str(row, "SpanName"),
+        service: str(row, "ServiceName"),
+        count: formatCount(num(row, "Count")),
+        errors: formatCount(num(row, "ErrorCount")),
+        p50: formatDurationNs(num(row, "P50Ns")),
+        p95: formatDurationNs(num(row, "P95Ns")),
+        max: formatDurationNs(num(row, "MaxNs")),
+        total: formatDurationNs(num(row, "TotalNs")),
       })),
     });
 
@@ -681,7 +806,7 @@ tracesCli
   )
   .option("-p, --project [slug]", "Project slug override (defaults to folder setup)")
   .option("--org [name-or-id]", "Organization override (defaults to folder setup)")
-  .option("--attrs [count]", z.number().default(3).describe("Number of compact span attributes to show"))
+  .option("--attrs [count]", z.number().default(5).describe("Number of compact span attributes to show per span"))
   .option("-e, --expand-span [spanId]", z.array(z.string()).describe("SpanId or unique SpanId prefix to expand (repeatable)"))
   .option("--json", "Print @strada.sh/ui compatible JSON")
   .action(async (traceId, options, { console: output, process: proc }) => {
@@ -712,10 +837,14 @@ tracesCli
     output.log("");
     output.log(bold(`Trace ${cyan(traceId)}`));
     output.log(dim(`  ${formatCount(rows.length)} spans · ${formatDurationMs(trace.totalDurationMs)} · ${trace.services.join(", ")}`));
+    const common = commonAttributes(trace.rootSpans);
+    const commonText = Object.entries(common).map(([key, value]) => `${key}=${truncatePreview(value, 40)}`).join(" ");
+    if (commonText) output.log(dim(`  on every span: ${commonText}`));
     output.log("");
     renderSpanTree(output, trace.rootSpans, {
-      attrs: Math.max(0, Math.min(Number(options.attrs) || 0, 10)),
+      attrs: Math.max(0, Number(options.attrs) || 0),
       expandSpan: options.expandSpan ?? [],
+      common,
     });
     output.log("");
   });

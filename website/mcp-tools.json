@@ -1225,7 +1225,7 @@
     },
     {
       "name": "traces_list",
-      "description": "List distributed traces in a project, grouped by TraceId.\n\nUse this to find trace IDs before running `strada traces view`.\nScans otel_traces in the selected time range, summarizes span counts,\nservices, error spans, duration, and the first root span when one exists.\nProject isolation is enforced by the project-scoped query API.",
+      "description": "List distributed traces in a project, grouped by TraceId.\n\nUse this to find trace IDs before running `strada traces view`.\nScans otel_traces in the selected time range, summarizes span counts,\nservices, error spans, duration, and the first root span when one exists.\nPass `--root` to keep only traces of one operation (root span name).\nProject isolation is enforced by the project-scoped query API.\n\nTo see where time goes across many traces, use `strada traces stats`\ninstead of viewing traces one by one.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1245,6 +1245,10 @@
             "type": "string",
             "description": "Filter by ServiceName"
           },
+          "root": {
+            "type": "string",
+            "description": "Only traces whose root span has this SpanName"
+          },
           "since": {
             "type": "string",
             "description": "Start time: duration (1h, 7d) or ISO date (default: 1h)"
@@ -1260,6 +1264,51 @@
           "limit": {
             "type": "string",
             "description": "Max traces (default: 50)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Print raw JSON response"
+          }
+        }
+      }
+    },
+    {
+      "name": "traces_stats",
+      "description": "Show where time goes: duration stats per span name over many traces.\n\nGroups every span in the time range by SpanName and ServiceName and\nprints count, p50, p95, max, and total duration, sorted by total time.\nPass `--root` to only count spans inside traces of one operation, e.g.\nthe steps of every `POST /checkout` request. Use this instead of\nrunning `strada traces view` on many traces to compute medians.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project slug override (repeatable, defaults to folder setup)"
+          },
+          "org": {
+            "type": "string",
+            "description": "Organization override (defaults to folder setup)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Filter by ServiceName"
+          },
+          "root": {
+            "type": "string",
+            "description": "Only spans in traces whose root span has this SpanName"
+          },
+          "since": {
+            "type": "string",
+            "description": "Start time: duration (1h, 7d) or ISO date (default: 1h)"
+          },
+          "until": {
+            "type": "string",
+            "description": "End time: duration (1h) or ISO date"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max span names (default: 50)"
           },
           "json": {
             "type": "boolean",
@@ -1321,8 +1370,8 @@
           },
           "attrs": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "default": 3,
-            "description": "Number of compact span attributes to show",
+            "default": 5,
+            "description": "Number of compact span attributes to show per span",
             "type": "number"
           },
           "expandSpan": {

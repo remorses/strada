@@ -15,7 +15,11 @@ List distributed traces in a project, grouped by TraceId.
 Use this to find trace IDs before running `strada traces view`.
 Scans otel_traces in the selected time range, summarizes span counts,
 services, error spans, duration, and the first root span when one exists.
+Pass `--root` to keep only traces of one operation (root span name).
 Project isolation is enforced by the project-scoped query API.
+
+To see where time goes across many traces, use `strada traces stats`
+instead of viewing traces one by one.
 
 ## Usage
 
@@ -30,6 +34,7 @@ strada traces list
 | `-p, --project [slug]` | - | Project slug override (repeatable, defaults to folder setup) |
 | `--org [name-or-id]` | - | Organization override (defaults to folder setup) |
 | `-s, --service [name]` | - | Filter by ServiceName |
+| `--root [name]` | - | Only traces whose root span has this SpanName |
 | `--since [time]` | - | Start time: duration (1h, 7d) or ISO date (default: 1h) |
 | `--until [time]` | - | End time: duration (1h) or ISO date |
 | `--errors` | - | Only show traces with error spans |
@@ -42,3 +47,9 @@ strada traces list
 |--------|---------|-------------|
 | `-h, --help` | - | Display this message |
 | `-v, --version` | - | Display version number |
+
+## Examples
+
+```sh
+strada traces list -s api --root 'GET /users' --since 3h
+```

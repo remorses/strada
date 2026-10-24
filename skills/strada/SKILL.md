@@ -72,6 +72,19 @@ strada logs -p my-app --trace-id <traceId>
 
 `issues list` hides resolved and muted issues by default. Use `--status all` when an issue seems to have vanished.
 
+## Finding what is slow
+
+```bash
+# p50, p95 and total time per span name, only inside traces of one operation
+strada traces stats -p my-app -s api --root 'POST /checkout' --since 3h
+
+# then one slow example of that operation
+strada traces list -p my-app -s api --root 'POST /checkout' --since 3h
+strada traces view <traceId> -p my-app
+```
+
+Use `traces stats` instead of viewing many traces one by one to compute medians.
+
 Running `strada` with no arguments opens a TUI (Issues, Logs, Traces, Analytics) that uses the same queries. Suggest it when the user wants to browse rather than run one-off commands.
 
 ## Rules for instrumenting an app
