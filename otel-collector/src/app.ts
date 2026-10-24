@@ -12,13 +12,10 @@ import { transformMetrics } from "./transform-metrics.ts";
 import { createBackend } from "./backend.ts";
 import { extractErrorsFromTraces, extractErrorsFromLogs } from "./extract-errors.ts";
 import { extractUsersFromLogs } from "./extract-users.ts";
-import type {
-  ExportTraceServiceRequest,
-  ExportLogsServiceRequest,
-  ExportMetricsServiceRequest,
-} from "./otlp-types.ts";
+import type { ExportBatchServiceRequest } from "./otlp-types.ts";
 
 interface OtlpRequest {
+  url: string;
   headers: Headers;
   body: ReadableStream | null;
   json(): Promise<unknown>;
@@ -160,6 +157,61 @@ async function resolveOrFail({
   return config;
 }
 
+/**
+ * Transform one OTLP body and write every table it touches. The standard
+ * `/v1/*` routes read only their own signal (`only`); `/v1/batch` reads all three.
+ */
+async function ingest({
+  db,
+  request,
+  anonymousRateLimiter,
+  only,
+}: {
+  db: D1Database;
+  request: OtlpRequest;
+  anonymousRateLimiter?: IngestRateLimiter;
+  only?: keyof ExportBatchServiceRequest;
+}): Promise<Record<string, never>> {
+  const projectId = getProjectId(request);
+  const config = await resolveOrFail({ db, projectId });
+  const authenticated = await requireIngestAccess({ db, request, projectId, orgId: config.orgId, anonymousRateLimiter });
+
+  const parsed = await parseOtlpRequest<ExportBatchServiceRequest>(request);
+  const payload: ExportBatchServiceRequest = only ? { [only]: parsed[only] } : parsed;
+  const backend = createBackend(config);
+  const country = request.headers.get("cf-ipcountry") ?? undefined;
+  const userAgent = request.headers.get("user-agent") ?? undefined;
+
+  const tracesNdjson = transformTraces(payload, projectId, { country, userAgent });
+  const logsNdjson = transformLogs(payload, projectId);
+  // Both extractors end rows with "\n", so concatenation is valid NDJSON.
+  const errorsNdjson = extractErrorsFromTraces(payload, projectId) + extractErrorsFromLogs(payload, projectId);
+  const usersNdjson = authenticated ? extractUsersFromLogs(payload, projectId) : "";
+  const metrics = transformMetrics(payload, projectId, {
+    gauge: datasources.gauge,
+    sum: datasources.sum,
+    histogram: datasources.histogram,
+    exponentialHistogram: datasources.exponentialHistogram,
+  });
+
+  // Await all writes so data is queryable when the SDK reports "export
+  // succeeded." Using waitUntil() here would return 200 before data reaches
+  // Tinybird/ClickHouse, causing noticeable lag (especially for traces which
+  // trigger 2 materialized views on INSERT). Parallel sends keep total
+  // latency = max(individual writes), not sum.
+  const sends: Promise<void>[] = [];
+  if (tracesNdjson) sends.push(backend.send(datasources.traces, "traces", tracesNdjson));
+  if (logsNdjson) sends.push(backend.send(datasources.logs, "logs", logsNdjson));
+  if (errorsNdjson) sends.push(backend.send(datasources.errors, "errors", errorsNdjson));
+  if (usersNdjson) sends.push(backend.send(datasources.users, "users", usersNdjson));
+  for (const metric of metrics) {
+    if (metric.ndjson) sends.push(backend.send(metric.datasource, metric.signal, metric.ndjson));
+  }
+  await Promise.all(sends);
+
+  return {};
+}
+
 export function createCollectorApp({ db, anonymousRateLimiter }: { db: D1Database; anonymousRateLimiter?: IngestRateLimiter }) {
   const tracer = trace.getTracer("strada-otel-collector");
 
@@ -172,72 +224,10 @@ export function createCollectorApp({ db, anonymousRateLimiter }: { db: D1Databas
         maxAge: 86400,
       }),
     )
-    .post("/v1/traces", async ({ request }) => {
-      const projectId = getProjectId(request);
-      const config = await resolveOrFail({ db, projectId });
-      await requireIngestAccess({ db, request, projectId, orgId: config.orgId, anonymousRateLimiter });
-
-      const body = await parseOtlpRequest<ExportTraceServiceRequest>(request);
-      const backend = createBackend(config);
-      const country = request.headers.get("cf-ipcountry") ?? undefined;
-      const userAgent = request.headers.get("user-agent") ?? undefined;
-
-      const ndjson = transformTraces(body, projectId, { country, userAgent });
-      const errorsNdjson = extractErrorsFromTraces(body, projectId);
-
-      // Await all writes so data is queryable when the SDK reports "export
-      // succeeded." Using waitUntil() here would return 200 before data reaches
-      // Tinybird/ClickHouse, causing noticeable lag (especially for traces which
-      // trigger 2 materialized views on INSERT). Parallel sends keep total
-      // latency = max(individual writes), not sum.
-      const sends: Promise<void>[] = [];
-      if (ndjson) sends.push(backend.send(datasources.traces, "traces", ndjson));
-      if (errorsNdjson) sends.push(backend.send(datasources.errors, "errors", errorsNdjson));
-      await Promise.all(sends);
-
-      return {};
-    })
-    .post("/v1/logs", async ({ request }) => {
-      const projectId = getProjectId(request);
-      const config = await resolveOrFail({ db, projectId });
-      const authenticated = await requireIngestAccess({ db, request, projectId, orgId: config.orgId, anonymousRateLimiter });
-
-      const body = await parseOtlpRequest<ExportLogsServiceRequest>(request);
-      const backend = createBackend(config);
-
-      const ndjson = transformLogs(body, projectId);
-      const errorsNdjson = extractErrorsFromLogs(body, projectId);
-      const usersNdjson = authenticated ? extractUsersFromLogs(body, projectId) : "";
-
-      // Await all writes so data is queryable when the SDK reports success.
-      // See /v1/traces handler for the full rationale.
-      const sends: Promise<void>[] = [];
-      if (ndjson) sends.push(backend.send(datasources.logs, "logs", ndjson));
-      if (errorsNdjson) sends.push(backend.send(datasources.errors, "errors", errorsNdjson));
-      if (usersNdjson) sends.push(backend.send(datasources.users, "users", usersNdjson));
-      await Promise.all(sends);
-
-      return {};
-    })
-    .post("/v1/metrics", async ({ request }) => {
-      const projectId = getProjectId(request);
-      const config = await resolveOrFail({ db, projectId });
-      await requireIngestAccess({ db, request, projectId, orgId: config.orgId, anonymousRateLimiter });
-
-      const body = await parseOtlpRequest<ExportMetricsServiceRequest>(request);
-      const backend = createBackend(config);
-      const payloads = transformMetrics(body, projectId, {
-        gauge: datasources.gauge,
-        sum: datasources.sum,
-        histogram: datasources.histogram,
-        exponentialHistogram: datasources.exponentialHistogram,
-      });
-
-      const toSend = payloads.filter((p) => p.ndjson.length > 0);
-      if (toSend.length > 0) {
-        await Promise.all(toSend.map((p) => backend.send(p.datasource, p.signal, p.ndjson)));
-      }
-
-      return {};
-    });
+    .post("/v1/traces", ({ request }) => ingest({ db, request, anonymousRateLimiter, only: "resourceSpans" }))
+    .post("/v1/logs", ({ request }) => ingest({ db, request, anonymousRateLimiter, only: "resourceLogs" }))
+    .post("/v1/metrics", ({ request }) => ingest({ db, request, anonymousRateLimiter, only: "resourceMetrics" }))
+    // Strada SDK route: traces, logs, and metrics of one flush in one request,
+    // because Cloudflare bills this Worker per inbound request.
+    .post("/v1/batch", ({ request }) => ingest({ db, request, anonymousRateLimiter }));
 }

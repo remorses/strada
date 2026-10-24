@@ -459,6 +459,74 @@ describe.sequential('collector integration with official OTel SDKs', () => {
     }
   })
 
+  it('/v1/batch writes traces, logs, errors, and metrics from one request', async () => {
+    const projectId = 'TEST-PROJECT'
+    const inserts: CapturedInsert[] = []
+    const fakeBackend = await startServer(0, async (req, res) => {
+      const body = await readBody(req)
+      const query = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('query') ?? ''
+      const rows = body.split('\n').filter((line) => line.trim().length > 0).map((line) => JSON.parse(line))
+      inserts.push({ query, table: extractTable(query), rows })
+      res.end('OK')
+    })
+
+    try {
+      const app = createCollectorApp({ db: createFakeD1({ projectId, clickhouseUrl: fakeBackend.baseUrl }) })
+      const exception = (message: string) => [
+        { key: 'exception.type', value: { stringValue: 'TypeError' } },
+        { key: 'exception.message', value: { stringValue: message } },
+      ]
+      const response = await app.handle(new Request(`https://${projectId.toLowerCase()}-ingest.strada.sh/v1/batch`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          resourceSpans: [{
+            scopeSpans: [{
+              spans: [{
+                traceId: '0123456789abcdef0123456789abcdef',
+                spanId: '0123456789abcdef',
+                name: 'GET /',
+                kind: 2,
+                startTimeUnixNano: '1700000000000000000',
+                endTimeUnixNano: '1700000000100000000',
+                attributes: [],
+                events: [{ name: 'exception', timeUnixNano: '1700000000050000000', attributes: exception('from span') }],
+                links: [],
+                status: { code: 2 },
+              }],
+            }],
+          }],
+          resourceLogs: [{
+            scopeLogs: [{
+              logRecords: [
+                { timeUnixNano: '1700000000000000000', body: { stringValue: 'hello' }, attributes: [] },
+                { timeUnixNano: '1700000000000000000', severityNumber: 17, body: { stringValue: 'from log' }, attributes: exception('from log') },
+              ],
+            }],
+          }],
+          resourceMetrics: [{
+            scopeMetrics: [{
+              metrics: [{ name: 'queue.depth', gauge: { dataPoints: [{ timeUnixNano: '1700000000000000000', asInt: '7' }] } }],
+            }],
+          }],
+        }),
+      }))
+      expect(response.status).toBe(200)
+
+      const summary = Object.fromEntries(inserts.map((insert) => [insert.table, insert.rows.length]))
+      expect(summary).toMatchInlineSnapshot(`
+        {
+          "otel_errors": 2,
+          "otel_logs": 2,
+          "otel_metrics_gauge": 1,
+          "otel_traces": 1,
+        }
+      `)
+    } finally {
+      await closeServer(fakeBackend.server)
+    }
+  })
+
   it('exports traces/logs/metrics to ClickHouse SQL with valid JSON payloads', async () => {
     const projectId = 'TEST-PROJECT'
     const ingestToken = 'str_test_ingest_token'

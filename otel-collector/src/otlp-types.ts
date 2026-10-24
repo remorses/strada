@@ -33,6 +33,10 @@ export interface InstrumentationScope {
   droppedAttributesCount?: number;
 }
 
+/** Body of Strada's `/v1/batch`: all three OTLP signals in one request, so an SDK flush costs one request. */
+export interface ExportBatchServiceRequest
+  extends ExportTraceServiceRequest, ExportLogsServiceRequest, ExportMetricsServiceRequest {}
+
 // ─── Traces ───
 
 export interface ExportTraceServiceRequest {

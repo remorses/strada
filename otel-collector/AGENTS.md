@@ -24,6 +24,7 @@ Users must configure their OTel SDKs to export as JSON, not protobuf. For the JS
 - `POST /v1/traces` → transforms to NDJSON → writes to `otel_traces`
 - `POST /v1/logs` → transforms to NDJSON → writes to `otel_logs`
 - `POST /v1/metrics` → transforms to NDJSON → writes to `otel_metrics_gauge`, `otel_metrics_sum`, `otel_metrics_histogram`, `otel_metrics_exponential_histogram` (depending on metric type)
+- `POST /v1/batch` → Strada SDK only. One body with `resourceSpans`, `resourceLogs`, and `resourceMetrics` together, so one SDK flush is one billed Worker request. Same transforms as the three routes above (`ingest()` in `app.ts`)
 
 ## Project isolation
 

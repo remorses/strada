@@ -1,6 +1,8 @@
 /**
  * OTLP/HTTP JSON export pipeline. Zero dependencies: records are encoded by
- * hand and POSTed with `fetch` to `/v1/logs`, `/v1/traces`, `/v1/metrics`.
+ * hand and POSTed with `fetch` to Strada's `/v1/batch`, one request per flush
+ * with logs, spans, and metrics together (the ingest Worker is billed per
+ * request). The body is the three OTLP request bodies merged into one object.
  *
  * - Batching: logs and spans queue until `scheduledDelayMillis` (default 5s)
  *   or `maxExportBatchSize` (default 512). Metrics are collected every
@@ -8,15 +10,17 @@
  * - Timers are unref'd: telemetry never keeps a CLI or server process alive.
  *   Runtime entries flush on exit (`beforeExit`) or per request (`waitUntil`).
  * - Connections: every response body is read so `fetch` returns the socket
- *   to its keep-alive pool, and the three endpoints are sent one after the
- *   other so they reuse the same connection instead of opening parallel ones.
+ *   to its keep-alive pool.
  * - Telemetry never throws: failures are warned once and returned as values.
- * - `invocationScoped` (Cloudflare Workers): no timers, and each flush sends
- *   on its own instead of waiting for earlier flushes. Workers bind promises
- *   and I/O to the request that created them, so a flush in request B must
- *   never wait on a fetch started by request A. Metrics send only series that
- *   changed since the last export.
+ * - `invocationScoped` (Cloudflare Workers): no batch timers, and each flush
+ *   sends on its own instead of waiting for earlier flushes. Workers bind
+ *   promises and I/O to the request that created them, so a flush in request B
+ *   must never wait on a fetch started by request A. Metrics send only series
+ *   that changed since the last export. Flushes come from
+ *   `scheduleWaitUntilFlush()`.
  */
+
+const BATCH_PATH = "/v1/batch";
 
 const warnedMessages = new Set<string>();
 const MAX_WARNED_MESSAGES = 200;
@@ -308,6 +312,31 @@ async function post(current: PipelineConfig, path: string, body: object, timeout
   }
 }
 
+/**
+ * Run every metrics collector, bounded by the metrics export timeout: an async
+ * observable callback stuck on I/O must not hold back the logs and spans that
+ * share its request.
+ */
+async function collectMetrics(current: PipelineConfig): Promise<Array<{ scope: { name: string }; metrics: OtlpMetric[] }>> {
+  if (metricsCollectors.length === 0) return [];
+  const changedOnly = Boolean(current.invocationScoped);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), current.metrics.exportTimeoutMillis);
+    unref(timer);
+  });
+  const collected = await Promise.race([
+    Promise.all(metricsCollectors.map((collector) => collector.collect({ changedOnly }).catch(() => undefined))),
+    timedOut,
+  ]);
+  clearTimeout(timer);
+  if (!collected) {
+    warnOnce("[@strada.sh/sdk] metric collection timed out, exporting without metrics");
+    return [];
+  }
+  return collected.flatMap((item) => (item ? [{ scope: { name: item.scope }, metrics: item.metrics }] : []));
+}
+
 async function send({
   current,
   logs,
@@ -320,38 +349,24 @@ async function send({
   includeMetrics: boolean;
 }): Promise<Error | undefined> {
   const resource = { attributes: current.resource };
-  // Sequential on purpose: parallel requests to one origin open extra connections.
-  const logsError =
-    logs.length > 0
-      ? await post(current, "/v1/logs", {
-          resourceLogs: [
-            {
-              resource,
-              scopeLogs: groupByScope(logs).map(({ scope, records }) => ({ scope, logRecords: records })),
-            },
-          ],
-        }, current.logs.exportTimeoutMillis)
-      : undefined;
-  const spansError =
-    spans.length > 0
-      ? await post(current, "/v1/traces", {
-          resourceSpans: [
-            {
-              resource,
-              scopeSpans: groupByScope(spans).map(({ scope, records }) => ({ scope, spans: records })),
-            },
-          ],
-        }, current.traces.exportTimeoutMillis)
-      : undefined;
-  const metricsError = await (async () => {
-    if (!includeMetrics || metricsCollectors.length === 0) return undefined;
-    const changedOnly = Boolean(current.invocationScoped);
-    const scopeMetrics = (await Promise.all(metricsCollectors.map((collector) => collector.collect({ changedOnly }).catch(() => undefined))))
-      .flatMap((collected) => (collected ? [{ scope: { name: collected.scope }, metrics: collected.metrics }] : []));
-    if (scopeMetrics.length === 0) return undefined;
-    return post(current, "/v1/metrics", { resourceMetrics: [{ resource, scopeMetrics }] }, current.metrics.exportTimeoutMillis);
-  })();
-  return logsError ?? spansError ?? metricsError;
+  const scopeMetrics = includeMetrics ? await collectMetrics(current) : [];
+  if (logs.length === 0 && spans.length === 0 && scopeMetrics.length === 0) return undefined;
+  // One request for all signals: Strada's ingest is billed per request.
+  const body = {
+    ...(spans.length > 0
+      ? { resourceSpans: [{ resource, scopeSpans: groupByScope(spans).map(({ scope, records }) => ({ scope, spans: records })) }] }
+      : {}),
+    ...(logs.length > 0
+      ? { resourceLogs: [{ resource, scopeLogs: groupByScope(logs).map(({ scope, records }) => ({ scope, logRecords: records })) }] }
+      : {}),
+    ...(scopeMetrics.length > 0 ? { resourceMetrics: [{ resource, scopeMetrics }] } : {}),
+  };
+  const timeoutMillis = Math.max(
+    logs.length > 0 ? current.logs.exportTimeoutMillis : 0,
+    spans.length > 0 ? current.traces.exportTimeoutMillis : 0,
+    scopeMetrics.length > 0 ? current.metrics.exportTimeoutMillis : 0,
+  );
+  return post(current, BATCH_PATH, body, timeoutMillis);
 }
 
 /**
@@ -378,6 +393,54 @@ export function flush({ includeMetrics = true }: { includeMetrics?: boolean } = 
   }
   inflight = inflight.then(() => send({ current, logs, spans, includeMetrics }));
   return inflight;
+}
+
+/** Flush once no record arrived for this long. Waiting is free: Workers bill CPU, not wall time. */
+const WAIT_UNTIL_IDLE_MILLIS = 100;
+/** Upper bound on how long a record waits, so a busy isolate still exports. */
+const WAIT_UNTIL_MAX_MILLIS = 1000;
+
+let waitUntilFlushPending = false;
+let lastRecordAt = 0;
+
+/**
+ * Debounced flush for runtimes that end work with `waitUntil` (Cloudflare
+ * Workers, Vercel). Called after every record. The first record registers one
+ * waitUntil that sleeps until records stop for WAIT_UNTIL_IDLE_MILLIS (at
+ * most WAIT_UNTIL_MAX_MILLIS), then flushes once. Spans that end after an
+ * `await` join the same request instead of sending one each.
+ *
+ * The queue is isolate-wide, so records from concurrent requests join the
+ * pending flush too. Only the request that registered the waitUntil touches its
+ * timer and fetch, so no promise or I/O crosses request contexts.
+ */
+export function scheduleWaitUntilFlush(waitUntil: (promise: Promise<unknown>) => void): void {
+  const current = config;
+  if (!current?.endpoint) return;
+  lastRecordAt = Date.now();
+  // A full batch goes now, from the current request, instead of waking another request's timer.
+  const batchSize = Math.min(current.logs.maxExportBatchSize, current.traces.maxExportBatchSize);
+  if (logQueue.length + spanQueue.length >= batchSize) {
+    waitUntil(flush());
+    return;
+  }
+  if (waitUntilFlushPending) return;
+  waitUntilFlushPending = true;
+  const startedAt = lastRecordAt;
+  waitUntil(
+    (async () => {
+      // Workers advance Date.now() only across I/O; setTimeout counts as I/O.
+      for (;;) {
+        const now = Date.now();
+        const wait = Math.min(lastRecordAt + WAIT_UNTIL_IDLE_MILLIS, startedAt + WAIT_UNTIL_MAX_MILLIS) - now;
+        if (wait <= 0) break;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      waitUntilFlushPending = false;
+      // flush() already warned about failures; nobody else can handle them here.
+      void (await flush());
+    })(),
+  );
 }
 
 /**

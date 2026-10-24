@@ -267,9 +267,9 @@ Everything else is **explicit**. Use `startSpan()` for spans, `logs.getLogger().
 
 ```diagram
 initStrada()
-  ├─ browser only: span "pageview" ─────────► /v1/traces
-  ├─ browser/node error handlers ───────────► /v1/logs
-  └─ manual OTel / Strada helper calls ─────► /v1/traces or /v1/logs
+  ├─ browser only: span "pageview" ─────────► spans ──────────┐
+  ├─ browser/node error handlers ───────────► logs  ──────────┼─► /v1/batch
+  └─ manual OTel / Strada helper calls ─────► spans or logs ──┘   (one request per flush)
 ```
 
 Install optional OTel auto-instrumentation separately if you want automatic HTTP, database, document load, or interaction spans. See [Auto-instrumentation (optional)](#auto-instrumentation-optional).
@@ -883,10 +883,9 @@ LIMIT 50
 ```diagram
 browser / server code
         │
-        ├─ traces  ───────────────► /v1/traces
-        ├─ logs    ───────────────► /v1/logs
-        └─ metrics ───────────────► /v1/metrics
-                                          │
+        ├─ traces  ─┐
+        ├─ logs    ─┼─────────────► /v1/batch (one request per flush)
+        └─ metrics ─┘                     │
                                           ▼
                                    Strada collector
                                           │
@@ -1026,9 +1025,9 @@ export default {
 } satisfies ExportedHandler<Env>
 ```
 
-No `flush()`, no `ctx.waitUntil()`, no special imports. Each record registers a flush with `waitUntil` from `cloudflare:workers`, so the invocation stays alive until its telemetry is delivered. Records emitted in the same synchronous run share one export request. If nothing is emitted, zero HTTP requests.
+No `flush()`, no `ctx.waitUntil()`, no special imports. The first record registers a flush with `waitUntil` from `cloudflare:workers`, so the invocation stays alive until its telemetry is delivered. The flush waits until no record arrived for **100ms** (at most 1s), so spans that end after an `await` and records from concurrent requests in the same isolate share **one export request**. The wait is free: Workers bill CPU time, not wall time. If nothing is emitted, zero HTTP requests.
 
-Each invocation exports its own records. There are no background timers, and one request never waits for another request's export, because Workers bind I/O to the request that created it. Metrics export only the series that changed during the invocation.
+One request never waits for another request's export, because Workers bind I/O to the request that created it. Metrics export only the series that changed since the last export.
 
 ### Flushing in scheduled handlers and Durable Objects
 
@@ -1102,15 +1101,13 @@ That means the same import path works everywhere without user changes.
 
 ## Exporters, batching, and flush behavior
 
-By default the SDK uses **OTLP HTTP JSON exporters** for every signal:
+The SDK encodes **OTLP HTTP JSON** itself and sends each flush as **one request** to `/v1/batch`. The body is the standard OTLP request bodies merged into one object (`resourceSpans`, `resourceLogs`, `resourceMetrics`). The collector also accepts the standard `/v1/traces`, `/v1/logs`, and `/v1/metrics` for other OTel SDKs.
 
-- **browser traces** → `OTLPTraceExporter` to `/v1/traces`
-- **browser logs** → `OTLPLogExporter` to `/v1/logs`
-- **Node traces** → `OTLPTraceExporter` to `/v1/traces`
-- **Node logs** → `OTLPLogExporter` to `/v1/logs`
-- **Node metrics** → `OTLPMetricExporter` to `/v1/metrics`
-- **Workers traces** → `OTLPTraceExporter` to `/v1/traces` (auto-flushed via waitUntil)
-- **Workers logs** → `OTLPLogExporter` to `/v1/logs` (auto-flushed via waitUntil)
+| runtime | when it flushes |
+| --- | --- |
+| browser | every `scheduledDelayMillis`, and when the tab is hidden |
+| Node, Bun, Deno | every `scheduledDelayMillis`, and on `beforeExit` |
+| Cloudflare Workers, Vercel | 100ms after the last record (at most 1s), via `waitUntil` |
 
 You can tune batching and cadence with `telemetry` in `initStrada()`:
 
@@ -1209,7 +1206,7 @@ await flush()
 On **Cloudflare Workers**:
 
 - Auto-flush via `waitUntil` from `cloudflare:workers` whenever telemetry is emitted
-- Multiple span ends / log emits in the same microtask share one flush
+- Records share one flush until no record arrived for 100ms (at most 1s), across `await`s and concurrent requests in the same isolate
 - If no telemetry is emitted, zero HTTP requests are made
 - `flush()` is available for manual use but rarely needed
 

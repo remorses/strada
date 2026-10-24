@@ -13,15 +13,16 @@
  *   `flush()` in your own shutdown handler.
  * - `integrations: [fetchSpans(), httpServerSpans()]` from
  *   `@strada.sh/sdk/instrument` adds spans through diagnostics_channel.
- * - On Vercel, every record registers a `waitUntil` flush through the native
- *   request context (`Symbol.for('@vercel/request-context')`), because Vercel
- *   freezes the process between requests and batch timers never fire.
+ * - On Vercel, records register a debounced `waitUntil` flush through the
+ *   native request context (`Symbol.for('@vercel/request-context')`), because
+ *   Vercel freezes the process between requests and batch timers never fire.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { AsyncContextManager, runtimeHooks, setContextManager, type Context } from "./api.ts";
 import { ATTR } from "./attrs.ts";
 import { captureException, flush, shutdown as shutdownClient } from "./client.ts";
+import { scheduleWaitUntilFlush } from "./export.ts";
 import { serverHooks } from "./server.ts";
 import { initCore, normalizeError, resolveReleaseAttributes, setupIntegrations, tryTelemetry, type StradaOptions } from "./shared.ts";
 
@@ -37,20 +38,10 @@ function getVercelWaitUntil(): ((promise: Promise<unknown>) => void) | undefined
   return holder?.get?.()?.waitUntil;
 }
 
-let flushScheduled = false;
-
 /** No-op outside a Vercel request: batch timers handle export as usual. */
 function scheduleVercelFlush(): void {
   const waitUntil = getVercelWaitUntil();
-  if (!waitUntil || flushScheduled) return;
-  flushScheduled = true;
-  waitUntil(
-    Promise.resolve().then(async () => {
-      flushScheduled = false;
-      // flush() already warned about failures; nobody else can handle them here.
-      void (await flush());
-    }),
-  );
+  if (waitUntil) scheduleWaitUntilFlush(waitUntil);
 }
 
 /** Returns a remover so shutdown() leaves the process as it found it. */

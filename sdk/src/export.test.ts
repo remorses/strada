@@ -18,7 +18,7 @@ import {
   track,
 } from "./node.ts";
 import { fetchSpans, httpClientSpans, httpServerSpans, mongooseSpans, mysql2Spans, redisSpans } from "./instrument.ts";
-import { flush as flushPipeline, startPipeline, stopPipeline } from "./export.ts";
+import { flush as flushPipeline, scheduleWaitUntilFlush, startPipeline, stopPipeline } from "./export.ts";
 import { resetContext } from "./shared.ts";
 
 /** Real OTLP/HTTP JSON receiver. Records every request body and the client socket. */
@@ -85,14 +85,13 @@ test("exports events, errors, logs, and nested async spans in one request per si
   expect(await shutdown()).toBeUndefined();
   receiver.close();
 
-  const logs = receiver.requests.filter((request) => request.url === "/v1/logs");
-  const traces = receiver.requests.filter((request) => request.url === "/v1/traces");
-  expect({ logs: logs.length, traces: traces.length }).toMatchInlineSnapshot(`
-    {
-      "logs": 1,
-      "traces": 1,
-    }
+  expect(receiver.requests.map((request) => `${request.url} ${Object.keys(request.body).sort().join(",")}`)).toMatchInlineSnapshot(`
+    [
+      "/v1/batch resourceLogs,resourceSpans",
+    ]
   `);
+  const logs = receiver.requests.filter((request) => request.body.resourceLogs);
+  const traces = receiver.requests.filter((request) => request.body.resourceSpans);
 
   const resourceLogs = (logs[0]!.body.resourceLogs as Array<Record<string, any>>)[0]!;
   expect(decodeAttributes(resourceLogs.resource.attributes)).toMatchInlineSnapshot(`
@@ -204,7 +203,7 @@ test("exports cumulative metrics as OTLP JSON", async () => {
   receiver.close();
   const secondSession = receiver.requests
     .slice(firstSessionRequests)
-    .filter((request) => request.url === "/v1/metrics")
+    .filter((request) => request.body.resourceMetrics)
     .flatMap((request) => (request.body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
     .filter((scope) => scope.scope.name === "jobs")
     .flatMap((scope) => (scope.metrics as Array<Record<string, any>>).map((metric) => `${metric.name}=${JSON.stringify(metric.sum?.dataPoints.map((point: { asInt: string }) => point.asInt))}`));
@@ -215,7 +214,7 @@ test("exports cumulative metrics as OTLP JSON", async () => {
     ]
   `);
 
-  const body = receiver.requests.find((request) => request.url === "/v1/metrics")!.body;
+  const body = receiver.requests.find((request) => request.body.resourceMetrics)!.body;
   const exported = ((body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
     .filter((scope) => scope.scope.name === "jobs")
     .flatMap((scope) => scope.metrics as Array<Record<string, any>>)
@@ -322,7 +321,7 @@ test("invocation-scoped pipeline: flushes never wait on each other, metrics send
     expect(await flushPipeline()).toBeUndefined();
     return receiver.requests
       .slice(before)
-      .filter((request) => request.url === "/v1/metrics")
+      .filter((request) => request.body.resourceMetrics)
       .flatMap((request) => (request.body.resourceMetrics as Array<Record<string, any>>)[0]!.scopeMetrics as Array<Record<string, any>>)
       .filter((scope) => scope.scope.name === "invocation")
       .flatMap((scope) => (scope.metrics as Array<Record<string, any>>).flatMap((metric) => metric.sum.dataPoints.map((point: { asInt: string }) => point.asInt)));
@@ -333,7 +332,7 @@ test("invocation-scoped pipeline: flushes never wait on each other, metrics send
   counter.add(3);
   const cumulative = await metricPoints();
 
-  const bFinishedWhileAPending = receiver.requests.some((request) => request.url === "/v1/logs");
+  const bFinishedWhileAPending = receiver.requests.some((request) => request.body.resourceLogs);
   release();
   const errorA = await flushA;
   stopPipeline();
@@ -351,6 +350,108 @@ test("invocation-scoped pipeline: flushes never wait on each other, metrics send
       ],
       "flushB": undefined,
       "unchanged": [],
+    }
+  `);
+});
+
+test("waitUntil flush: records across awaits and concurrent requests share one request", async () => {
+  const receiver = await startReceiver();
+  const batch = { scheduledDelayMillis: 60_000, maxExportBatchSize: 512, maxQueueSize: 2048, exportTimeoutMillis: 5000 };
+  startPipeline({
+    endpoint: receiver.endpoint,
+    headers: {},
+    resource: [],
+    logs: batch,
+    traces: batch,
+    metrics: { exportIntervalMillis: 60_000, exportTimeoutMillis: 5000 },
+    invocationScoped: true,
+  });
+  const registered: string[] = [];
+  const pending: Promise<unknown>[] = [];
+  const waitUntilFor = (request: string) => (promise: Promise<unknown>) => {
+    registered.push(request);
+    pending.push(promise);
+  };
+  const record = (request: string, body: string) => {
+    logs.getLogger("worker").emit({ body });
+    scheduleWaitUntilFlush(waitUntilFor(request));
+  };
+  const sleep = (millis: number) => new Promise((resolve) => setTimeout(resolve, millis));
+
+  // Request A records, awaits I/O, records again; request B records in between.
+  record("A", "a1");
+  await sleep(30);
+  record("B", "b1");
+  await sleep(30);
+  record("A", "a2");
+  await Promise.all(pending);
+  // After the idle flush, a new record starts a new flush.
+  record("C", "c1");
+  await Promise.all(pending);
+  stopPipeline();
+  receiver.close();
+
+  expect({
+    registered,
+    requests: receiver.requests.map((request) =>
+      (request.body.resourceLogs as Array<{ scopeLogs: Array<{ logRecords: Array<{ body: { stringValue: string } }> }> }>)[0]!
+        .scopeLogs.flatMap((scope) => scope.logRecords.map((log) => log.body.stringValue)),
+    ),
+  }).toMatchInlineSnapshot(`
+    {
+      "registered": [
+        "A",
+        "C",
+      ],
+      "requests": [
+        [
+          "a1",
+          "b1",
+          "a2",
+        ],
+        [
+          "c1",
+        ],
+      ],
+    }
+  `);
+});
+
+test("a stuck observable callback does not hold back logs in the same batch", async () => {
+  const receiver = await startReceiver();
+  const batch = { scheduledDelayMillis: 60_000, maxExportBatchSize: 512, maxQueueSize: 2048, exportTimeoutMillis: 5000 };
+  startPipeline({
+    endpoint: receiver.endpoint,
+    headers: {},
+    resource: [],
+    logs: batch,
+    traces: batch,
+    metrics: { exportIntervalMillis: 60_000, exportTimeoutMillis: 50 },
+    invocationScoped: true,
+  });
+  let release = () => {};
+  const stuck = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let stuckActive = true;
+  metrics.getMeter("stuck").createObservableGauge("stuck.gauge").addCallback(async (result) => {
+    if (stuckActive) await stuck;
+    result.observe(1);
+  });
+  logs.getLogger("stuck").emit({ body: "error log" });
+  const error = await flushPipeline();
+  stuckActive = false;
+  release();
+  stopPipeline();
+  receiver.close();
+  expect({ error, requests: receiver.requests.map((request) => Object.keys(request.body).sort()) }).toMatchInlineSnapshot(`
+    {
+      "error": undefined,
+      "requests": [
+        [
+          "resourceLogs",
+        ],
+      ],
     }
   `);
 });
@@ -389,10 +490,10 @@ test("reuses keep-alive connections across flushes", async () => {
   }
   expect(await shutdown()).toBeUndefined();
   receiver.close();
-  // Round 1 may open one socket per endpoint; later flushes must reuse them.
+  // Every flush is one request on one socket.
   expect(socketsAfterRound).toMatchInlineSnapshot(`
     [
-      2,
+      1,
       2,
       2,
     ]
@@ -436,10 +537,10 @@ test("integrations: fetch, http-client, http-server spans link through tracepare
 
   type Span = { name: string; kind: number; spanId: string; parentSpanId?: string; attributes: KeyValue[]; status: { code: number } };
   const spans = receiver.requests
-    .filter((request) => request.url === "/v1/traces")
+    .filter((request) => request.body.resourceSpans)
     .flatMap((request) => (request.body.resourceSpans as Array<{ scopeSpans: Array<{ spans: Span[] }> }>)[0]!.scopeSpans.flatMap((scope) => scope.spans));
   const logs = receiver.requests
-    .filter((request) => request.url === "/v1/logs")
+    .filter((request) => request.body.resourceLogs)
     .flatMap((request) => (request.body.resourceLogs as Array<{ scopeLogs: Array<{ logRecords: Array<{ spanId?: string; body: { stringValue: string } }> }> }>)[0]!.scopeLogs.flatMap((scope) => scope.logRecords));
   const byId = new Map(spans.map((span) => [span.spanId, span]));
   const describe = (span: Span | undefined): string => {
@@ -530,7 +631,7 @@ test("integrations: mysql2, redis, ioredis, mongoose TracingChannel spans parent
 
   type Span = { name: string; kind: number; spanId: string; parentSpanId?: string; attributes: KeyValue[]; status: { code: number } };
   const spans = receiver.requests
-    .filter((request) => request.url === "/v1/traces")
+    .filter((request) => request.body.resourceSpans)
     .flatMap((request) => (request.body.resourceSpans as Array<{ scopeSpans: Array<{ spans: Span[] }> }>)[0]!.scopeSpans.flatMap((scope) => scope.spans));
   const byId = new Map(spans.map((span) => [span.spanId, span]));
   // Commands ioredis sends on its own while connecting (INFO) have no parent.
