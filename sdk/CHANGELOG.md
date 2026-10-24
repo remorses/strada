@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.0
+
+1. **Fewer ingest requests** — every flush is now **one request** to `/v1/batch` with spans, logs, and metrics together, instead of one request per signal to `/v1/traces`, `/v1/logs`, and `/v1/metrics`.
+
+2. **Debounced flush on Cloudflare Workers and Vercel** — the `waitUntil` flush now waits until no record arrived for 100ms (at most 1s). Before, every span that ended after an `await` sent its own request, so a request with 6 spans cost 6 ingest requests. Now it costs one, and concurrent requests in the same isolate share it too. Workers bill CPU time, not wall time, so the wait is free.
+
+   ```
+   before: span ─► POST /v1/traces   span ─► POST /v1/traces   log ─► POST /v1/logs
+   after:  span, span, log ──(100ms idle)──► POST /v1/batch
+   ```
+
+   No code changes needed. Requires the Strada collector with `/v1/batch` (live on strada.sh). Self-hosted collectors must be updated first.
+
+3. **A slow observable metric callback no longer delays logs and spans** — metric collection stops at `telemetry.metrics.exportTimeoutMillis`, and the batch is sent without metrics.
+
 ## 0.9.1
 
 1. **Fixed Cloudflare Workers crash on every request** — in 0.8.0 and 0.9.0, a Worker whose runtime exports `tracing.enterSpan` threw `TypeError: Illegal invocation` from `startActiveSpan()` / `startSpan()`, so every traced request failed with error 1101. The native Cloudflare span bridge now works.
