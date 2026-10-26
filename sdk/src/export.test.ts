@@ -8,11 +8,13 @@ import { createClient } from "redis";
 import { afterEach, expect, test } from "vitest";
 import {
   captureException,
+  context,
   flush,
   getLogger,
   initStrada,
   logs,
   metrics,
+  propagation,
   shutdown,
   startSpan,
   track,
@@ -69,18 +71,22 @@ test("exports events, errors, logs, and nested async spans in one request per si
     }),
   ).toBeUndefined();
 
-  expect(track("session_created", { kind: "extension", count: 2 })).toBeUndefined();
+  expect(track("session_created", { kind: "extension", count: 2 }, { userId: "u_explicit" })).toBeUndefined();
   expect(captureException(new Error("ignored by pattern"))).toBeUndefined();
   getLogger("jobs").warn({ message: "slow", durationMs: 928 });
-  await startSpan({ name: "parent", attributes: { job: "sync" } }, async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1));
-    startSpan({ name: "child" }, (span) => {
-      span.setAttribute("rows", 3);
-    });
-    const error = new TypeError("boom");
-    error.stack = "TypeError: boom\n    at x (file.ts:1:1)";
-    expect(captureException(error, { tags: { route: "/x" } })).toBeUndefined();
-  });
+  // An explicit userId wins over the request's baggage user.
+  const baggage = propagation.setBaggage(context.active(), propagation.createBaggage({ "user.id": { value: "u_baggage" } }));
+  await context.with(baggage, () =>
+    startSpan({ name: "parent", attributes: { job: "sync" } }, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      startSpan({ name: "child" }, (span) => {
+        span.setAttribute("rows", 3);
+      });
+      const error = new TypeError("boom");
+      error.stack = "TypeError: boom\n    at x (file.ts:1:1)";
+      expect(captureException(error, { tags: { route: "/x" }, userId: "u_explicit" })).toBeUndefined();
+    }),
+  );
   expect(await flush()).toBeUndefined();
   expect(await shutdown()).toBeUndefined();
   receiver.close();
@@ -119,6 +125,7 @@ test("exports events, errors, logs, and nested async spans in one request per si
           "custom.count": 2,
           "custom.kind": "extension",
           "event.name": "session_created",
+          "user.id": "u_explicit",
         },
         "body": "session_created",
         "eventName": "session_created",
@@ -135,6 +142,7 @@ test("exports events, errors, logs, and nested async spans in one request per si
         at x (file.ts:1:1)",
           "exception.type": "TypeError",
           "route": "/x",
+          "user.id": "u_explicit",
         },
         "body": "boom",
         "eventName": "exception",
@@ -168,6 +176,7 @@ test("exports events, errors, logs, and nested async spans in one request per si
     {
       "childAttributes": {
         "rows": 3,
+        "user.id": "u_baggage",
       },
       "childParentIsParent": true,
       "parentHasNoParent": true,

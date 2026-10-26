@@ -273,11 +273,14 @@ export function initStrada(options: StradaOptions): Error | undefined {
         }
       };
       runtimeHooks.onLogEmit = (attributes) => {
+        const explicitUserId = attributes[ATTR["user.id"]];
         Object.assign(attributes, {
           ...sessionAttributes(),
           [ATTR["url.path"]]: window.location.pathname,
           [ATTR["url.full"]]: window.location.href,
         });
+        // A userId passed to track() or captureException() wins over the page's user.
+        if (explicitUserId !== undefined) attributes[ATTR["user.id"]] = explicitUserId;
       };
 
       startPageSpan();

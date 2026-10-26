@@ -25,6 +25,7 @@ import {
   tryTelemetryAsync,
   type CaptureExceptionOptions,
   type StradaLogger,
+  type TrackOptions,
 } from "./shared.ts";
 
 function warnBeforeInit(what: string): boolean {
@@ -61,8 +62,15 @@ export function captureException(error: unknown, opts?: CaptureExceptionOptions)
   });
 }
 
-/** Product analytics event. Properties are stored as `custom.*` attributes. */
-export function track(name: string, properties?: Record<string, string | number | boolean>): Error | undefined {
+/**
+ * Product analytics event. Properties are stored as `custom.*` attributes.
+ * `options.userId` is stored as `user.id`, for code that knows the user but runs outside its request context.
+ */
+export function track(
+  name: string,
+  properties?: Record<string, string | number | boolean>,
+  options?: TrackOptions,
+): Error | undefined {
   return tryTelemetry({
     operation: "track()",
     run: () => {
@@ -73,7 +81,11 @@ export function track(name: string, properties?: Record<string, string | number 
         severityNumber: INFO_SEVERITY,
         severityText: INFO_SEVERITY_TEXT,
         body: name,
-        attributes: { [ATTR["event.name"]]: name, ...custom },
+        attributes: {
+          [ATTR["event.name"]]: name,
+          ...custom,
+          ...(options?.userId ? { [ATTR["user.id"]]: options.userId } : {}),
+        },
       });
     },
   });
@@ -165,5 +177,6 @@ export {
   type StradaOptions,
   type StradaTelemetryOptions,
   type StradaUserIdentity,
+  type TrackOptions,
   type TrackPageviewOptions,
 } from "./shared.ts";

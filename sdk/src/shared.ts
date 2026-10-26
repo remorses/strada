@@ -341,6 +341,13 @@ export interface CaptureExceptionOptions {
    * When set, the ingest worker uses this instead of computing a default.
    */
   fingerprint?: string[];
+  /** Sent as `user.id`. Wins over the user from baggage or the browser cookie. */
+  userId?: string;
+}
+
+export interface TrackOptions {
+  /** Sent as `user.id`. Wins over the user from baggage or the browser cookie. */
+  userId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -625,6 +632,7 @@ export function errorToAttributes(
   for (const [k, v] of Object.entries(mergedTags)) {
     attributes[k] = v;
   }
+  if (opts?.userId) attributes[ATTR["user.id"]] = opts.userId;
 
   return attributes;
 }

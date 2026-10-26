@@ -743,14 +743,16 @@ export default {
 
 #### Background work with no request context
 
-Cron handlers, queue consumers, Durable Object alarms, and deep callbacks often have no context to inherit. Either wrap them in `withUser()` too, or pass the identifier explicitly:
+Cron handlers, queue consumers, Durable Object alarms, and deep callbacks often have no context to inherit. Either wrap them in `withUser()` too, or pass **`userId`** explicitly:
 
 ```ts
-captureException(error, { tags: { user_id: job.userId, job: job.type } })
-track("export.finished", { user_id: job.userId, files: 12 })
+captureException(error, { userId: job.userId, tags: { job: job.type } })
+track("export.finished", { files: 12 }, { userId: job.userId })
 ```
 
-Explicit properties land as `custom.user_id`, baggage lands as `user.id`. Pick one convention per project so queries stay simple.
+Both land as `user.id`, the same attribute baggage sets, so one query and the `otel_users` join cover every record. An explicit `userId` wins over the user from baggage or the browser cookie.
+
+Baggage still matters for records you never call yourself: spans from your framework and errors recorded on them. Use `withUser()` in middleware for those, and the `userId` option for single events.
 
 ## Browser pageview tracking
 
@@ -825,7 +827,7 @@ track("purchase", {
 })
 ```
 
-In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `visitor.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`user_id`, `org_id`, ...). Use the same key names on both sides so one query covers them.
+In the browser, the log record is automatically correlated to the active pageview span via `TraceId`/`SpanId`, and context attributes (`session.id`, `visitor.id`, `url.path`, `user.id`) are injected for you. On the server there is no pageview span, so pass the identifiers you want to filter by as properties (`org_id`, ...), and the user as `track(name, properties, { userId })` so it lands as `user.id` like in the browser. Use the same key names on both sides so one query covers them.
 
 Call `track()` on the **server at mutation success** (project created, deploy finished, subscription started). Those events are the ones you trust, because they cannot fire from a click that later failed. Browser `track()` is for intent and UI interaction (button clicked, form started). Pageviews need no call at all, they are automatic from `initStrada()`.
 
@@ -843,8 +845,9 @@ export type AnalyticsEvents = {
 export function trackEvent<Name extends keyof AnalyticsEvents>(
   name: Name,
   properties: AnalyticsEvents[Name],
+  options?: TrackOptions, // { userId }
 ) {
-  track(name, properties)
+  track(name, properties, options)
 }
 ```
 
@@ -1466,8 +1469,8 @@ That excludes ordinary logs that do not have `event.name`.
 - `initStrada(options)`
 - `startSpan({ name }, callback)` — creates a span, auto-ends, auto-records errors
 - `startInactiveSpan({ name })` — creates a detached span (manual end)
-- `captureException(error, opts?)`
-- `track(name, properties?)` — product analytics event, see [typed catalog](#type-safe-event-catalog)
+- `captureException(error, opts?)` — `opts.userId` sets `user.id`
+- `track(name, properties?, { userId }?)` — product analytics event, see [typed catalog](#type-safe-event-catalog)
 - `setTags(tags)`
 - `flush()`
 - `shutdown()`

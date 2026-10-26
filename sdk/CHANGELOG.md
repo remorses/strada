@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0
+
+1. **`userId` option for `track()` and `captureException()`** — set `user.id` on an event or error without wrapping the call in a baggage context:
+
+   ```ts
+   import { captureException, track } from "@strada.sh/sdk"
+
+   track("task_started", { org_id: org.id }, { userId: session.userId })
+   captureException(error, { userId: job.userId, tags: { handler: "export" } })
+   ```
+
+   It lands in the same `user.id` attribute that baggage and the browser cookie set, so the record joins `otel_users`. Use it where the user is known but there is no request context: Durable Object alarms, queue consumers, cron jobs. An explicit `userId` wins over the user from baggage or the browser cookie.
+
 ## 0.10.0
 
 1. **Fewer ingest requests** — every flush is now **one request** to `/v1/batch` with spans, logs, and metrics together, instead of one request per signal to `/v1/traces`, `/v1/logs`, and `/v1/metrics`.
